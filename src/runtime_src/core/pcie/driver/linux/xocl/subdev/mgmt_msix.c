@@ -129,7 +129,9 @@ static int user_intr_register(struct platform_device *pdev, u32 intr,
 	u32 vec;
 	int ret;
 
+	printk("__larry_mgmt__: enter %s, intr\n", __func__);
 	mgmt_msix = platform_get_drvdata(pdev);
+	printk("__larry_mgmt__: mgmt mas_user_intr is %d\n", mgmt_msix->max_user_intr);
 
 	if (intr >= mgmt_msix->max_user_intr)
 		return -EINVAL;
@@ -147,6 +149,8 @@ static int user_intr_register(struct platform_device *pdev, u32 intr,
 #else
 	vec = mgmt_msix->msix_irq_entries[mgmt_msix->msix_user_start_vector+intr].vector;
 #endif
+
+	printk("__larry_mgmt__: user_start_vector is %d, vec is%d\n", mgmt_msix->msix_user_start_vector, vec);
 
 	ret = request_irq(vec, handler, 0, XCLMGMT_MODULE_NAME, arg);
 	if (ret) {
@@ -213,6 +217,7 @@ static int mgmt_msix_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
+		printk("__larry_mgi__: %s res is NULL.\n", __func__);
 		xocl_info(&pdev->dev,
 			"legacy platform, identify intr bar by size");
 		bar = identify_intr_bar(mgmt_msix);
@@ -250,10 +255,12 @@ static int mgmt_msix_probe(struct platform_device *pdev)
 	if (mgmt_msix->privdata) {
 		mgmt_msix->msix_user_start_vector = mgmt_msix->privdata->start;
 		total = mgmt_msix->privdata->total;
+		printk("__larry_mgd__: 1: start vector is %d, total is %d\n", mgmt_msix->msix_user_start_vector, total);
 	} else {
 		mgmt_msix->msix_user_start_vector =
 			XOCL_READ_REG32(mgmt_msix->base + XCLMGMT_INTR_USER_VECTOR) & 0xf;
 		total = mgmt_msix->msix_user_start_vector + XCLMGMT_MAX_USER_INTR;
+		printk("__larry_mgd__: 2: start vector is %d, total is %d\n", mgmt_msix->msix_user_start_vector, total);
 	}
 
 	if (total > XCLMGMT_MAX_INTR_NUM) {
@@ -266,6 +273,7 @@ static int mgmt_msix_probe(struct platform_device *pdev)
 		total = pci_msix_vec_count(XDEV(xdev)->pdev);
 	}
 
+	printk("__larry_mgi__: total is %d\n", total);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	i = 0;
 	ret = pci_alloc_irq_vectors(XDEV(xdev)->pdev, total, total,

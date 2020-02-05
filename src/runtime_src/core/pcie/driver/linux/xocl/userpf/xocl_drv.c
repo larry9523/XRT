@@ -441,6 +441,8 @@ static void xocl_mb_connect(struct xocl_dev *xdev)
 	void *kaddr = NULL;
 	int ret;
 
+	printk("__larry_xocl__: enter %s\n", __func__);
+
 	if (!resp)
 		goto done;
 
@@ -464,6 +466,7 @@ static void xocl_mb_connect(struct xocl_dev *xdev)
 
 	ret = xocl_peer_request(xdev, mb_req, reqlen, resp, &resplen,
 		NULL, NULL, 0);
+	printk("__larry_xocl__: in %s, CHAN_STAE is %lld, CHAN_SWITCH is %lld\n", __func__, resp->conn_flags, resp->chan_switch);
 	(void) xocl_mailbox_set(xdev, CHAN_STATE, resp->conn_flags);
 	(void) xocl_mailbox_set(xdev, CHAN_SWITCH, resp->chan_switch);
 	(void) xocl_mailbox_set(xdev, COMM_ID, (u64)(uintptr_t)resp->comm_id);
@@ -1349,9 +1352,11 @@ int xocl_userpf_probe(struct pci_dev *pdev,
 		goto failed;
 	}
 
+#if 0
 	/* Don't check mailbox on versal for now. */
 	if (XOCL_DSA_IS_VERSAL(xdev))
 		return 0;
+#endif
 
 	/* Launch the mailbox server. */
 	ret = xocl_peer_listen(xdev, xocl_mailbox_srv, (void *)xdev);

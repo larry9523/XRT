@@ -487,9 +487,12 @@ static int xclmgmt_intr_register(xdev_handle_t xdev_hdl, u32 intr,
 	struct xclmgmt_dev *lro = (struct xclmgmt_dev *)xdev_hdl;
 	int ret;
 
+	printk("__larry_mgmt__: enter %s, handle is %d\n", __func__, intr);
 	ret = handler ?
 		xocl_dma_intr_register(lro, intr, handler, arg, -1) :
 		xocl_dma_intr_unreg(lro, intr);
+	printk("__larry_mgmt__: return val is %d\n", ret);
+
 	return ret;
 }
 
@@ -601,6 +604,7 @@ static int xclmgmt_read_subdev_req(struct xclmgmt_dev *lro, char *data_ptr, void
 	case XCL_SENSOR:
 		current_sz = sizeof(struct xcl_sensor);
 		*resp = vzalloc(current_sz);
+		printk("__larry_mgmt__: enter %s\n", __func__);
 		(void) xocl_xmc_get_data(lro, XCL_SENSOR, *resp);
 		break;
 	case XCL_ICAP:
@@ -891,6 +895,7 @@ void xclmgmt_connect_notify(struct xclmgmt_dev *lro, bool online)
 	struct xcl_mailbox_peer_state mb_conn = { 0 };
 	size_t data_len = 0, reqlen = 0;
 
+	printk("__larry_mgmt__: enter %s\n", __func__);
 	data_len = sizeof(struct xcl_mailbox_peer_state);
 	reqlen = sizeof(struct xcl_mailbox_req) + data_len;
 	mb_req = vzalloc(reqlen);
@@ -932,7 +937,6 @@ static void xclmgmt_extended_probe(struct xclmgmt_dev *lro)
 
 	if (!(dev_info->flags & XOCL_DSAFLAG_DYNAMIC_IP) &&
 	    !(dev_info->flags & XOCL_DSAFLAG_SMARTN) &&
-	    !(dev_info->flags & XOCL_DSAFLAG_VERSAL) &&
 			i == dev_info->subdev_num &&
 			lro->core.intr_bar_addr != NULL) {
 		struct xocl_subdev_info subdev_info = XOCL_DEVINFO_DMA_MSIX;

@@ -389,45 +389,44 @@ static ssize_t ready_show(struct device *dev,
 	uint64_t ch_state = 0, ret = 0, daemon_state = 0;
 	struct xcl_board_info *board_info = NULL;
 
-	/* Bypass this check for versal for now */
-	if (XOCL_DSA_IS_VERSAL(xdev))
-		ret = 1;
+	int rval = xocl_mailbox_get(xdev, CHAN_STATE, &ch_state);
+	printk("__larry_debug__: enter %s\n", __func__);
+
+	printk("__larry_debug__: rval is %d, ch_state is %llx\n", rval, ch_state);
+
+	if (ch_state & XCL_MB_PEER_SAME_DOMAIN)
+		ret = (ch_state & XCL_MB_PEER_READY) ? 1 : 0;
 	else {
-		xocl_mailbox_get(xdev, CHAN_STATE, &ch_state);
-
-		if (ch_state & XCL_MB_PEER_SAME_DOMAIN)
-			ret = (ch_state & XCL_MB_PEER_READY) ? 1 : 0;
-		else {
-			/*
-			 * If xocl and xclmgmt are not in the same daemon,
-			 * mark the card as ready only when both MB channel
-			 * and daemon are ready
-			 */
-			xocl_mailbox_get(xdev, DAEMON_STATE, &daemon_state);
-			ret = ((ch_state & XCL_MB_PEER_READY) && daemon_state)
-				? 1 : 0;
-		}
-
-		/* for now skip checking SC compatibility for 1RP flow */
-		if (!ret || !xocl_rom_get_uuid(xdev))
-			goto bail;
-
-		board_info = vzalloc(sizeof(*board_info));
-		if (!board_info)
-			goto bail;
-		xocl_xmc_get_data(xdev, XCL_BDINFO, board_info);
 		/*
-		 * Lift the restriction of mis-matching SC version for
-		 * experienced user to manually update SC firmware than
-		 * installed xsabin may contain.
+		 * If xocl and xclmgmt are not in the same daemon,
+		 * mark the card as ready only when both MB channel
+		 * and daemon are ready
 		 */
-		if (strcmp(board_info->bmc_ver, board_info->exp_bmc_ver)) {
-			xocl_warn(dev, "installed XSABIN has SC version: "
-			    "(%s) mismatch with loaded SC version: (%s).",
-			    board_info->exp_bmc_ver, board_info->bmc_ver);
-		}
-		ret = 1;
+		xocl_mailbox_get(xdev, DAEMON_STATE, &daemon_state);
+		ret = ((ch_state & XCL_MB_PEER_READY) && daemon_state)
+			? 1 : 0;
 	}
+
+	printk("__larry_debug__: in %s ret is %lld\n", __func__, ret);
+	/* for now skip checking SC compatibility for 1RP flow */
+	if (!ret || !xocl_rom_get_uuid(xdev))
+		goto bail;
+
+	board_info = vzalloc(sizeof(*board_info));
+	if (!board_info)
+		goto bail;
+	xocl_xmc_get_data(xdev, XCL_BDINFO, board_info);
+	/*
+	 * Lift the restriction of mis-matching SC version for
+	 * experienced user to manually update SC firmware than
+	 * installed xsabin may contain.
+	 */
+	if (strcmp(board_info->bmc_ver, board_info->exp_bmc_ver)) {
+		xocl_warn(dev, "installed XSABIN has SC version: "
+		    "(%s) mismatch with loaded SC version: (%s).",
+		    board_info->exp_bmc_ver, board_info->bmc_ver);
+	}
+	ret = 1;
 
 bail:
 	if (board_info)
