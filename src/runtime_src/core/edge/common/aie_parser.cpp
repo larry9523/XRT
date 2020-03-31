@@ -29,6 +29,7 @@ namespace {
 namespace pt = boost::property_tree;
 using tile_type = xrt_core::edge::aie::tile_type;
 using rtp_type = xrt_core::edge::aie::rtp_type;
+using gmio_type = xrt_core::edge::aie::gmio_type;
 
 inline void
 throw_if_error(bool err, const char* msg)
@@ -121,6 +122,25 @@ get_rtp(const pt::ptree& aie_meta)
 
   return rtps;
 }
+
+std::vector<gmio_type>
+get_gmio(const pt::ptree& aie_meta)
+{
+  std::vector<gmio_type> gmios;
+
+  for (auto& gmio_node : aie_meta.get_child("aie_metadata.GMIOs")) {
+    gmio_type gmio;
+
+    gmio.id = gmio_node.second.get<std::string>("id");
+    gmio.name = gmio_node.second.get<std::string>("name");
+    gmio.type = gmio_node.second.get<uint16_t>("type");
+    gmio.shim_col = gmio_node.second.get<uint16_t>("shim_column");
+    gmio.burst_len = gmio_node.second.get<uint16_t>("burst_length_in_16byte");
+  }
+
+  return gmios;
+}
+
 
 } // namespace
 

@@ -44,17 +44,14 @@ Aie::Aie()
      */
     (void) XAieGbl_CfgInitialize(&aieInst, tileArray.data(), aieConfigPtr);
 
+#if 0
     /*
      * Initialize graph GMIO metadata
      * TODO get gmio metadata from Xclbin
      */
-    xrt_core::edge::aie::gmio_type gmio1;
-    gmio1.id = "0";
-    gmio1.name = "gmio1";
-    gmio1.type = 0;
-    gmio1.shim_col = 3;
-    gmio1.channel_number = 2;
-    gmios.emplace_back(gmio1);
+    for (auto& gmio : xrt_core::edge::aie::get_gmios(device.get()))
+      gmios.emplace_back(std::move(gmio));
+#endif
 
     /*
      * Initialize AIE shim DMA on column base if there is one for
