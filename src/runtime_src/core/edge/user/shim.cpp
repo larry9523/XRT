@@ -1575,6 +1575,7 @@ xclLoadXclBin(xclDeviceHandle handle, const xclBin *buffer)
       printf("Scheduler init failed\n");
       return ret;
     }
+
     ret = drv->mapKernelControl(xrt_core::xclbin::get_cus_pair(buffer));
     if (ret) {
       printf("Map CUs Failed\n");
@@ -1595,6 +1596,7 @@ xclLoadXclBin(xclDeviceHandle handle, const xclBin *buffer)
     return ex.get();
   }
   catch (const std::exception& ex) {
+
     xrt_core::send_exception_message(ex.what());
     return 1;
   }

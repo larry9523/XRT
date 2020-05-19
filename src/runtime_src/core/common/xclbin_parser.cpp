@@ -480,13 +480,14 @@ get_kernel_freq(const axlf* top)
     pt::read_xml(xml_stream,xml_project);
 
     auto clock_child = xml_project.get_child_optional("project.platform.device.core.kernelClocks");
-
     if (clock_child) { // check whether kernelClocks field exists or not
       for (auto& xml_clock : xml_project.get_child("project.platform.device.core.kernelClocks")) {
         if (xml_clock.first != "clock")
           continue;
         auto port = xml_clock.second.get<std::string>("<xmlattr>.port","");
-        auto freq = convert(xml_clock.second.get<std::string>("<xmlattr>.frequency","100"));
+	std::string fq = xml_clock.second.get<std::string>("<xmlattr>.       frequency","100");
+        // auto freq = convert(xml_clock.second.get<std::string>("<xmlattr>.frequency","100"));
+	size_t freq = 100;
         if(port == "KERNEL_CLK")
           kernel_clk_freq = freq;
       }
