@@ -26,7 +26,23 @@
 #include "core/edge/common/aie_parser.h"
 extern "C" {
 #include <xaiengine.h>
+#ifdef AIE_V2
+#include "aie_v1.h"
+#endif
+
 }
+
+#define HW_GEN                   XAIE_DEV_GEN_AIE
+#define XAIE_NUM_ROWS            9
+#define XAIE_NUM_COLS            50
+#define XAIE_BASE_ADDR           0x20000000000
+#define XAIE_COL_SHIFT           23
+#define XAIE_ROW_SHIFT           18
+#define XAIE_SHIM_ROW            0
+#define XAIE_MEM_TILE_ROW_START  0
+#define XAIE_MEM_TILE_NUM_ROWS   0
+#define XAIE_AIE_TILE_ROW_START  1
+#define XAIE_AIE_TILE_NUM_ROWS   8
 
 namespace zynqaie {
 
@@ -63,6 +79,8 @@ public:
 
     int getTilePos(int col, int row);
 
+    XAie_DevInst *getDevInst();
+
     XAieGbl *getAieInst();
 
     static XAieGbl_ErrorHandleStatus
@@ -73,6 +91,7 @@ private:
     int numCols;
     uint64_t aieAddrArrayOff;
 
+    XAie_DevInst devInst;         // AIE Device Instance
     XAieGbl_Config *aieConfigPtr; // AIE configuration pointer
     XAieGbl aieInst;              // AIE global instance
     XAieGbl_HwCfg aieConfig;      // AIE configuration pointer

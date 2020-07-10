@@ -96,9 +96,10 @@ void
 graph_type::
 reset()
 {
-    for (auto& tile : tiles) {
-      auto pos = aieArray->getTilePos(tile.col, tile.row);
-      XAieTile_CoreControl(&(aieArray->tileArray.at(pos)), XAIE_DISABLE, XAIE_ENABLE);
+    printf("__larry_libxrt: enter %s\n", __func__);
+    for (auto& tile: tiles) {
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_CoreDisable(aieArray->getDevInst(), coreTile);
     }
 
     state = graph_state::reset;
@@ -120,16 +121,20 @@ void
 graph_type::
 run()
 {
+    printf("__larry_libxrt: enter %s \n", __func__);
     if (state != graph_state::stop && state != graph_state::reset)
-      throw xrt_core::error(-EINVAL, "Graph '" + name + "' is already running");
+      throw xrt_core::error(-EINVAL, "Graph '" + name + "' is already running or has ended");
 
-    if (state != graph_state::reset)
-      // Reset the graph first
-      reset();
+    /* Record a snapshot of graph start time */
+    if (!tiles.empty()) {
+        auto& tile = tiles.at(0);
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_ReadTimer(aieArray->getDevInst(), coreTile, XAIE_CORE_MOD, &startTime);
+    }
 
     for (auto& tile : tiles) {
-        auto pos = aieArray->getTilePos(tile.col, tile.row);
-        XAieTile_CoreControl(&(aieArray->tileArray.at(pos)), XAIE_ENABLE, XAIE_DISABLE);
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_CoreEnable(aieArray->getDevInst(), coreTile);
     }
 
     state = graph_state::running;
@@ -137,13 +142,30 @@ run()
 
 void
 graph_type::
-update_iter(int iterations)
+run(int iterations)
 {
+    printf("__larry_libxrt: enter %s \n", __func__);
+    if (state != graph_state::stop && state != graph_state::reset)
+      throw xrt_core::error(-EINVAL, "Graph '" + name + "' is already running or has ended");
+
     for (auto& tile : tiles) {
-        auto pos = aieArray->getTilePos(tile.itr_mem_col, tile.itr_mem_row);
-        uint32_t addr = tile.itr_mem_addr;
-        XAieTile_DmWriteWord(&(aieArray->tileArray.at(pos)), addr, iterations);
+        XAie_LocType memTile = XAie_TileLoc(tile.itr_mem_col, tile.itr_mem_row);
+        XAie_DataMemWrWord(aieArray->getDevInst(), memTile, tile.itr_mem_addr, iterations);
     }
+
+    /* Record a snapshot of graph start time */
+    if (!tiles.empty()) {
+        auto& tile = tiles.at(0);
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_ReadTimer(aieArray->getDevInst(), coreTile, XAIE_CORE_MOD, &startTime);
+    }
+
+    for (auto& tile : tiles) {
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_CoreEnable(aieArray->getDevInst(), coreTile);
+    }
+
+    state = graph_state::running;
 }
 
 void
@@ -164,15 +186,28 @@ wait_done(int timeout_ms)
     while (1) {
         uint8_t done;
         for (auto& tile : tiles) {
-            auto pos = aieArray->getTilePos(tile.col, tile.row);
-            done = XAieTile_CoreReadStatusDone(&(aieArray->tileArray.at(pos)));
+            /* Skip multi-rate core */
+            if (tile.is_trigger) {
+                done = 1;
+                continue;
+            }
+
+            XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+            XAie_CoreReadDoneBit(aieArray->getDevInst(), coreTile, &done);
             if (!done)
                 break;
         }
 
         if (done) {
-          state = graph_state::stop;
-          return;
+            state = graph_state::stop;
+            for (auto& tile : tiles) {
+                if (tile.is_trigger)
+                    continue;
+
+                XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+                XAie_CoreDisable(aieArray->getDevInst(), coreTile);
+            }
+            return;
         }
 
         auto current = std::chrono::high_resolution_clock::now();
@@ -185,14 +220,66 @@ wait_done(int timeout_ms)
 
 void
 graph_type::
+wait()
+{
+    if (state != graph_state::running)
+        throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not running, cannot wait");
+
+    for (auto& tile : tiles) {
+        if (tile.is_trigger)
+            continue;
+
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+
+        while (1) {
+            if (XAie_CoreWaitForDone(aieArray->getDevInst(), coreTile, 0) == XAIE_OK)
+                break;
+        }
+
+        XAie_CoreDisable(aieArray->getDevInst(), coreTile);
+    }
+
+    state = graph_state::stop;
+}
+
+void
+graph_type::
+wait(uint64_t cycle)
+{
+    if (state != graph_state::running)
+        throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not running, cannot wait");
+
+    // Adjust the cycle-timeout value
+    if (!tiles.empty()) {
+        auto& tile = tiles.at(0);
+
+        uint64_t elapsed_time;
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_ReadTimer(aieArray->getDevInst(), coreTile, XAIE_CORE_MOD, &elapsed_time);
+        elapsed_time -= startTime;
+
+        if (cycle > elapsed_time)
+            XAie_WaitCycles(aieArray->getDevInst(), coreTile, XAIE_CORE_MOD, (cycle - elapsed_time));
+    }
+
+    for (auto& tile : tiles) {
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_CoreDisable(aieArray->getDevInst(), coreTile);
+    }
+
+    state = graph_state::suspend;
+}
+
+void
+graph_type::
 suspend()
 {
     if (state != graph_state::running)
       throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not running, cannot suspend");
 
     for (auto& tile : tiles) {
-        auto pos = aieArray->getTilePos(tile.col, tile.row);
-        XAieTile_CoreControl(&(aieArray->tileArray.at(pos)), XAIE_DISABLE, XAIE_DISABLE);
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_CoreDisable(aieArray->getDevInst(), coreTile);
     }
 
     state = graph_state::suspend;
@@ -203,11 +290,25 @@ graph_type::
 resume()
 {
     if (state != graph_state::suspend)
-      throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not suspended, cannot resume");
+      throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not suspended (wait(cycle)), cannot resume");
+
+    if (!tiles.empty()) {
+        auto& tile = tiles.at(0);
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_ReadTimer(aieArray->getDevInst(), coreTile, XAIE_CORE_MOD,         &startTime);
+    }
 
     for (auto& tile : tiles) {
-        auto pos = aieArray->getTilePos(tile.col, tile.row);
-        XAieTile_CoreControl(&(aieArray->tileArray.at(pos)), XAIE_ENABLE, XAIE_DISABLE);
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+
+        /*
+         * We only resume the core that is not in done status.
+         * XAIE_ENABLE will clear Core_Done status bit.
+         */
+        uint8_t done;
+        XAie_CoreReadDoneBit(aieArray->getDevInst(), coreTile, &done);
+        if (!done)
+            XAie_CoreEnable(aieArray->getDevInst(), coreTile);
     }
 
     state = graph_state::running;
@@ -215,49 +316,62 @@ resume()
 
 void
 graph_type::
-stop(int timeout_ms)
+end()
 {
-    if (state != graph_state::running)
-      throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not running, cannot stop");
+    if (state != graph_state::running && state != graph_state::stop)
+      throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not running or stop, cannot end");
 
-    auto begin = std::chrono::high_resolution_clock::now();
+    /* Wait for graph done first. The state will be set to stop */
+    if (state == graph_state::running)
+        wait();
 
-    /*
-     * We are using busy waiting here. Until every tile in the graph
-     * is done, we keep polling each tile.
-     *
-     * TODO Will register AIE event for tile done.
-     */
-    while (1) {
-        uint8_t done;
-        for (auto& tile : tiles) {
-            auto pos = aieArray->getTilePos(tile.itr_mem_col, tile.itr_mem_row);
-            done = XAieTile_CoreReadStatusDone(&(aieArray->tileArray.at(pos)));
-            if (!done)
+    for (auto& tile : tiles) {
+        if (tile.is_trigger)
+            continue;
+
+        /* Set sync buf to trigger the end procedure */
+        XAie_LocType memTile = XAie_TileLoc(tile.itr_mem_col, tile.itr_mem_row);
+        XAie_DataMemWrWord(aieArray->getDevInst(), memTile, tile.itr_mem_addr - 4, (u32)1);
+
+        XAie_LocType coreTile = XAie_TileLoc(tile.col, tile.row);
+        XAie_CoreEnable(aieArray->getDevInst(), coreTile);
+
+        while (1) {
+            if (XAie_CoreWaitForDone(aieArray->getDevInst(), coreTile, 0) ==    XAIE_OK)
                 break;
         }
 
-        if (done)
-            return;
-
-        auto current = std::chrono::high_resolution_clock::now();
-        auto dur = current - begin;
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(dur).count();
-        if (timeout_ms >= 0 && timeout_ms < ms) {
-            std::cout << "Wait Graph " << name << " timeout. Force stop" << std::endl;
-            for (auto& tile : tiles) {
-                auto pos = aieArray->getTilePos(tile.itr_mem_col, tile.itr_mem_row);
-                XAieTile_CoreControl(&(aieArray->tileArray.at(pos)), XAIE_DISABLE, XAIE_DISABLE);
-
-               /* TODO any extra action needed to end a graph? */
-            }
-
-            break;
-        }
+        XAie_CoreDisable(aieArray->getDevInst(), coreTile);
     }
 
-    state = graph_state::stop;
+    state = graph_state::end;
 }
+
+void
+graph_type::
+end(uint64_t cycle)
+{
+    if (state != graph_state::running && state != graph_state::suspend)
+        throw xrt_core::error(-EINVAL, "Graph '" + name + "' is not running or suspended, cannot end(cycle_timeout)");
+
+    /* Wait(cycle) will suspend graph. */
+    if (state == graph_state::running)
+        wait(cycle);
+
+    for (auto& tile : tiles) {
+        /* Set sync buf to trigger the end procedure */
+        XAie_LocType memTile = XAie_TileLoc(tile.itr_mem_col, tile.itr_mem_row);
+        XAie_DataMemWrWord(aieArray->getDevInst(), memTile, tile.itr_mem_addr - 4, (u32)1);
+    }
+
+    state = graph_state::end;
+}
+
+#define LOCK_TIMEOUT 0x7FFFFFFF
+#define ACQ_WRITE    0
+#define ACQ_READ     1
+#define REL_READ     1
+#define REL_WRITE    0
 
 void
 graph_type::
@@ -270,7 +384,7 @@ update_rtp(const char* port, const char* buffer, size_t size)
       throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': RTP port '" + port + "' not found");
 
     if (rtp->is_plrtp)
-      throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': not aie rtp port");
+      throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': RTP port '" + port + "' is not AIE RTP");
 
     if (!rtp->is_input)
       throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': RTP port '" + port + "' is not input");
@@ -278,13 +392,10 @@ update_rtp(const char* port, const char* buffer, size_t size)
     /* If RTP port is connected, only support async update */
     if (rtp->is_connected) {
         if (rtp->is_async && state == graph_state::running)
-            throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': connected async update is not supported while graph is running");
+            throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': updating connected async RTP '" + port + "' is not supported while graph is running");
         if (!rtp->is_async)
-            throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': connected sync update is not supported");
+            throw xrt_core::error(-EINVAL, "Can't update graph '" + name + "': updating connected sync RTP '" + port + "' is not supported");
     }
-
-    auto selector_pos = aieArray->getTilePos(rtp->selector_col, rtp->selector_row);
-    auto selector_tile = &(aieArray->tileArray.at(selector_pos));
 
     /* Don't acquire selector lock for async RTP while graph is not running */
     bool need_lock = rtp->require_lock && (
@@ -292,53 +403,70 @@ update_rtp(const char* port, const char* buffer, size_t size)
         !rtp->is_async
 	);
 
-    if (need_lock)
-        XAieTile_LockAcquire(selector_tile, rtp->selector_lock_id, 0, 0xFFFFFFFF);
+    XAie_LocType selector_tile = XAie_TileLoc(rtp->selector_col, rtp->selector_row);
+    XAie_Lock selector_lock = XAie_LockInit(rtp->selector_lock_id, (rtp->is_async ? 0xFF : ACQ_WRITE));
 
-    uint32_t selector = XAieTile_DmReadWord(selector_tile, rtp->selector_addr);
+    if (need_lock) {
+        AieRC rc = XAie_LockAcquire(aieArray->getDevInst(), selector_tile, selector_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK)
+            throw xrt_core::error(-EIO, "Can't update graph '" + name + "': acquire lock for RTP '" + port + "' failed or timeout");
+    }
+
+    uint32_t selector;
+    XAie_DataMemRdWord(aieArray->getDevInst(), selector_tile, rtp->selector_addr, &selector);
 
     selector = 1 - selector;
 
-    int update_pos;
+    XAie_LocType update_tile;
     uint16_t lock_id;
     uint64_t start_addr;
     if (selector == 1) {
         /* update pong buffer */
-        update_pos = aieArray->getTilePos(rtp->pong_col, rtp->pong_row);
+        update_tile = XAie_TileLoc(rtp->pong_col, rtp->pong_row);
         lock_id = rtp->pong_lock_id;
         start_addr = rtp->pong_addr;
     } else {
         /* update ping buffer */
-        update_pos = aieArray->getTilePos(rtp->ping_col, rtp->ping_row);
+        update_tile = XAie_TileLoc(rtp->ping_col, rtp->ping_row);
         lock_id = rtp->ping_lock_id;
         start_addr = rtp->ping_addr;
     }
 
-    XAieGbl_Tile *update_tile = &(aieArray->tileArray.at(update_pos));
-    if (need_lock)
-        XAieTile_LockAcquire(update_tile, lock_id, 0, 0xFFFFFFFF);
+    XAie_Lock update_lock = XAie_LockInit(lock_id, (rtp->is_async ? 0xFF : ACQ_WRITE));
+    if (need_lock) {
+        AieRC rc = XAie_LockAcquire(aieArray->getDevInst(), update_tile, update_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK)
+            throw xrt_core::error(-EIO, "Can't update graph '" + name + "': acquire lock for RTP '" + port + "' failed or timeout");
+    }
 
     size_t iterations = size / 4;
     size_t remain = size % 4;
     int i;
 
     for (i = 0; i < iterations; ++i) {
-        XAieTile_DmWriteWord(update_tile, start_addr, ((const uint32_t *)buffer)[i]);
+        XAie_DataMemWrWord(aieArray->getDevInst(), update_tile, start_addr, ((const uint32_t *)buffer)[i]);
         start_addr += 4;
     }
     if (remain) {
         uint32_t rdata = 0;
         memcpy(&rdata, &((const uint32_t *)buffer)[i], remain);
-        XAieTile_DmWriteWord(update_tile, start_addr, rdata);
+        XAie_DataMemWrWord(aieArray->getDevInst(), update_tile, start_addr, rdata);
     }
 
     /* update selector */
-    XAieTile_DmWriteWord(selector_tile, rtp->selector_addr, selector);
+    XAie_DataMemWrWord(aieArray->getDevInst(), selector_tile, rtp->selector_addr, selector);
 
     if (rtp->require_lock) {
         /* release lock, need to release lock even graph is not running */
-        XAieTile_LockRelease(selector_tile, rtp->selector_lock_id, 1, 0XFFFFFFFF);
-        XAieTile_LockRelease(update_tile, lock_id, 1, 0XFFFFFFFF);
+        selector_lock = XAie_LockInit(rtp->selector_lock_id, REL_READ);
+        uint8_t rc = XAie_LockRelease(aieArray->getDevInst(), selector_tile, selector_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK)
+            throw xrt_core::error(-EIO, "Can't update graph '" + name + "': release lock for RTP '" + port + "' failed or timeout");
+
+        update_lock = XAie_LockInit(lock_id, REL_READ);
+        rc = XAie_LockRelease(aieArray->getDevInst(), update_tile, update_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK)
+            throw xrt_core::error(-EIO, "Can't update graph '" + name + "': release lock for RTP '" + port + "' failed or timeout");
     }
 }
 
@@ -353,17 +481,14 @@ read_rtp(const char* port, char* buffer, size_t size)
       throw xrt_core::error(-EINVAL, "Can't read graph '" + name + "': RTP port '" + port + "' not found");
 
     if (rtp->is_plrtp)
-      throw xrt_core::error(-EINVAL, "Can't read graph '" + name + "': not aie rtp port");
+      throw xrt_core::error(-EINVAL, "Can't read graph '" + name + "': RTP port '" + port + "' is not AIE RTP");
 
     if (rtp->is_input)
       throw xrt_core::error(-EINVAL, "Can't read graph '" + name + "': RTP port '" + port + "' is input");
 
     /* If RTP port is connected, only support async update */
     if (rtp->is_connected)
-      throw xrt_core::error(-EINVAL, "Can't read graph '" + name + "': connected read is not supported");
-
-    auto selector_pos = aieArray->getTilePos(rtp->selector_col, rtp->selector_row);
-    auto selector_tile = &(aieArray->tileArray.at(selector_pos));
+      throw xrt_core::error(-EINVAL, "Can't read graph '" + name + "': reading connected RTP port '" + port + "' is not supported");
 
     /* Don't acquire selector lock for async RTP while graph is not running */
     bool need_lock = rtp->require_lock && (
@@ -371,31 +496,50 @@ read_rtp(const char* port, char* buffer, size_t size)
         !rtp->is_async
         );
 
-    if (need_lock)
-        XAieTile_LockAcquire(selector_tile, rtp->selector_lock_id, 1, 0xFFFFFFFF);
+    XAie_LocType selector_tile = XAie_TileLoc(rtp->selector_col, rtp->selector_row);
+    XAie_Lock selector_lock = XAie_LockInit(rtp->selector_lock_id, ACQ_READ);
 
-    uint32_t selector = XAieTile_DmReadWord(selector_tile, rtp->selector_addr);
+    if (need_lock) {
+        AieRC rc = XAie_LockAcquire(aieArray->getDevInst(), selector_tile, selector_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK) {
+            printf("__larry_libxrt: in %s check point 1, rc is %d\n", __func__, rc);
+            throw xrt_core::error(-EIO, "Can't read graph '" + name + "': acquire lock for RTP '" + port + "' failed or timeout");
+        }
+    }
 
-    int update_pos;
+    uint32_t selector;
+    XAie_DataMemRdWord(aieArray->getDevInst(), selector_tile, rtp->selector_addr, &selector);
+
+    XAie_LocType update_tile;
     uint16_t lock_id;
     uint64_t start_addr;
     if (selector == 1) {
         /* update pong buffer */
-        update_pos = aieArray->getTilePos(rtp->pong_col, rtp->pong_row);
+        update_tile = XAie_TileLoc(rtp->pong_col, rtp->pong_row);
         lock_id = rtp->pong_lock_id;
         start_addr = rtp->pong_addr;
     } else {
         /* update ping buffer */
-        update_pos = aieArray->getTilePos(rtp->ping_col, rtp->ping_row);
+        update_tile = XAie_TileLoc(rtp->ping_col, rtp->ping_row);
         lock_id = rtp->ping_lock_id;
         start_addr = rtp->ping_addr;
     }
 
-    XAieGbl_Tile *update_tile = &(aieArray->tileArray.at(update_pos));
+    XAie_Lock update_lock = XAie_LockInit(lock_id, ACQ_READ);
     if (need_lock) {
-        XAieTile_LockAcquire(update_tile, lock_id, 1, 0xFFFFFFFF);
+        AieRC rc = XAie_LockAcquire(aieArray->getDevInst(), update_tile, update_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK) {
+            printf("__larry_libxrt: in %s check point 2\n", __func__);
+            throw xrt_core::error(-EIO, "Can't read graph '" + name + "': acquire lock for RTP '" + port + "' failed or timeout");
+        }
+
 	/* sync RTP release lock for write, async RTP relase lock for read */
-        XAieTile_LockRelease(selector_tile, rtp->selector_lock_id, (rtp->is_async ? 1 : 0), 0XFFFFFFFF);
+        selector_lock = XAie_LockInit(rtp->selector_lock_id, (rtp->is_async ? REL_READ : REL_WRITE));
+        rc = XAie_LockRelease(aieArray->getDevInst(), selector_tile, selector_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK) {
+            printf("__larry_libxrt: in %s check point 3\n", __func__);
+            throw xrt_core::error(-EIO, "Can't read graph '" + name + "': release lock for RTP '" + port + "' failed or timeout");
+        }
     }
 
     size_t iterations = size / 4;
@@ -403,18 +547,23 @@ read_rtp(const char* port, char* buffer, size_t size)
     int i;
 
     for (i = 0; i < iterations; ++i) {
-        ((uint32_t *)buffer)[i] = XAieTile_DmReadWord(update_tile, start_addr);
+        XAie_DataMemRdWord(aieArray->getDevInst(), update_tile, start_addr, (u32*)&(((u32*)buffer)[i]));
         start_addr += 4;
     }
     if (remain) {
-        uint32_t rdata = 0;
-	rdata = XAieTile_DmReadWord(update_tile, start_addr);
+        uint32_t rdata;
+        XAie_DataMemRdWord(aieArray->getDevInst(), update_tile, start_addr, ((u32*)&rdata));
         memcpy(&((uint32_t *)buffer)[i], &rdata, remain);
     }
 
     if (need_lock) {
         /* release lock */
-        XAieTile_LockRelease(update_tile, lock_id, (rtp->is_async ? 1 : 0), 0XFFFFFFFF);
+        update_lock = XAie_LockInit(lock_id, (rtp->is_async ? REL_READ : REL_WRITE));
+        AieRC rc = XAie_LockRelease(aieArray->getDevInst(), update_tile, update_lock, LOCK_TIMEOUT);
+        if (rc != XAIE_OK) {
+            printf("__larry_libxrt: in %s check point 4\n", __func__);
+            throw xrt_core::error(-EIO, "Can't read graph '" + name + "': release lock for RTP '" + port + "' failed or timeout");
+        }
     }
 }
 
@@ -568,17 +717,13 @@ xrtGraphTimeStamp(xrtGraphHandle ghdl)
 }
 
 void
-xrtGraphRun(xrtGraphHandle ghdl)
+xrtGraphRun(xrtGraphHandle ghdl, int iterations)
 {
   auto graph = get_graph(ghdl);
-  graph->run();
-}
-
-void
-xrtGraphUpdateIter(xrtGraphHandle ghdl, int iterations)
-{
-  auto graph = get_graph(ghdl);
-  graph->update_iter(iterations);
+  if (iterations == 0)
+    graph->run();
+  else
+    graph->run(iterations);
 }
 
 void
@@ -586,6 +731,16 @@ xrtGraphWaitDone(xrtGraphHandle ghdl, int timeout_ms)
 {
   auto graph = get_graph(ghdl);
   graph->wait_done(timeout_ms);
+}
+
+void
+xrtGraphWait(xrtGraphHandle ghdl, uint64_t cycle)
+{
+  auto graph = get_graph(ghdl);
+  if (cycle == 0)
+    graph->wait();
+  else
+    graph->wait(cycle);
 }
 
 void
@@ -603,10 +758,13 @@ xrtGraphResume(xrtGraphHandle ghdl)
 }
 
 void
-xrtGraphStop(xrtGraphHandle ghdl, int timeout_ms)
+xrtGraphEnd(xrtGraphHandle ghdl, uint64_t cycle)
 {
   auto graph = get_graph(ghdl);
-  graph->stop(timeout_ms);
+  if (cycle == 0)
+    graph->end();
+  else
+    graph->end(cycle);
 }
 
 void
@@ -656,7 +814,6 @@ xrtGraphOpen(xclDeviceHandle handle, const uuid_t xclbin_uuid, const char* graph
     xrt_core::send_exception_message(ex.what());
     return XRT_NULL_HANDLE;
   }
-    
 }
 
 void
@@ -700,27 +857,10 @@ xrtGraphTimeStamp(xrtGraphHandle ghdl)
 }
 
 int
-xrtGraphRun(xrtGraphHandle ghdl)
+xrtGraphRun(xrtGraphHandle ghdl, int iterations)
 {
   try {
-    api::xrtGraphRun(ghdl);
-    return 0;
-  }
-  catch (const xrt_core::error& ex) {
-    xrt_core::send_exception_message(ex.what());
-    return ex.get();
-  }
-  catch (const std::exception& ex) {
-    xrt_core::send_exception_message(ex.what());
-    return -1;
-  }
-}
-
-int
-xrtGraphUpdateIter(xrtGraphHandle ghdl, int iterations)
-{
-  try {
-    api::xrtGraphUpdateIter(ghdl, iterations);
+    api::xrtGraphRun(ghdl, iterations);
     return 0;
   }
   catch (const xrt_core::error& ex) {
@@ -738,6 +878,23 @@ xrtGraphWaitDone(xrtGraphHandle ghdl, int timeout_ms)
 {
   try {
     api::xrtGraphWaitDone(ghdl, timeout_ms);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return -1;
+  }
+}
+
+int
+xrtGraphWait(xrtGraphHandle ghdl, uint64_t cycle)
+{
+  try {
+    api::xrtGraphWait(ghdl, cycle);
     return 0;
   }
   catch (const xrt_core::error& ex) {
@@ -785,10 +942,10 @@ xrtGraphResume(xrtGraphHandle ghdl)
 }
 
 int
-xrtGraphStop(xrtGraphHandle ghdl, int timeout_ms)
+xrtGraphEnd(xrtGraphHandle ghdl, uint64_t cycle)
 {
   try {
-    api::xrtGraphStop(ghdl, timeout_ms);
+    api::xrtGraphEnd(ghdl, cycle);
     return 0;
   }
   catch (const xrt_core::error& ex) {
@@ -849,7 +1006,7 @@ xrtSyncBOAIE(xrtGraphHandle ghdl, unsigned int bo, const char *dmaID, enum xclBO
   catch (const std::exception& ex) {
     xrt_core::send_exception_message(ex.what());
     return -1;
-  }  
+  }
 }
 
 int

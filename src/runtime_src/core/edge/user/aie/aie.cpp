@@ -24,12 +24,27 @@
 
 namespace zynqaie {
 
+XAie_InstDeclare(DevInst, &ConfigPtr);   // Declare global device instance
+
 Aie::Aie(std::shared_ptr<xrt_core::device> device)
 {
     /* TODO where are these number from */
     numRows = 8;
     numCols = 50;
     aieAddrArrayOff = 0x800;
+
+    printf("__larry_libxrt: in %s\n", __func__);
+    XAie_SetupConfig(ConfigPtr, HW_GEN, XAIE_BASE_ADDR, XAIE_COL_SHIFT,
+                       XAIE_ROW_SHIFT, XAIE_NUM_COLS, XAIE_NUM_ROWS,
+                       XAIE_SHIM_ROW, XAIE_MEM_TILE_ROW_START,
+                       XAIE_MEM_TILE_NUM_ROWS, XAIE_AIE_TILE_ROW_START,
+                       XAIE_AIE_TILE_NUM_ROWS);
+
+
+    AieRC rc;
+    if ((rc = XAie_CfgInitialize(&DevInst, &ConfigPtr)) != XAIE_OK)
+        throw xrt_core::error(-EINVAL, "Failed to initialize AIE configuration: " + rc);
+    devInst = DevInst;
 
     XAIEGBL_HWCFG_SET_CONFIG((&aieConfig), numRows, numCols, aieAddrArrayOff);
     XAieGbl_HwInit(&aieConfig);
@@ -98,6 +113,11 @@ Aie::Aie(std::shared_ptr<xrt_core::device> device)
 
 Aie::~Aie()
 {
+}
+
+XAie_DevInst* Aie::getDevInst()
+{
+    return &devInst;
 }
 
 int Aie::getTilePos(int col, int row)
