@@ -32,6 +32,7 @@ endif()
 add_library(xrt_core_static STATIC ${XRT_EDGE_USER_FILES}
   $<TARGET_OBJECTS:core_edgeuser_plugin_xdp_no_dl_load_objects>
   $<TARGET_OBJECTS:core_edge_common_objects>
+  $<TARGET_OBJECTS:core_edge_user_aie_object>
   $<TARGET_OBJECTS:core_common_objects>
   )
 

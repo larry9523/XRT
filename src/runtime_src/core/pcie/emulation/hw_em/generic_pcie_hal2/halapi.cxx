@@ -518,4 +518,3 @@ int xclRegRead(xclDeviceHandle handle, uint32_t cu_index, uint32_t offset, uint3
   xclhwemhal2::HwEmShim *drv = xclhwemhal2::HwEmShim::handleCheck(handle);
   return drv ? drv->xclRegRead(cu_index, offset, datap) : -ENODEV;
 }
-

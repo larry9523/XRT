@@ -762,9 +762,10 @@ xrtResetAieArray(xclDeviceHandle handle)
 ////////////////////////////////////////////////////////////////
 // xrt_aie API implementations (xrt_aie.h)
 ////////////////////////////////////////////////////////////////
-xrtGraphHandle
-xrtGraphOpen(xclDeviceHandle handle, const uuid_t xclbin_uuid, const char* graph)
+xclGraphHandle
+xclGraphOpen(xclDeviceHandle handle, const uuid_t xclbin_uuid, const char* graph)
 {
+  printf("__larry_core: enter %s\n", __func__);
   try {
     return api::xrtGraphOpen(handle, xclbin_uuid, graph);
   }

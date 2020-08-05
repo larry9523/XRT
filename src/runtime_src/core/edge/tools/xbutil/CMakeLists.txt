@@ -19,6 +19,8 @@ target_link_libraries(xbutil
   rt
   uuid
   ${CURSES_LIBRARIES}
+  metal
+  xaiengine
   )
 
 install (TARGETS xbutil RUNTIME DESTINATION ${XRT_INSTALL_DIR}/bin)

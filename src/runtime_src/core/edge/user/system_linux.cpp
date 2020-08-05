@@ -118,6 +118,7 @@ std::shared_ptr<device>
 system_linux::
 get_userpf_device(device::handle_type handle, device::id_type id) const
 {
+  printf("__larry_xrt: 3 in %s\n", __func__);
   // deliberately not using std::make_shared (used with weak_ptr)
   return std::shared_ptr<device_linux>(new device_linux(handle, id, true));
 }  

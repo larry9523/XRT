@@ -643,3 +643,8 @@ int xclGetSubdevPath(xclDeviceHandle handle,  const char* subdev,
 {
   return 0;
 }
+
+void* xclGraphOpen(xclDeviceHandle handle, const uuid_t xclbin_uuid, const char* graph)
+{
+  return nullptr;
+}

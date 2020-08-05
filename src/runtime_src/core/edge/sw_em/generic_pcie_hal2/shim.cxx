@@ -1858,6 +1858,13 @@ int CpuemShim::xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex) cons
   return 0;
 }
 
+#if 0
+void* CpuemShim::xclGraphOpen(const uuid_t xclbin_uuid, const char* graph)
+{
+  return nullptr;
+}
+#endif
+
 /********************************************** QDMA APIs IMPLEMENTATION END**********************************************/
 /**********************************************HAL2 API's END HERE **********************************************/
 }

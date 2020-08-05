@@ -105,6 +105,7 @@ get_userpf_device(device::id_type id)
 std::shared_ptr<device>
 get_userpf_device(device::handle_type handle)
 {
+  printf("__larry_coreutil: 2 in %s\n", __func__);
   // Look up core device from low level shim handle
   // The handle is inserted into map as part of
   // calling xclOpen

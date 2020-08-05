@@ -156,6 +156,7 @@ namespace xclcpuemhal2 {
       int xclExecWait(int timeoutMilliSec);
       int xclExecBuf(unsigned int cmdBO);
       int xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex) const;
+      // void* xclGraphOpen(const uuid_t xclbin_uuid, const char*  graph);
 
       bool isImported(unsigned int _bo)
       {

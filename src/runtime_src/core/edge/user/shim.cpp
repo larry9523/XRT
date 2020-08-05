@@ -91,6 +91,7 @@ shim(unsigned index, const char *logfileName, xclVerbosityLevel verbosity)
   , mKernelClockFreq(100)
   , mCuMaps(128, nullptr)
 {
+  printf("__larry_xrt: 4 in %s\n", __func__);
   if (logfileName != nullptr)
     xclLog(XRT_WARNING, "XRT", "%s: logfileName is no longer supported", __func__);
 
@@ -1367,7 +1368,6 @@ setAieArray(zynqaie::Aie *aie)
 {
   aieArray = aie;
 }
-
 #endif
 
 } // end namespace ZYNQ

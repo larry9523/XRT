@@ -20,6 +20,7 @@
 #include "xrt.h"
 #include "experimental/xrt-next.h"
 #include "error.h"
+#include "../common/xrt_graph.h"
 #include <stdexcept>
 
 namespace xrt_core {
@@ -90,6 +91,9 @@ struct ishim
 
   virtual void
   load_xclbin(const struct axlf*) = 0;
+
+  virtual xclGraphHandle
+  open_graph(const uuid_t, const char*) = 0;
 };
 
 template <typename DeviceType>
@@ -249,6 +253,15 @@ struct shim : public DeviceType
   {
     if (auto ret = xclLoadXclBin(DeviceType::get_device_handle(), buffer))
       throw error(ret, "failed to load xclbin");
+  }
+
+  virtual xclGraphHandle
+  open_graph(const uuid_t uuid, const char *gname)
+  {
+    if (auto ghdl = xclGraphOpen(DeviceType::get_device_handle(), uuid, gname))
+      return ghdl;
+
+    throw (1, "failed to open graph");
   }
 };
 

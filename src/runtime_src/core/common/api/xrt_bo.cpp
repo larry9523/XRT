@@ -384,6 +384,8 @@ alloc_bo(xclDeviceHandle dhdl, void* userptr, size_t sz, xrtBufferFlags flags, x
 static xclBufferHandle
 alloc_bo(xclDeviceHandle dhdl, size_t sz, xrtBufferFlags flags, xrtMemoryGroup grp)
 {
+  printf("__larry_coreutil: 1 in %s\n", __func__);
+
   auto device = xrt_core::get_userpf_device(dhdl);
   flags = (flags & ~XRT_BO_FLAGS_MEMIDX_MASK) | grp;
   return device->alloc_bo(sz, flags);
