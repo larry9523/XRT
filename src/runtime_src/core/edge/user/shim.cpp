@@ -1369,6 +1369,16 @@ setAieArray(zynqaie::Aie *aie)
 }
 
 int
+shim::getPartitionFd(drm_zocl_aie_fd &aiefd)
+{
+  int ret = ioctl(mKernelFD, DRM_IOCTL_ZOCL_AIE_FD, &aiefd);
+  if (ret)
+    return -errno;
+
+  return 0;
+}
+
+int
 shim::getBOInfo(unsigned bo, drm_zocl_info_bo &info)
 {
   int ret = ioctl(mKernelFD, DRM_IOCTL_ZOCL_INFO_BO, &info);

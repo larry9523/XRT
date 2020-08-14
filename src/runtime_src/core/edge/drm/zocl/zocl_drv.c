@@ -732,6 +732,8 @@ static const struct drm_ioctl_desc zocl_ioctls[] = {
 			DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(ZOCL_CTX, zocl_ctx_ioctl,
 			DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(ZOCL_AIE_FD, zocl_aie_fd_ioctl,
+			DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
 };
 
 static const struct file_operations zocl_driver_fops = {
@@ -920,6 +922,8 @@ static int zocl_drm_platform_probe(struct platform_device *pdev)
 	drm->dev_private = zdev;
 	zdev->ddev       = drm;
 
+	mutex_init(&zdev->aie_lock);
+
 	/* Initial sysfs */
 	rwlock_init(&zdev->attr_rwlock);
 	ret = zocl_init_sysfs(drm->dev);
@@ -973,6 +977,8 @@ static int zocl_drm_platform_remove(struct platform_device *pdev)
 	if (kds_mode == 0)
 		sched_fini_exec(drm);
 
+	zocl_destroy_aie(zdev);
+	mutex_destroy(&zdev->aie_lock);
 	zocl_clear_mem(zdev);
 	mutex_destroy(&zdev->mm_lock);
 	zocl_free_sections(zdev);

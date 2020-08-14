@@ -115,6 +115,8 @@ enum drm_zocl_ops {
 	DRM_ZOCL_INFO_CU,
 	/* Open/Close context */
 	DRM_ZOCL_CTX,
+	/* Request/Release AIE partition */
+	DRM_ZOCL_AIE_FD,
 	DRM_ZOCL_NUM_IOCTLS
 };
 
@@ -290,6 +292,12 @@ struct drm_zocl_ctx {
 	enum drm_zocl_ctx_code op;
 };
 
+struct drm_zocl_aie_fd {
+	uint32_t partition_id;
+	uint32_t uid;
+	int fd;
+};
+
 /**
  * Opcodes for the embedded scheduler provided by the client to the driver
  */
@@ -431,4 +439,6 @@ struct drm_zocl_sk_report {
                                        DRM_ZOCL_INFO_CU, struct drm_zocl_info_cu)
 #define DRM_IOCTL_ZOCL_CTX             DRM_IOWR(DRM_COMMAND_BASE + \
                                        DRM_ZOCL_CTX, struct drm_zocl_ctx)
+#define DRM_IOCTL_ZOCL_AIE_FD          DRM_IOWR(DRM_COMMAND_BASE + \
+                                       DRM_ZOCL_AIE_FD, struct drm_zocl_aie_fd)
 #endif

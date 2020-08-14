@@ -128,3 +128,14 @@ zocl_execbuf_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
 
 	return ret;
 }
+
+int
+zocl_aie_fd_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
+{
+	struct drm_zocl_aie *args = data;
+	struct drm_zocl_dev *zdev = ZOCL_GET_ZDEV(dev);
+	int ret = 0;
+
+	ret = zocl_aie_request_part_fd(zdev, args);
+	return ret;
+}

@@ -41,7 +41,6 @@ typedef uint64_t                u64;
 
 
 #define XAIEGBL_NOC_DMASTA_STA_IDLE             0x0U
-#define XAIEGBL_NOC_DMASTA_STARTQ_MAX           0x4U
 
 #define XAIE_NPI_ISR                                    (0x30U)
 

@@ -123,7 +123,7 @@ private:
     std::vector<rtp_type> rtps;
 
     /* Wait for all the BD trasters for a given channel */
-    void wait_sync_bo(ShimDMA *dmap, uint32_t chan, uint32_t timeout);
+    void wait_sync_bo(ShimDMA *dmap, uint32_t chan, XAie_LocType& tile, XAie_DmaDirection gmdir, uint32_t timeout);
 };
 
 }

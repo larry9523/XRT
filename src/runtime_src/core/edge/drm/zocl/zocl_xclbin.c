@@ -635,6 +635,10 @@ zocl_xclbin_read_axlf(struct drm_zocl_dev *zdev, struct drm_zocl_axlf *axlf_obj)
 	zocl_clear_mem(zdev);
 	zocl_init_mem(zdev, zdev->topology);
 
+	/* Creating AIE Partition */
+	zocl_destroy_aie(zdev);
+	zocl_create_aie(zdev, axlf);
+
 	/*
 	 * Remember xclbin_uuid for opencontext.
 	 */

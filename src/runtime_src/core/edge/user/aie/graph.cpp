@@ -561,7 +561,6 @@ read_rtp(const char* port, char* buffer, size_t size)
         update_lock = XAie_LockInit(lock_id, (rtp->is_async ? REL_READ : REL_WRITE));
         AieRC rc = XAie_LockRelease(aieArray->getDevInst(), update_tile, update_lock, LOCK_TIMEOUT);
         if (rc != XAIE_OK) {
-            printf("__larry_libxrt: in %s check point 4\n", __func__);
             throw xrt_core::error(-EIO, "Can't read graph '" + name + "': release lock for RTP '" + port + "' failed or timeout");
         }
     }
@@ -575,16 +574,17 @@ sync_bo(unsigned bo, const char *dmaID, enum xclBOSyncDirection dir, size_t size
   drm_zocl_info_bo info;
 
   auto gmio = std::find_if(aieArray->gmios.begin(), aieArray->gmios.end(),
-            [dmaID](gmio_type it) { return it.id.compare(dmaID) == 0; });
+            [dmaID](gmio_type it) { return it.name.compare(dmaID) == 0; });
 
-  if (gmio != aieArray->gmios.end())
+  if (gmio == aieArray->gmios.end())
       throw xrt_core::error(-EINVAL, "Can't sync BO: DMA ID not found");
 
   auto drv = ZYNQ::shim::handleCheck(device->get_device_handle());
+  info.handle = bo;
   ret = drv->getBOInfo(bo, info);
   if (ret)
     throw xrt_core::error(ret, "Sync AIE Bo fails: can not get BO info.");
- 
+
   if (size & XAIEDMA_SHIM_TXFER_LEN32_MASK != 0)
     throw xrt_core::error(-EINVAL, "Sync AIE Bo fails: size is not 32 bits aligned.");
 
@@ -597,10 +597,14 @@ sync_bo(unsigned bo, const char *dmaID, enum xclBOSyncDirection dir, size_t size
 
   ShimDMA *dmap = &aieArray->shim_dma.at(gmio->shim_col);
   auto chan = gmio->channel_number;
+  auto shim_tile = XAie_TileLoc(gmio->shim_col, 0);
+  XAie_DmaDirection gmdir = gmio->type == 0 ? DMA_MM2S : DMA_S2MM;
+  uint32_t pchan = CONVERT_LCHANL_TO_PCHANL(chan);
 
   /* Find a free BD. Busy wait until we get one. */
   while (dmap->dma_chan[chan].idle_bds.empty()) {
-    uint8_t npend = XAieDma_ShimPendingBdCount(&(dmap->handle), chan);
+    uint8_t npend;
+    XAie_DmaGetPendingBdCount(aieArray->getDevInst(), shim_tile, pchan, gmdir, &npend);
     int num_comp = XAIEGBL_NOC_DMASTA_STARTQ_MAX - npend;
 
     /* Pending BD is completed by order per Shim DMA spec. */
@@ -613,33 +617,34 @@ sync_bo(unsigned bo, const char *dmaID, enum xclBOSyncDirection dir, size_t size
 
   BD bd = dmap->dma_chan[chan].idle_bds.front();
   dmap->dma_chan[chan].idle_bds.pop();
-  bd.addr_high = get_bd_high_addr(paddr);
-  bd.addr_low = get_bd_low_addr(paddr);
-
-  XAieDma_ShimBdSetAddr(&(dmap->handle), bd.bd_num, bd.addr_high, bd.addr_low, size);
+  XAie_DmaSetAddrLen(&(dmap->desc), paddr, size);
 
   /* Set BD lock */
-  XAieDma_ShimBdSetLock(&(dmap->handle), bd.bd_num, bd.bd_num, 1, XAIEDMA_SHIM_LKACQRELVAL_INVALID, 1, XAIEDMA_SHIM_LKACQRELVAL_INVALID);
+  auto acq_lock = XAie_LockInit(bd.bd_num, XAIE_LOCK_WITH_NO_VALUE);
+  auto rel_lock = XAie_LockInit(bd.bd_num, XAIE_LOCK_WITH_NO_VALUE);
+  XAie_DmaSetLock(&(dmap->desc), acq_lock, rel_lock);
+
+  XAie_DmaEnableBd(&(dmap->desc));
 
   /* Write BD */
-  XAieDma_ShimBdWrite(&(dmap->handle), bd.bd_num);
+  XAie_DmaWriteBd(aieArray->getDevInst(), &(dmap->desc), shim_tile, bd.bd_num);
 
   /* Enqueue BD */
-  XAieDma_ShimSetStartBd((&(dmap->handle)), chan, bd.bd_num);
+  XAie_DmaChannelPushBdToQueue(aieArray->getDevInst(), shim_tile, pchan, gmdir, bd.bd_num);
   dmap->dma_chan[chan].pend_bds.push(bd);
 
   /*
    * Wait for transfer to be completed
    * TODO Set a timeout value when we have error handling/reset
    */
-  wait_sync_bo(dmap, chan, 0);
+  wait_sync_bo(dmap, chan, shim_tile, gmdir, 0);
 }
 
 void
 graph_type::
-wait_sync_bo(ShimDMA *dmap, uint32_t chan, uint32_t timeout)
+wait_sync_bo(ShimDMA *dmap, uint32_t chan, XAie_LocType& tile, XAie_DmaDirection gmdir, uint32_t timeout)
 {
-  while ((XAieDma_ShimWaitDone(&(dmap->handle), chan, timeout) != XAIEGBL_NOC_DMASTA_STA_IDLE));
+  while (XAie_DmaWaitForDone(aieArray->getDevInst(), tile, CONVERT_LCHANL_TO_PCHANL(chan), gmdir, timeout) != XAIE_OK);
 
   while (!dmap->dma_chan[chan].pend_bds.empty()) {
     BD bd = dmap->dma_chan[chan].pend_bds.front();

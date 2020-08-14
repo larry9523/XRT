@@ -44,6 +44,9 @@ extern "C" {
 #define XAIE_AIE_TILE_ROW_START  1
 #define XAIE_AIE_TILE_NUM_ROWS   8
 
+#define XAIEGBL_NOC_DMASTA_STARTQ_MAX 4
+#define CONVERT_LCHANL_TO_PCHANL(l_ch) (l_ch > 1 ? l_ch - 2 : l_ch)
+
 namespace zynqaie {
 
 struct BD {
@@ -58,6 +61,7 @@ struct DMAChannel {
 };
 
 struct ShimDMA {
+    XAie_DmaDesc desc;
     XAieDma_Shim handle;
     DMAChannel dma_chan[XAIEDMA_SHIM_MAX_NUM_CHANNELS];
     bool configured;
@@ -89,6 +93,7 @@ public:
 private:
     int numRows;
     int numCols;
+    int fd;
     uint64_t aieAddrArrayOff;
 
     XAie_DevInst devInst;         // AIE Device Instance

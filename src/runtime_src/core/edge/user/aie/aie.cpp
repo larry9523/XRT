@@ -18,6 +18,7 @@
 
 #include "aie.h"
 #include "core/common/error.h"
+#include "core/edge/user/shim.h"
 
 #include <iostream>
 #include <cerrno>
@@ -33,32 +34,31 @@ Aie::Aie(std::shared_ptr<xrt_core::device> device)
     numCols = 50;
     aieAddrArrayOff = 0x800;
 
-    printf("__larry_libxrt: in %s\n", __func__);
+#if 0
+    auto drv = ZYNQ::shim::handleCheck(device->get_device_handle());
+
+    /* TODO get partition id and uid from XCLBIN or PDI */
+    uint32_t partition_id = 1;
+    uint32_t uid = 0;
+    drm_zocl_aie_fd aiefd = { partition_id, uid, 0 };
+    int ret = drv->getPartitionFd(aiefd);
+    if (ret)
+        throw xrt_core::error(ret, "Create AIE failed. Can not get AIE fd");
+    fd = aiefd.fd;
+#endif
+
     XAie_SetupConfig(ConfigPtr, HW_GEN, XAIE_BASE_ADDR, XAIE_COL_SHIFT,
                        XAIE_ROW_SHIFT, XAIE_NUM_COLS, XAIE_NUM_ROWS,
                        XAIE_SHIM_ROW, XAIE_MEM_TILE_ROW_START,
                        XAIE_MEM_TILE_NUM_ROWS, XAIE_AIE_TILE_ROW_START,
                        XAIE_AIE_TILE_NUM_ROWS);
 
+    // ConfigPtr.PartProp.Handle = fd;
 
     AieRC rc;
     if ((rc = XAie_CfgInitialize(&DevInst, &ConfigPtr)) != XAIE_OK)
-        throw xrt_core::error(-EINVAL, "Failed to initialize AIE configuration: " + rc);
+        throw xrt_core::error(-EINVAL, "Failed to initialize AIE configuration: " + std::to_string(rc));
     devInst = DevInst;
-
-    XAIEGBL_HWCFG_SET_CONFIG((&aieConfig), numRows, numCols, aieAddrArrayOff);
-    XAieGbl_HwInit(&aieConfig);
-    aieConfigPtr = XAieGbl_LookupConfig(XPAR_AIE_DEVICE_ID);
-
-    int tileArraySize = numCols * (numRows + 1);
-    tileArray.resize(tileArraySize);
-
-    /*
-     * Initialize AIE tile array.
-     *
-     * TODO is void good here?
-     */
-    (void) XAieGbl_CfgInitialize(&aieInst, tileArray.data(), aieConfigPtr);
 
     /* Initialize graph GMIO metadata */
     for (auto& gmio : xrt_core::edge::aie::get_gmios(device.get()))
@@ -70,15 +70,21 @@ Aie::Aie(std::shared_ptr<xrt_core::device> device)
      */
     shim_dma.resize(numCols);
     for (auto& gmio : gmios) {
-        auto dma = shim_dma.at(gmio.shim_col);
-        auto pos = getTilePos(gmio.shim_col, 0);
-        if (!dma.configured) {
-            XAieDma_ShimSoftInitialize(&(tileArray.at(pos)), &(dma.handle));
-            XAieDma_ShimBdClearAll(&(dma.handle));
-            dma.configured = true;
+        auto dma = &shim_dma.at(gmio.shim_col);
+        XAie_LocType shimTile = XAie_TileLoc(gmio.shim_col, 0);
+
+        if (!dma->configured) {
+    	    XAie_DmaDescInit(&devInst, &(dma->desc), shimTile);
+            dma->configured = true;
         }
 
         auto chan = gmio.channel_number;
+
+        /* type 0: GM->AIE; type 1: AIE->GM */
+        XAie_DmaDirection dir = gmio.type == 0 ? DMA_MM2S : DMA_S2MM;
+        uint8_t pch = CONVERT_LCHANL_TO_PCHANL(chan);
+        XAie_DmaChannelEnable(&devInst, shimTile, pch, dir);
+
         XAieDma_ShimChControl((&(dma.handle)), chan, XAIE_DISABLE, XAIE_DISABLE, XAIE_ENABLE);
         for (int i = 0; i < XAIEGBL_NOC_DMASTA_STARTQ_MAX; ++i) {
             /*
@@ -89,11 +95,12 @@ Aie::Aie(std::shared_ptr<xrt_core::device> device)
              * Channel3: BD12~BD15
              */
             int bd_num = chan * XAIEGBL_NOC_DMASTA_STARTQ_MAX + i;
+            /* TODO use BD constructor */
             BD bd;
             bd.bd_num = bd_num;
-            dma.dma_chan[chan].idle_bds.push(bd);
+            dma->dma_chan[chan].idle_bds.push(bd);
 
-            XAieDma_ShimBdSetAxi(&(dma.handle), bd_num, 0, gmio.burst_len, 0, 0, 0);
+            XAie_DmaSetAxi(&(dma->desc), 0, gmio.burst_len, 0, 0, 0);
         }
     }
 
@@ -113,6 +120,8 @@ Aie::Aie(std::shared_ptr<xrt_core::device> device)
 
 Aie::~Aie()
 {
+    printf("__larry_core: enter %s\n", __func__);
+    close(fd);
 }
 
 XAie_DevInst* Aie::getDevInst()
