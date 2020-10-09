@@ -18,11 +18,11 @@
 
 #include "aie.h"
 #include "core/common/error.h"
+#include "aie_event.h"
 #ifndef __AIESIM__
 #include "core/common/message.h"
 #include "core/edge/user/shim.h"
 #include "xaiengine/xlnx-ai-engine.h"
-#include "aie_event.h"
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #endif

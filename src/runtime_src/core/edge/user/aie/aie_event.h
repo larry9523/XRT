@@ -20,6 +20,7 @@
 #define xrt_core_edge_user_aie_event_h
 
 #include "AIEResources.h"
+#include <map>
 
 XAie_Events XAIETILE_EVENT_SHIM_PORT_RUNNING[] = {
   XAIE_EVENT_PORT_RUNNING_0_PL,
