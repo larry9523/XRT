@@ -181,7 +181,7 @@ static ssize_t xfer_versal_transfer(struct xfer_versal *xv, const char *data,
 
 	pkt_size = xv->xv_data_size;
 
-	XV_INFO(xv, "start writting data_len: %lu", data_len);
+	XV_INFO(xv, "start writing data_len: %lu", data_len);
 
 	while (len < data_len) {
 		tran_size = (remain > pkt_size) ? pkt_size : remain;
@@ -320,6 +320,8 @@ static int xfer_versal_download_axlf(struct platform_device *pdev,
 	u8 pkt_flags, pkt_ver;
 	int ret;
 
+	printk("__larry_xfer__: enter %s: xclbin_len is %lld\n", __func__, xclbin_len);
+
 	mutex_lock(&xv->xv_lock);
 	if (xv->xv_inuse) {
 		mutex_unlock(&xv->xv_lock);
@@ -403,6 +405,7 @@ static int xfer_versal_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret = 0;
 
+	printk("__larry_xfer__: enter %s\n", __func__);
 	xv = xocl_drvinst_alloc(&pdev->dev, sizeof(struct xfer_versal));
 	if (!xv)
 		return -ENOMEM;
@@ -416,6 +419,9 @@ static int xfer_versal_probe(struct platform_device *pdev)
 		XV_ERR(xv, "failed to get resource");
 		return ret;
 	}
+
+	printk("__larry_xfer__: in %s: start is %llx, end is %llx\n",
+	    __func__, res->start, res->end);
 
 	xv->xv_base = ioremap_nocache(res->start, res->end - res->start + 1);
 	if (!xv->xv_base) {

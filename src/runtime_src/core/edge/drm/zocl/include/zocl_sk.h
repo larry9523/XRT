@@ -46,6 +46,13 @@ struct soft_cu {
 	uint32_t		sc_parent_pid;
 };
 
+struct scu_image {
+	uint32_t		si_start;	/* start instance # */
+	uint32_t		si_end;		/* end instance # */
+	int			si_bohdl;	/* BO handle */
+	struct drm_zocl_bo	*si_bo;		/* BO to hold the image */
+};
+
 struct soft_krnl {
 	struct list_head	sk_cmd_list;
 	struct mutex		sk_lock;
@@ -57,12 +64,15 @@ struct soft_krnl {
 	 */
 	uint32_t		sk_ncus;
 
+	uint32_t		sk_nimg;
+	struct scu_image	*sk_img;
 	wait_queue_head_t	sk_wait_queue;
 };
 
 struct soft_krnl_cmd {
 	struct list_head	skc_list;
-	struct ert_packet	*skc_packet;
+	uint32_t		skc_opcode;
+	struct config_sk_image	*skc_packet;
 };
 
 int zocl_init_soft_kernel(struct drm_device *drm);

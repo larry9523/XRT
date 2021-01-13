@@ -1841,6 +1841,24 @@ struct xocl_subdev_map {
 		.override_idx = -1,			\
 	}
 
+#define	XOCL_RES_XFER_MPSOC			\
+		((struct resource []) {			\
+			{				\
+			.start	= 0x300000,		\
+			.end	= 0x30FFFF,		\
+			.flags	= IORESOURCE_MEM,	\
+			}				\
+		})
+
+#define	XOCL_DEVINFO_XFER_MPSOC				\
+	{						\
+		XOCL_SUBDEV_XFER_VERSAL,		\
+		XOCL_XFER_VERSAL,			\
+		XOCL_RES_XFER_MPSOC,		\
+		ARRAY_SIZE(XOCL_RES_XFER_MPSOC),	\
+		.override_idx = -1,			\
+	}
+
 #define XOCL_RES_FLASH					\
 	((struct resource []) {				\
 		{					\
@@ -1910,7 +1928,7 @@ struct xocl_subdev_map {
 			XOCL_DEVINFO_PF_MAILBOX_USER_VERSAL,		\
 			XOCL_DEVINFO_MAILBOX_USER_VERSAL,		\
 		 	XOCL_DEVINFO_ICAP_USER,				\
-			XOCL_DEVINFO_INTC_VERSAL,				\
+			XOCL_DEVINFO_INTC_VERSAL,			\
 		})
 
 #define USER_RES_AWS							\
@@ -2651,12 +2669,20 @@ struct xocl_subdev_map {
                 .subdev_num = ARRAY_SIZE(RES_USER_VSEC),                \
         }
 
+#define RES_MGMT_VSEC_U30_LARRY						\
+	((struct xocl_subdev_info []) {					\
+	 	XOCL_DEVINFO_FEATURE_ROM_MGMT_DYN,			\
+		XOCL_DEVINFO_FMGR,					\
+		XOCL_DEVINFO_CALIB_STORAGE,				\
+	 	XOCL_DEVINFO_XFER_MPSOC,				\
+	 })
+
 #define XOCL_BOARD_U30_MGMT_RAPTOR2                                     \
         (struct xocl_board_private){                                    \
                 .flags = XOCL_DSAFLAG_DYNAMIC_IP |                      \
 		        XOCL_DSAFLAG_MPSOC,				\
-                .subdev_info    = RES_MGMT_VSEC,                        \
-                .subdev_num = ARRAY_SIZE(RES_MGMT_VSEC),                \
+                .subdev_info    = RES_MGMT_VSEC_U30_LARRY,              \
+                .subdev_num = ARRAY_SIZE(RES_MGMT_VSEC_U30_LARRY),	\
                 .flash_type = FLASH_TYPE_QSPIPS_X2_SINGLE,              \
                 .board_name = "u30"                                     \
         }

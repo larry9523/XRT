@@ -358,8 +358,10 @@ xclMapBO(unsigned int boHandle, bool write)
   drm_zocl_info_bo info = { boHandle, 0, 0 };
   int result = ioctl(mKernelFD, DRM_IOCTL_ZOCL_INFO_BO, &info);
 
+  printf("__larry_core: in %s: INFO result is %d\n", __func__, result);
   drm_zocl_map_bo mapInfo = { boHandle, 0, 0 };
   result = ioctl(mKernelFD, DRM_IOCTL_ZOCL_MAP_BO, &mapInfo);
+  printf("__larry_core: in %s: MAP result is %d\n", __func__, result);
   if (result) {
     xclLog(XRT_ERROR, "XRT", "%s: ZOCL_MAP_BO ioctl return %d", __func__, result);
     return NULL;
@@ -369,6 +371,7 @@ xclMapBO(unsigned int boHandle, bool write)
                    MAP_SHARED, mKernelFD, mapInfo.offset);
 
   xclLog(XRT_INFO, "XRT", "%s: mmap return %p", __func__, ptr);
+  printf("__larry_core: in %s: mmap return %p\n", __func__, ptr);
 
   return ptr;
 }
@@ -743,7 +746,6 @@ xclGetWriteMaxBandwidthMBps()
   return 9600.0;
 }
 
-
 int
 shim::
 xclSKGetCmd(xclSKCmd *cmd)
@@ -752,15 +754,15 @@ xclSKGetCmd(xclSKCmd *cmd)
   drm_zocl_sk_getcmd scmd;
 
   ret = ioctl(mKernelFD, DRM_IOCTL_ZOCL_SK_GETCMD, &scmd);
-
   if (!ret) {
     cmd->opcode = scmd.opcode;
     cmd->start_cuidx = scmd.start_cuidx;
     cmd->cu_nums = scmd.cu_nums;
-    cmd->xclbin_paddr = scmd.paddr;
-    cmd->xclbin_size = scmd.size;
+    cmd->bohdl = scmd.bohdl;
     snprintf(cmd->krnl_name, ZOCL_MAX_NAME_LENGTH, "%s", scmd.name);
   }
+
+  printf("__larry_libxrt: in %s: ret is %d, sbohdl is %d, cbohdl is %d\n", __func__, ret, scmd.bohdl, cmd->bohdl);
 
   return ret ? -errno : ret;
 }
@@ -1653,6 +1655,8 @@ xclMapBO(xclDeviceHandle handle, unsigned int boHandle, bool write)
 #endif
 
   //std::cout << "xclMapBO called" << std::endl;
+  printf("__larry_core: xclMapBO called\n");
+
   ZYNQ::shim *drv = ZYNQ::shim::handleCheck(handle);
   if (!drv)
     return NULL;

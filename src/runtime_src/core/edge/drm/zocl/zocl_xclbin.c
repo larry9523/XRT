@@ -15,6 +15,7 @@
 #include "sched_exec.h"
 #include "zocl_xclbin.h"
 #include "zocl_aie.h"
+#include "zocl_sk.h"
 #include "xrt_xclbin.h"
 #include "xclbin.h"
 
@@ -127,6 +128,78 @@ zocl_load_bitstream(struct drm_zocl_dev *zdev, char *buffer, int length)
 		/* 0 is for full bitstream */
 		return zocl_fpga_mgr_load(zdev, buffer, length, 0);
 	}
+}
+
+static int
+zocl_load_softkernel(struct drm_zocl_dev *zdev, struct axlf *axlf)
+{
+	struct axlf_section_header *header = NULL;
+	char *xclbin = (char *)axlf;
+	struct soft_krnl *sk = zdev->soft_kernel;
+	int count, sec_idx = 0, scu_idx = 0;
+	int i, ret;
+
+	printk("__larry_zocl__: enter %s\n", __func__);
+
+	if (!sk) {
+		DRM_ERROR("%s Failed: no softkernel support\n", __func__);
+		return -ENODEV;
+	}
+
+	mutex_lock(&sk->sk_lock);
+	for (i = 0; i < sk->sk_nimg; i++)
+		ZOCL_DRM_GEM_OBJECT_PUT_UNLOCKED(&sk->sk_img[i].si_bo->gem_base);
+	kfree(sk->sk_img);
+	sk->sk_nimg = 0;
+	sk->sk_img = NULL;
+	mutex_unlock(&sk->sk_lock);
+
+	count = xrt_xclbin_get_section_num(axlf, SOFT_KERNEL);
+	if (count == 0)
+		return 0;
+
+	mutex_lock(&sk->sk_lock);
+
+	sk->sk_nimg = count;
+	sk->sk_img = kzalloc(sizeof(struct scu_image) * count, GFP_KERNEL);
+
+	header = xrt_xclbin_get_section_hdr_next(axlf, SOFT_KERNEL, header);
+	while (header) {
+		struct soft_kernel *sp =
+		    (struct soft_kernel *)&xclbin[header->m_sectionOffset];
+		char *begin = (char *)sp;
+		struct scu_image *sip = &sk->sk_img[sec_idx++];
+
+		printk("__larry_zocl__: in %s: softkernel name is %s\n", __func__, begin + sp->mpo_name);
+
+		sip->si_start = scu_idx;
+		sip->si_end = scu_idx + sp->m_num_instances - 1;
+		printk("__larry_zocl__: in %s: si_end[%d] is %d\n", __func__, sec_idx - 1, sip->si_end);
+
+		sip->si_bo = zocl_drm_create_bo(zdev->ddev, sp->m_image_size,
+		    ZOCL_BO_FLAGS_CMA);
+		printk("__larry_zocl__: in %s: bo is %p\n", __func__, sip->si_bo);
+		if (IS_ERR(sip->si_bo)) {
+			ret = PTR_ERR(sip->si_bo);
+			DRM_ERROR("%s Failed to allocate BO: %d\n",
+			    __func__, ret);
+			return ret;
+		}
+		printk("__larry_zocl__: in %s: allocated BO for scu %d\n", __func__, scu_idx);
+		sip->si_bo->flags = ZOCL_BO_FLAGS_CMA;
+		sip->si_bohdl = -1;
+		memcpy(sip->si_bo->cma_base.vaddr, begin + sp->m_image_offset,
+		    sp->m_image_size);
+
+		scu_idx += sp->m_num_instances;
+
+		header = xrt_xclbin_get_section_hdr_next(axlf, SOFT_KERNEL,
+		    header);
+	}
+
+	mutex_unlock(&sk->sk_lock);
+
+	return 0;
 }
 
 static int
@@ -369,6 +442,8 @@ zocl_xclbin_load_pdi(struct drm_zocl_dev *zdev, void *data)
 	uint64_t size = 0;
 	int ret = 0;
 
+	printk("__larry_zocl__: enter %s\n", __func__);
+
 	if (memcmp(axlf_head->m_magic, "xclbin2", 8)) {
 		DRM_INFO("Invalid xclbin magic string");
 		return -EINVAL;
@@ -398,12 +473,16 @@ zocl_xclbin_load_pdi(struct drm_zocl_dev *zdev, void *data)
 
 	size = zocl_offsetof_sect(BITSTREAM_PARTIAL_PDI, &section_buffer,
 	    axlf, xclbin);
+	printk("__larry_zocl__: in %s: size is %lld\n", __func__, size);
 	if (size > 0)
 		ret = zocl_load_partial(zdev, section_buffer, size);
 
 	size = zocl_offsetof_sect(PDI, &section_buffer, axlf, xclbin);
 	if (size > 0)
 		ret = zocl_load_partial(zdev, section_buffer, size);
+	printk("__larry_zocl__: in %s: size is %lld\n", __func__, size);
+
+	ret = zocl_load_softkernel(zdev, axlf);
 
 	/* preserve uuid, avoid double download */
 	zocl_xclbin_set_uuid(zdev, &axlf_head->m_header.uuid);

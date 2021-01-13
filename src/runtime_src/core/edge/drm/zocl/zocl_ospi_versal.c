@@ -145,6 +145,8 @@ static int zocl_ov_copy_xclbin(struct zocl_ov_dev *ov, struct axlf **xclbin)
 		node = node->zn_next;
 	}
 
+	printk("__larry_zocl__: in %s: len is %ld\n", __func__, len);
+
 	if (len == 0) {
 		ov_err(ov->pdev, "Load xclbin failed: size is 0");
 		return -EINVAL;
@@ -277,6 +279,7 @@ static int zocl_ov_get_xclbin(struct zocl_ov_dev *ov)
 	}
 
 	write_unlock(&ov->att_rwlock);
+	printk("__larry_zocl__: in %s: got xclbin.\n", __func__);
 	ret = zocl_xclbin_load_pdi(pdrv, xclbin);
 	if (ret) {
 		set_status(ov, XRT_XFR_PKT_STATUS_FAIL);
@@ -426,6 +429,8 @@ static int zocl_ov_thread(void *data)
 static const struct of_device_id zocl_ospi_versal_of_match[] = {
 	{ .compatible = "xlnx,ospi_versal",
 	},
+	{ .compatible = "xlnx,mpsoc_ocm",
+	},
 	{ /* end of table */ },
 };
 
@@ -458,6 +463,7 @@ static int zocl_ov_probe(struct platform_device  *pdev)
 
 	ov->base = map;
 	ov->size = res->end - res->start + 1;
+	printk("__larry_zocl__: in %s: ov->size is %ld\n", __func__, ov->size);
 	memset_io(ov->base, 0, ov->size);
 	ov->pdev = pdev;
 

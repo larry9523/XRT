@@ -31,6 +31,6 @@
 #include "xclhal2_mpsoc.h"
 
 xclDeviceHandle initXRTHandle(unsigned deviceIndex);
-void configSoftKernel(xclSKCmd *cmd);
+void configSoftKernel(xclDeviceHandle handle, xclSKCmd *cmd);
 
 #endif

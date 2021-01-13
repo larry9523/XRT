@@ -763,7 +763,9 @@ static void kill_soft_kernel(struct sched_cmd *cmd)
 			continue;
 		}
 
+		ZOCL_DRM_GEM_OBJECT_PUT_UNLOCKED(sk->sk_cu[i]->gem_obj);
 		pid = sk->sk_cu[i]->sc_pid;
+
 		ret = kill_pid(p, SIGKILL, 1);
 		if (ret) {
 			DRM_WARN("failed to kill cu pid %d\n", pid);
@@ -771,7 +773,6 @@ static void kill_soft_kernel(struct sched_cmd *cmd)
 		put_pid(p);
 skip_kill:
 		if (!ret) {
-			ZOCL_DRM_GEM_OBJECT_PUT_UNLOCKED(sk->sk_cu[i]->gem_obj);
 			kfree(sk->sk_cu[i]);
 			sk->sk_cu[i] = NULL;
 		}
@@ -1175,115 +1176,87 @@ configure_soft_kernel(struct sched_cmd *cmd)
 	struct drm_zocl_dev *zdev = cmd->ddev->dev_private;
 	struct soft_krnl *sk = zdev->soft_kernel;
 	struct ert_configure_sk_cmd *cfg;
-	u32 i;
+	u32 i, j;
 	struct soft_krnl_cmd *scmd;
-	int ret;
 
 	SCHED_DEBUG("-> %s", __func__);
 
 	cfg = (struct ert_configure_sk_cmd *)(cmd->packet);
 
-	mutex_lock(&sk->sk_lock);
 	atomic_inc(&cmd->exec->scheduler->num_running);//Else num_running becomes -1 by missing SK_CONFIG command increment
 
-	/* Check if the CU configuration exceeds maximum CU number */
-	if (cfg->start_cuidx + cfg->num_cus > MAX_CU_NUM) {
-		DRM_WARN("Soft kernel CU %d exceed maximum cu number %d.\n",
-		    cfg->start_cuidx + cfg->num_cus, MAX_CU_NUM);
-		mutex_unlock(&sk->sk_lock);
-		return -EINVAL;
-	}
+	printk("__larry_zocl__: in %s: num_image is %d\n", __func__, cfg->num_image);
+	for (i = 0; i < cfg->num_image; i++) {
+		struct config_sk_image *cp = &cfg->image[i];
 
-	/* Check if any CU is configured already */
-	for (i = cfg->start_cuidx; i < cfg->start_cuidx + cfg->num_cus; i++)
-		if (sk->sk_cu[i]) {
-			DRM_WARN("Soft Kernel CU %d is configured already.\n",
-			    i);
-			mutex_unlock(&sk->sk_lock);
-			return -EINVAL;
+		mutex_lock(&sk->sk_lock);
+
+		/* Check if the configurations match the loaded softkernel */
+		for (j = 0; j < sk->sk_nimg; j++) {
+			if (cp->start_cuidx >= sk->sk_img[j].si_start &&
+			    cp->start_cuidx <= sk->sk_img[j].si_end) {
+				if (cp->start_cuidx + cp->num_cus - 1 <=
+				    sk->sk_img[i].si_end)
+					break;
+				else {
+					DRM_WARN("Invalid Soft kernel config.\n");
+					mutex_unlock(&sk->sk_lock);
+					return -EINVAL;
+				}
+			}
+			if (j == sk->sk_nimg) {
+				DRM_WARN("Soft kernel CU deos not exist.\n");
+				mutex_unlock(&sk->sk_lock);
+				return -EINVAL;
+			}
 		}
 
-	sk->sk_ncus += cfg->num_cus;
+		/* Check if any CU is configured already */
+		for (j = cp->start_cuidx; j < cp->start_cuidx + cp->num_cus;
+		    j++) {
+			if (sk->sk_cu[j]) {
+				DRM_WARN("Soft CU %d is configured already.\n",
+				    j);
+				mutex_unlock(&sk->sk_lock);
+				return -EINVAL;
+			}
+		}
 
-	mutex_unlock(&sk->sk_lock);
+		/*
+		 * Fill up a soft kernel command and add to soft
+		 * kernel command list
+		 */
+		scmd = kmalloc(sizeof(struct soft_krnl_cmd), GFP_KERNEL);
+		if (!scmd) {
+			DRM_WARN("Config Soft CU failed: no memory.\n");
+			mutex_unlock(&sk->sk_lock);
+			return -ENOMEM;
+		}
 
-	/* NOTE: any failure after this point needs to resume sk_ncus */
+		scmd->skc_opcode = ERT_SK_CONFIG;
+		scmd->skc_packet = cp;
 
-	/* Fill up a soft kernel command and add to soft kernel command list */
-	scmd = kmalloc(sizeof(struct soft_krnl_cmd), GFP_KERNEL);
-	if (!scmd) {
-		ret = -ENOMEM;
-		goto fail;
+		list_add_tail(&scmd->skc_list, &sk->sk_cmd_list);
+		sk->sk_ncus += cp->num_cus;
+		mutex_unlock(&sk->sk_lock);
+
+		/* start CU by waking up Soft Kernel handler */
+		wake_up_interruptible(&sk->sk_wait_queue);
 	}
-
-	scmd->skc_packet = (struct ert_packet *)cfg;
-
-	mutex_lock(&sk->sk_lock);
-	list_add_tail(&scmd->skc_list, &sk->sk_cmd_list);
-	mutex_unlock(&sk->sk_lock);
-
-	/* start CU by waking up Soft Kernel handler */
-	wake_up_interruptible(&sk->sk_wait_queue);
 
 	SCHED_DEBUG("<- %s\n", __func__);
 
 	return 0;
-
-fail:
-	mutex_lock(&sk->sk_lock);
-	sk->sk_ncus -= cfg->num_cus;
-	mutex_unlock(&sk->sk_lock);
-	return ret;
 }
 
 static int
 unconfigure_soft_kernel(struct sched_cmd *cmd)
 {
-	struct drm_zocl_dev *zdev = cmd->ddev->dev_private;
-	struct soft_krnl *sk = zdev->soft_kernel;
-	struct soft_cu *scu;
-	struct ert_unconfigure_sk_cmd *cfg;
-	u32 i;
-
 	SCHED_DEBUG("-> %s\n", __func__);
-
-	cfg = (struct ert_unconfigure_sk_cmd *)(cmd->packet);
-
-	mutex_lock(&sk->sk_lock);
-
-	/* Check if the CU unconfiguration exceeds maximum CU number */
-	if (cfg->start_cuidx + cfg->num_cus > MAX_CU_NUM) {
-		DRM_WARN("Soft kernel CU %d exceed maximum cu number %d.\n",
-		    cfg->start_cuidx + cfg->num_cus, MAX_CU_NUM);
-		mutex_unlock(&sk->sk_lock);
-		return -EINVAL;
-	}
-
-	/* Check if any CU is not configured */
-	for (i = cfg->start_cuidx; i < cfg->start_cuidx + cfg->num_cus; i++)
-		if (!sk->sk_cu[i]) {
-			DRM_WARN("Soft Kernel CU %d is not configured.\n", i);
-			mutex_unlock(&sk->sk_lock);
-			return -EINVAL;
-		}
-
-	sk->sk_ncus -= cfg->num_cus;
-
-	/*
-	 * For each soft kernel, we set the RELEASE flag and wake up
-	 * waiting thread to release soft kenel.
-	 */
-	for (i = cfg->start_cuidx; i < cfg->start_cuidx + cfg->num_cus; i++) {
-		scu = sk->sk_cu[i];
-		scu->sc_flags |= ZOCL_SCU_FLAGS_RELEASE;
-		up(&scu->sc_sem);
-	}
-
-	mutex_unlock(&sk->sk_lock);
-
+	DRM_WARN("ERT_SK_UNCONFIG command is obsoleted.\n");
 	SCHED_DEBUG("<- %s\n", __func__);
 
-	return 0;
+	return -ENOTSUPP;
 }
 
 /**
@@ -1505,14 +1478,14 @@ scu_done(struct sched_cmd *cmd)
 	 * checking for 0x10 is sufficient.
 	 */
 	mutex_lock(&sk->sk_lock);
-	if (!sk->sk_cu[cu_idx]) {//Soft kernel has crashed
+	if (!sk->sk_cu[cu_idx]) {
 		mutex_unlock(&sk->sk_lock);
 		return SK_CRASHED;
 	}
 	virt_addr = sk->sk_cu[cu_idx]->sc_vregs;
 	SCHED_DEBUG("-> %s (,%d) checks scu at address 0x%p\n",
 	    __func__, cu_idx, virt_addr);
-	if (*virt_addr & CU_AP_DONE) {//Soft kernel is done
+	if (*virt_addr & CU_AP_DONE) {
 		unsigned int mask_idx = cu_mask_idx(cu_idx);
 		unsigned int pos = cu_idx_in_mask(cu_idx);
 
@@ -1537,21 +1510,28 @@ scu_configure_done(struct sched_cmd *cmd)
 	struct drm_zocl_dev *zdev = dev->dev_private;
 	struct soft_krnl *sk = zdev->soft_kernel;
 	struct ert_configure_sk_cmd *cfg;
-	int i;
+	int i, j;
 
 	cfg = (struct ert_configure_sk_cmd *)(cmd->packet);
 
 	mutex_lock(&sk->sk_lock);
 
-	for (i = cfg->start_cuidx; i < cfg->start_cuidx + cfg->num_cus; i++)
-		if (sk->sk_cu[i] == NULL) {
-			/*
-			 * If we have any unconfigured soft kernel CU, this
-			 * configure command is not completed yet.
-			 */
-			mutex_unlock(&sk->sk_lock);
-			return false;
+	for (i = 0; i < cfg->num_image; i++) {
+		struct config_sk_image *cp = &cfg->image[i];
+
+		/* Check if any CU is configured already */
+		for (j = cp->start_cuidx; j < cp->start_cuidx + cp->num_cus;
+		    j++) {
+			if (sk->sk_cu[j] == NULL) {
+				/*
+				 * If we have any unconfigured soft kernel CU,
+				 * this configure command is not completed yet.
+				 */
+				mutex_unlock(&sk->sk_lock);
+				return false;
+			}
 		}
+	}
 
 	mutex_unlock(&sk->sk_lock);
 
@@ -1561,27 +1541,6 @@ scu_configure_done(struct sched_cmd *cmd)
 inline int
 scu_unconfig_done(struct sched_cmd *cmd)
 {
-	struct drm_device *dev = cmd->ddev;
-	struct drm_zocl_dev *zdev = dev->dev_private;
-	struct soft_krnl *sk = zdev->soft_kernel;
-	struct ert_unconfigure_sk_cmd *cfg;
-	int i;
-
-	cfg = (struct ert_unconfigure_sk_cmd *)(cmd->packet);
-
-	mutex_lock(&sk->sk_lock);
-	for (i = cfg->start_cuidx; i < cfg->start_cuidx + cfg->num_cus; i++)
-		if (sk->sk_cu[i]) {
-			/*
-			 * If we have any configured soft kernel CU, this
-			 * unconfigure command is not completed yet.
-			 */
-			mutex_unlock(&sk->sk_lock);
-			return false;
-		}
-
-	mutex_unlock(&sk->sk_lock);
-
 	return true;
 }
 
@@ -2787,11 +2746,6 @@ ps_ert_query(struct sched_cmd *cmd)
 
 	case ERT_SK_CONFIG:
 		if (scu_configure_done(cmd))
-			mark_cmd_complete(cmd, ERT_CMD_STATE_COMPLETED);
-		break;
-
-	case ERT_SK_UNCONFIG:
-		if (scu_unconfig_done(cmd))
 			mark_cmd_complete(cmd, ERT_CMD_STATE_COMPLETED);
 		break;
 

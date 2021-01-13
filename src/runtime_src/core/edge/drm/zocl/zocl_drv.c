@@ -310,6 +310,8 @@ void zocl_free_bo(struct drm_gem_object *obj)
 	zocl_obj = to_zocl_bo(obj);
 	zdev = obj->dev->dev_private;
 
+	printk("__larry_zocl__: enter %s: BO is %p\n", __func__, zocl_obj);
+
 	if (!zdev->domain) {
 		zocl_describe(zocl_obj);
 		if (zocl_obj->flags & ZOCL_BO_FLAGS_USERPTR)

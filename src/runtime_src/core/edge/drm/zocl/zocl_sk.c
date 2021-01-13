@@ -41,19 +41,46 @@ zocl_sk_getcmd_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
 	list_del(&scmd->skc_list);
 	mutex_unlock(&sk->sk_lock);
 
-	kdata->opcode = scmd->skc_packet->opcode;
+	kdata->opcode = scmd->skc_opcode;
 
 	if (kdata->opcode == ERT_SK_CONFIG) {
-		struct ert_configure_sk_cmd *cmd;
+		struct config_sk_image *cmd;
+		u32 bohdl = 0xffffffff;
+		int i, ret;
+
+		cmd = scmd->skc_packet;
+
+		printk("__larry_zocl__: in %s: nimg is %d.\n", __func__, sk->sk_nimg);
+		printk("__larry_zocl__: in %s cmd start: %d\n", __func__, cmd->start_cuidx);
+
+		for (i = 0; i < sk->sk_nimg; i++) {
+
+			printk("__larry_zocl__: in %s: sk[%d].end: %d\n", __func__, i,sk->sk_img[i].si_end);
+			if (cmd->start_cuidx > sk->sk_img[i].si_end)
+				continue;
+
+			if (sk->sk_img[i].si_bohdl >= 0) {
+				bohdl = sk->sk_img[i].si_bohdl;
+				break;
+			}
+
+			ret = drm_gem_handle_create(filp,
+			    &sk->sk_img[i].si_bo->cma_base.base, &bohdl);
+			printk("__larry_zocl__: in %s: ret is %d, bohdl is %d\n", __func__, ret, bohdl);
+
+			if (ret) {
+				DRM_WARN("%s Failed create BO handle: %d\n",
+				    __func__, ret);
+				bohdl = 0xffffffff;
+			}
+
+			break;
+		}
 
 		/* Copy the command to ioctl caller */
-		cmd = (struct ert_configure_sk_cmd *)scmd->skc_packet;
 		kdata->start_cuidx = cmd->start_cuidx;
 		kdata->cu_nums = cmd->num_cus;
-		kdata->size = cmd->sk_size;
-
-		/* soft kernel's physical address (little endian) */
-		kdata->paddr = cmd->sk_addr;
+		kdata->bohdl = bohdl;
 
 		snprintf(kdata->name, ZOCL_MAX_NAME_LENGTH, "%s",
 		    (char *)cmd->sk_name);
@@ -83,6 +110,8 @@ zocl_sk_create_ioctl(struct drm_device *dev, void *data, struct drm_file *filp)
 		return -ENXIO;
 	}
 	bo = to_zocl_bo(gem_obj);
+
+	printk("__larry_zocl__: in %s: create bo is %p\n", __func__, bo);
 
 	mutex_lock(&sk->sk_lock);
 
@@ -221,6 +250,7 @@ zocl_fini_soft_kernel(struct drm_device *drm)
 	struct drm_zocl_dev *zdev = drm->dev_private;
 	struct soft_krnl *sk;
 	u32 cu_idx;
+	int i;
 
 	sk = zdev->soft_kernel;
 	mutex_lock(&sk->sk_lock);
@@ -232,6 +262,12 @@ zocl_fini_soft_kernel(struct drm_device *drm)
 		kfree(sk->sk_cu[cu_idx]);
 		sk->sk_cu[cu_idx] = NULL;
 	}
+
+	printk("__larry_zocl__: in %s: sk_nimg is %d\n", __func__, sk->sk_nimg);
+	for (i = 0; i < sk->sk_nimg; i++)
+		ZOCL_DRM_GEM_OBJECT_PUT_UNLOCKED(&sk->sk_img[i].si_bo->gem_base);
+	kfree(sk->sk_img);
+
 	mutex_unlock(&sk->sk_lock);
 	mutex_destroy(&sk->sk_lock);
 }

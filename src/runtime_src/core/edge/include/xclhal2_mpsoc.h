@@ -37,9 +37,8 @@ struct xclSKCmd {
     uint32_t	opcode;
     uint32_t	start_cuidx;
     uint32_t	cu_nums;
-    uint64_t	xclbin_paddr;
-    size_t	xclbin_size;
     char	krnl_name[XRT_MAX_NAME_LENGTH];
+    int		bohdl;
 };
 
 struct xclAIECmd {
