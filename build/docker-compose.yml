@@ -44,3 +44,4 @@ services:
       - JAVA_HOME=/tools/batonroot/rodin/devkits/lnx64/jdk-11
       - RDI_ROOT=/opt/xrt-ipu/build
       - GRADLE_USER_HOME=/tmp/gradle
+    command: ./build.sh
