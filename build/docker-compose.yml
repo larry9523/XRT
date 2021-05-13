@@ -10,6 +10,7 @@
 version: "3.3"
 services:
   xrt-ipu:
+    network_mode: bridge
     build:
       args:
         ## These arguments will default to xbuild, but you can add your user in 
@@ -41,6 +42,8 @@ services:
     environment:
       - BUILD_NUMBER
       - XRT_VERSION_PATCH=${BUILD_NUMBER}
+      - NFSPATH=${PWD}
+      - AUTH_TOKEN
       - JAVA_HOME=/tools/batonroot/rodin/devkits/lnx64/jdk-11
       - RDI_ROOT=/opt/xrt-ipu/build
       - GRADLE_USER_HOME=/tmp/gradle
