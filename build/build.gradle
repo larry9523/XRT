@@ -31,8 +31,8 @@ ext {
     release = project.hasProperty('release') ? project.branch.toString() : infraCore.branchParameters.get('config.release')
 
     machine = project.hasProperty('machine') ? project.machine.toString() : "microblaze"
-    artifactoryUpload = System.getenv("IS_CI") ? 'http://artifactory:5000/upload' : 'http://xcort20:5000/upload'
-    artifactoryServer = System.getenv("IS_CI") ? 'http://artifactory' : 'http://xcort11'
+    artifactoryUpload = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
+    artifactoryServer = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.upload') : 'http://xcort11'
     artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8hzNTgzqBevKAH4ovhPBHMgPHGq3L8yEb3rVQN9wP8DhTUKPviM4KKYUxhsctye2sAyHk'
 
 }
