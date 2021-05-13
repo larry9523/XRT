@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update -y
 
-RUN apt-get install -y sudo wget tzdata locales
+RUN apt-get install -y sudo wget tzdata locales vim
 
 RUN ln -fs /usr/share/zoneinfo/America/Los_Angeles /etc/localtime && dpkg-reconfigure --frontend noninteractive tzdata
 
@@ -31,6 +31,7 @@ ARG GROUP_NAME
 #   help@xilinx.com
 RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} || echo "Ignoring error, as ${GROUP_NAME} already exists"
 RUN useradd -l -u ${USER_ID} -g ${GROUP_NAME} ${USER_NAME}
+RUN echo "ALL ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 # Create dirs needed for user
 RUN mkdir -p /home/${USER_NAME} /tmp/gradle && chmod -R a+rw /home/${USER_NAME} /tmp/gradle
