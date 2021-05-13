@@ -1,6 +1,6 @@
 {
   "config": {
-    "failure_email_to": "jliang@xilinx.com, abalasa@xilinx.com",
+    "failure_email_to": "soeren@xilinx.com, abalasa@xilinx.com",
     "release": "2021.1.0",
     "branch": "2021.1",
     "build_tools": {
@@ -62,8 +62,8 @@
         "plugins-release-repo": "plugins-release",
         "plugins-snapshot-repo": "plugins-snapshot",
         "manifests-url": "https://artifactory/artifactory",
-        "manifests-release-repo" : "aie-ipu-prod-local",
-        "manifests-snapshot-repo" : "aie-ipu-dev-local",
+        "manifests-release-repo" : "manifests-release-local",
+        "manifests-snapshot-repo" : "manifests-snapshot-local",
         "libs-url": "https://artifactory/artifactory",
         "libs-cache-repo" : "libs-buildcache",
         "libs-release-repo" : "libs-release",
