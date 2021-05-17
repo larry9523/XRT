@@ -5,6 +5,7 @@ import groovy.json.JsonSlurper
 
 plugins {
     id "maven-publish"
+    id "base"
     id "com.jfrog.artifactory" version "4.10.0" // Allow Jenkins to inject credentials, as well as control the repo
     id "com.xilinx.infra.prep-product" version "1.6.0" apply false
     id "com.xilinx.infra.manifest"
