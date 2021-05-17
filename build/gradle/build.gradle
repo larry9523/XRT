@@ -59,11 +59,11 @@ tasks.register('buildXRT'){
   description 'Execute XRT-IPU build.'
   doFirst {
     exec {
-      workingDir "$wsRootDir/.."
+      workingDir "$wsRootDir/../.."
       commandLine 'sudo', 'apt-get', 'update', '&&', 'sudo', 'src/runtime_src/tools/scripts/xrtdeps.sh', '-docker'
     }
     exec {
-      workingDir "$wsRootDir"
+      workingDir "$wsRootDir/.."
       commandLine './build.sh'
     }
   }
@@ -73,9 +73,9 @@ tasks.register('buildXRT'){
 tasks.register('clean', Exec) {
   description 'Clean up build directory.'
   doFirst {
-    workingDir wsRootDir
+    workingDir "$wsRootDir/.."
     println 'Cleaning up build directory'
-    commandLine 'rm', '-rf', 'build/Debug', 'build/Release'
+    commandLine './build.sh', '-clean'
   }
 }
 
@@ -86,7 +86,7 @@ task publishDeb {
     def debKey = "debFiles"
     def debFileList = []
     def nfsPath = System.getenv("NFSPATH")
-    def getDebFiles = fileTree(include:['**/*.deb'], dir:"Release")
+    def getDebFiles = fileTree(include:['**/*.deb'], dir:"$wsRootDir/../Release")
     getDebFiles.each {
       debFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
     }

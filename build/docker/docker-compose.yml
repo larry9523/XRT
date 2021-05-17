@@ -24,7 +24,7 @@ services:
         USER_NAME: ${XDOCK_USER:-xbuild}
         GROUP_ID: ${XDOCK_GID:-10115}
         GROUP_NAME: ${XDOCK_GROUP:-hd}
-      context: ./docker
+      context: .
       dockerfile: Dockerfile
     image: "xrt-ipu:latest" 
     volumes:
@@ -33,10 +33,8 @@ services:
       # Easy access to TA and workspaces, but keep in mind that this opens you up for unwanted dependencies:
       - /proj:/proj:shared
       - /wrk:/wrk:shared
-      # Tool-chains:
-      - /tools:/tools:ro
       # We mount the current project to /app
-      - ../:/opt/xrt-ipu:rshared
+      - ../../:/opt/xrt-ipu:rshared
     user: ${XDOCK_USER:-xbuild}
     working_dir: /opt/xrt-ipu/build
     environment:
@@ -44,7 +42,6 @@ services:
       - XRT_VERSION_PATCH=${BUILD_NUMBER}
       - NFSPATH=${PWD}
       - AUTH_TOKEN
-      - JAVA_HOME=/tools/batonroot/rodin/devkits/lnx64/jdk-11
       - RDI_ROOT=/opt/xrt-ipu/build
       - GRADLE_USER_HOME=/tmp/gradle
     command: ./build.sh
