@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt-get update -y
 
-RUN apt-get install -y sudo wget tzdata locales vim
+RUN apt-get install -y sudo wget tzdata locales vim openjdk-11-jdk
 
 RUN ln -fs /usr/share/zoneinfo/America/Los_Angeles /etc/localtime && dpkg-reconfigure --frontend noninteractive tzdata
 
