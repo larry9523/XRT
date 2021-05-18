@@ -1,4 +1,8 @@
 {
+  "license" : {
+    "type" : "Apache-2.0",
+    "url" : "http://www.apache.org/licenses/LICENSE-2.0"
+  },
   "config": {
     "failure_email_to": "soeren@xilinx.com, abalasa@xilinx.com",
     "release": "2021.1.0",
