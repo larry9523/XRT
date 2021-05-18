@@ -61,7 +61,11 @@ tasks.register('buildXRT'){
   doFirst {
     exec {
       workingDir "$wsRootDir/../.."
-      commandLine 'sudo', 'apt-get', 'update', '&&', 'sudo', 'src/runtime_src/tools/scripts/xrtdeps.sh', '-docker'
+      commandLine 'sudo', 'apt-get', 'update'
+    }
+    exec {
+      workingDir "$wsRootDir/../../src/runtime_src/tools/scripts/"
+      commandLine 'sudo', './xrtdeps.sh', '-docker'
     }
     exec {
       workingDir "$wsRootDir/.."
@@ -71,7 +75,7 @@ tasks.register('buildXRT'){
 }
 
 // Cleanup build directory
-tasks.register('clean', Exec) {
+tasks.register('cleanXRT', Exec) {
   description 'Clean up build directory.'
   doFirst {
     workingDir "$wsRootDir/.."
