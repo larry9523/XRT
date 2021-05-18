@@ -1,0 +1,50 @@
+/*
+ *  Copyright (C) 2021, Xilinx Inc
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"). You may
+ * not use this file except in compliance with the License. A copy of the
+ * License is located at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ */
+
+import groovy.io.FileType
+import groovy.json.JsonSlurper
+
+pluginManagement {
+    def branch = new JsonSlurper().parseText(new File(rootProject.projectDir, coreBranchFile).text);
+    // This allows us to use the plugins published to the local/xilinx repo
+    resolutionStrategy {
+        Map pluginMap = ["core": ["manifest", "clean"]]
+        eachPlugin {
+            if (requested.version == null) {
+                String requestedName = requested.id.toString().replaceFirst("^${requested.id.namespace}\\.(.*)", '$1')
+                String artifactId = pluginMap.find{ it.value.contains(requestedName) }?.key ?: requestedName
+                String requestedId = requested.id.toString().replace(requestedName, artifactId)
+                if (branch.config.gradle_plugins.containsKey(requestedId)) {
+                    def coordinate = "${requested.id.namespace}:${artifactId}:${branch.config.gradle_plugins[requestedId]}"
+                    useModule(coordinate)
+                    logger.info("Centralized plugin version '{}' (from {})", coordinate, coreBranchFile)
+                } else {
+                    logger.info("Plugin id '{}' is not centralized (in {})", requestedId, coreBranchFile)
+                }
+            }
+        }
+    }
+    // To resolve plugin dependencies...
+    repositories {
+        maven {
+            def pluginsUrl = settings.hasProperty("coreUrl") ? settings.coreUrl : branch.config.artifact_servers.artifactory_default."plugins-url"
+            url = "${pluginsUrl}/${branch.config.artifact_servers.artifactory_default."plugins-release-repo"}"
+        }
+        gradlePluginPortal()
+    }
+}
+ 
+rootProject.name = 'xrt-ipu'

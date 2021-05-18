@@ -1,0 +1,65 @@
+#
+#  Copyright (C) 2021, Xilinx Inc
+#
+#  Apache License Verbiage
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#  http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+# To drop into a bash shell within the container:
+#   docker-compose run --rm xrt-ipu bash
+# To rebuild after Dockerfile changes:
+#   docker-compose build
+# To stop all containers associated with this project:
+#   docker-compose down
+# To build xrt-ipu in docker container:
+#   docker-compose run --rm xrt-ipu 
+
+version: "3.3"
+services:
+  xrt-ipu:
+    network_mode: bridge
+    build:
+      args:
+        ## These arguments will default to xbuild, but you can add your user in 
+        # one of two ways.
+        # 1. For per project setup, add a .env file at the root of this project e.g.
+        #   cp example.env .env && vi .env < docker-compose reads .env
+        # 2. Set these environment variables per user with .bashrc or .cshrc
+        #    but most of the time these variables will already be set for you.
+        # NOTE: These variables are read at build-time and at run-time
+        USER_ID: ${XDOCK_UID:-65673}
+        USER_NAME: ${XDOCK_USER:-xbuild}
+        GROUP_ID: ${XDOCK_GID:-10115}
+        GROUP_NAME: ${XDOCK_GROUP:-hd}
+      context: .
+      dockerfile: Dockerfile
+    image: "xrt-ipu:latest" 
+    volumes:
+      # To run without your user .bashrc/.cshrc comment this out:
+      - /home/${XDOCK_USER:-xbuild}:/home/${XDOCK_USER:-xbuild}:shared
+      # Easy access to TA and workspaces, but keep in mind that this opens you up for unwanted dependencies:
+      - /proj:/proj:shared
+      - /wrk:/wrk:shared
+      # We mount the current project to /app
+      - ../../:/opt/xrt-ipu:rshared
+    user: ${XDOCK_USER:-xbuild}
+    working_dir: /opt/xrt-ipu/build
+    environment:
+      - BUILD_NUMBER
+      - XRT_VERSION_PATCH=${BUILD_NUMBER}
+      - NFSPATH=${PWD}
+      - AUTH_TOKEN
+      - RDI_ROOT=/opt/xrt-ipu/build
+      - GRADLE_USER_HOME=/tmp/gradle
+    command: ./build.sh

@@ -1,0 +1,133 @@
+/*
+ *  Copyright (C) 2021, Xilinx Inc
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"). You may
+ * not use this file except in compliance with the License. A copy of the
+ * License is located at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ */
+ 
+import groovy.io.FileType
+import groovy.json.JsonSlurper
+
+plugins {
+    id "maven-publish"
+    id "base"
+    id "com.jfrog.artifactory" version "4.10.0" // Allow Jenkins to inject credentials, as well as control the repo
+    id "com.xilinx.infra.prep-product" version "1.6.0" apply false
+    id "com.xilinx.infra.manifest"
+}
+
+ext {
+    release = infraCore.getRelease().get()
+    trimmedRelease = release.endsWith('.0') ? release.substring(0, release.length()-2) : release
+    buildNumber = infraCore.getBuildNumber().get()
+    startTime = new Date().format('yyyyMMdd_HHmmss')
+    wsRootDir = project.hasProperty('wsRootDir') ? project.wsRootDir.toString() : (System.getenv("WS_ROOT_DIR") ?: projectDir.absolutePath)
+    if (!wsRootDir) {
+        throw new GradleException("wsRootDir is a required parameter, pass it as -PwsRootDir or by setting env variable WS_ROOT_DIR; -PwsRootDir takes precedence")
+    }
+    logger.info("wsRootDir is set as ${wsRootDir}")
+
+    branch = project.hasProperty('branch') ? project.branch.toString() : infraCore.branchParameters.get('config.branch')
+    if (!branch) {
+        throw new GradleException("could not deutermine branch, either pass it as -Pbranch or by setting branch value in branch.json; -Pbranch takes precedence")
+    }
+    logger.info("branch is set as ${branch}")
+    taUsed = System.getenv().getOrDefault("TA", "/proj/xbuilds/${branch}_daily_latest")
+    release = project.hasProperty('release') ? project.release.toString() : infraCore.branchParameters.get('config.release')
+
+    artifactoryUpload = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
+    artifactoryServer = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.upload') : 'http://xcort11'
+    artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8hzNTgzqBevKAH4ovhPBHMgPHGq3L8yEb3rVQN9wP8DhTUKPviM4KKYUxhsctye2sAyHk'
+
+}
+
+version = "${release}-${buildNumber}"
+group 'com.xilinx'
+
+// Data to be published in manifest file
+coreManifest {
+    // manifestReleaseRepo = "aie-ipu-dev-local"
+    artifactNfsLocation = wsRootDir
+    customManifestFields.put('buildNumber', buildNumber)
+    customManifestFields.put('version', version)
+    customManifestFields.put('TA', taUsed)
+}
+
+// extractManifest task gets the latest from artifactory.
+dependencies {
+    implementation "com.xilinx:xrt-ipu:${release}-+"
+}
+
+// Task to build IPU repo
+tasks.register('buildXRT'){
+  description 'Execute XRT-IPU build.'
+  doFirst {
+    exec {
+      workingDir "$wsRootDir/../.."
+      commandLine 'sudo', 'apt-get', 'update'
+    }
+    exec {
+      workingDir "$wsRootDir/../../src/runtime_src/tools/scripts/"
+      commandLine 'sudo', './xrtdeps.sh', '-docker'
+    }
+    exec {
+      workingDir "$wsRootDir/.."
+      commandLine './build.sh'
+    }
+  }
+}
+
+// Cleanup build directory
+tasks.register('cleanXRT', Exec) {
+  description 'Clean up build directory.'
+  doFirst {
+    workingDir "$wsRootDir/.."
+    println 'Cleaning up build directory'
+    commandLine './build.sh', '-clean'
+  }
+}
+
+// Publish debian files to artifactory
+task publishDeb {
+  description 'Publish debian files to artifactory using upload service'
+  doFirst {
+    def debKey = "debFiles"
+    def debFileList = []
+    def nfsPath = System.getenv("NFSPATH")
+    def getDebFiles = fileTree(include:['**/*.deb'], dir:"$wsRootDir/../Release")
+    getDebFiles.each {
+      debFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
+    }
+    def data = [
+      "dryRun": "False",
+      "appName" : project.name,
+      "$debKey": debFileList,
+      "servers": [[
+        "authToken": artifactoryAuthToken,
+        "server": artifactoryServer
+      ]]
+    ]
+    def message = groovy.json.JsonOutput.toJson(data)
+    println(message)
+    def requestUrl = new URL(artifactoryUpload)
+    def connection = requestUrl.openConnection()
+    connection.setRequestMethod("PUT")
+    connection.setDoOutput(true)
+    connection.setRequestProperty("Content-Type", "application/json")
+    connection.getOutputStream().write(message.getBytes("UTF-8"))
+    def resp = new JsonSlurper().parseText(connection.getInputStream().getText())
+    assert connection.responseCode == 200
+    println(resp)
+    assert resp[debKey]['failures'] == []
+
+  }
+}
