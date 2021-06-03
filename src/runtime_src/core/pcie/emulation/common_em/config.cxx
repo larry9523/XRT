@@ -57,9 +57,10 @@ namespace xclemulation{
     mUMRChecks = false;
     mOOBChecks = false;
     mMemLogs = false;
-    mLaunchWaveform = DEBUG_MODE::OFF;
+    mLaunchWaveform = debug_mode::off;
     mDontRun = false;
     mNewMbscheduler = true;
+    mXgqMode = false;
     mSimDir = "";
     mUserPreSimScript = "";
     mPacketSize = 0x800000;
@@ -76,7 +77,7 @@ namespace xclemulation{
     mKeepRunDir=true;
     mLauncherArgs = "";
     mSystemDPA = true;
-    mLegacyErt = ERTMODE::NONE;
+    mLegacyErt = ertmode::none;
     mCuBaseAddrForce=-1;
     mIsSharedFmodel=true;
     mTimeOutScale=TIMEOUT_SCALE::NA;
@@ -156,6 +157,10 @@ namespace xclemulation{
       {
         setNewMbscheduler(getBoolValue(value,false));
       }
+      else if(name == "xgq_mode")
+      {
+        setXgqMode(getBoolValue(value,false));
+      }
       else if (name == "user_pre_sim_script") {
         std::string absolutePath = getAbsolutePath(value, getExecutablePath());
         setUserPreSimScript(absolutePath);
@@ -213,7 +218,7 @@ namespace xclemulation{
       }
       else if (name == "enable_prep_target" || name == "enable_debug" || name == "aie_sim_options") {
         //Do nothing: Added to bypass the WARNING that is issued below stating "invalid xrt.ini option" 
-      } 
+      }
       else if(name == "sim_dir")
       {
         setSimDir(value);
@@ -253,23 +258,24 @@ namespace xclemulation{
         
         if (boost::iequals(value,"gui" ))
         {
-          setLaunchWaveform(DEBUG_MODE::GUI);
+          setLaunchWaveform(debug_mode::gui);
         }
         else if (boost::iequals(value,"batch" ))
         {
-          setLaunchWaveform(DEBUG_MODE::BATCH);
+          setLaunchWaveform(debug_mode::batch);
         }
         else if (boost::iequals(value,"off" ))
         {
-          setLaunchWaveform(DEBUG_MODE::OFF);
+          setLaunchWaveform(debug_mode::off);
         } 
-        /*else if (boost::iequals(value,"gdb")) 
+        else if (boost::iequals(value,"gdb")) 
         {
-          setLaunchWaveform(DEBUG_MODE::GDB);
-        }*/
+          setLaunchWaveform(debug_mode::gdb);
+          std::cout << "WARNING: [HW-EMU 08] Invalid option '" << value << "' specified in xrt.ini/sdaccel.ini for debug_mode." << std::endl;
+        }
         else
         {
-          setLaunchWaveform(DEBUG_MODE::OFF);
+          setLaunchWaveform(debug_mode::off);
         }
       }
       else if(name == "Debug.sdx_server_port")
@@ -293,9 +299,9 @@ namespace xclemulation{
       else if(name == "legacy_ert")
       {
         if (boost::iequals(value,"false" ))
-          setLegacyErt(ERTMODE::UPDATED);
+          setLegacyErt(ertmode::updated);
         else if(boost::iequals(value,"true"))
-          setLegacyErt(ERTMODE::LEGACY);
+          setLegacyErt(ertmode::legacy);
       } else if (name=="cu_base_addr_force") {
           mCuBaseAddrForce= strtoll(value.c_str(),NULL,0);
       } else if (name == "timeout_scale") {
@@ -321,20 +327,21 @@ namespace xclemulation{
       std::string simulationMode = simMode;
       if (boost::iequals(simulationMode,"gui" ))
       {
-        setLaunchWaveform(DEBUG_MODE::GUI);
+        setLaunchWaveform(debug_mode::gui);
       }
       else if (boost::iequals(simulationMode,"batch" ))
       {
-        setLaunchWaveform(DEBUG_MODE::BATCH);
+        setLaunchWaveform(debug_mode::batch);
       }
       else if (boost::iequals(simulationMode,"off" ))
       {
-        setLaunchWaveform(DEBUG_MODE::OFF);
+        setLaunchWaveform(debug_mode::off);
       }
-      /*else if (boost::iequals(simulationMode,"gdb" ))
+      else if (boost::iequals(simulationMode,"gdb" ))
       {
-        setLaunchWaveform(DEBUG_MODE::GDB);
-      }*/
+        setLaunchWaveform(debug_mode::gdb);
+        std::cout<<"WARNING: [HW-EMU 08] Invalid option '"<<simulationMode<<"` specified in xrt.ini/sdaccel.ini"<<std::endl;
+      }
     }
   }
 

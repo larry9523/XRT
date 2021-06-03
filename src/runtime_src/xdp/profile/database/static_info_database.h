@@ -30,11 +30,6 @@
 #include "core/common/system.h"
 #include "core/common/device.h"
 
-#ifdef XRT_ENABLE_AIE
-#include "xaiefal/xaiefal.hpp"
-#include "core/edge/user/shim.h"
-#endif
-
 namespace xdp {
 
   // Forward declarations
@@ -363,7 +358,8 @@ class aie_cfg_tile
 
     std::vector<AIECounter*>     aieList;
     std::vector<TraceGMIO*>      gmioList;
-    std::map<uint32_t, uint32_t> aieCountersMap;
+    std::map<uint32_t, uint32_t> aieCoreCountersMap;
+    std::map<uint32_t, uint32_t> aieMemoryCountersMap;
     std::map<uint32_t, uint32_t> aieCoreEventsMap;
     std::map<uint32_t, uint32_t> aieMemoryEventsMap;
     std::vector<std::unique_ptr<aie_cfg_tile>> aieCfgList;
@@ -541,8 +537,11 @@ class aie_cfg_tile
            uint8_t start, uint8_t end, uint8_t reset,
            double freq, const std::string& mod,
            const std::string& aieName) ;
-    void addAIECounterResources(uint32_t numCounters, uint32_t numTiles) {
-      aieCountersMap[numCounters] = numTiles;
+    void addAIECounterResources(uint32_t numCounters, uint32_t numTiles, bool isCore) {
+      if (isCore)
+        aieCoreCountersMap[numCounters] = numTiles;
+      else
+        aieMemoryCountersMap[numCounters] = numTiles;
     }
     void addAIECoreEventResources(uint32_t numEvents, uint32_t numTiles) {
       aieCoreEventsMap[numEvents] = numTiles;
@@ -598,12 +597,12 @@ class aie_cfg_tile
 
     // Static info can be accessed via any host thread
     std::mutex dbLock ;
+    std::mutex aieLock ;
 
     // AIE device (Supported devices only)
-#ifdef XRT_ENABLE_AIE
-    XAie_DevInst *aieDevInst;
-    std::shared_ptr<xaiefal::XAieDev> aieDevice;
-#endif
+    void* aieDevInst = nullptr ; // XAie_DevInst
+    void* aieDevice = nullptr ; // xaiefal::XAieDev
+    std::function<void (void*)> deallocateAieDevice = nullptr ;
 
     bool resetDeviceInfo(uint64_t deviceId, const std::shared_ptr<xrt_core::device>& device);
 
@@ -957,9 +956,15 @@ class aie_cfg_tile
     }
 
     inline std::map<uint32_t, uint32_t>&
-    getAIECounterResources(uint64_t deviceId)
+    getAIECoreCounterResources(uint64_t deviceId)
     {
-      return deviceInfo[deviceId]->aieCountersMap;
+      return deviceInfo[deviceId]->aieCoreCountersMap;
+    }
+
+    inline std::map<uint32_t, uint32_t>&
+    getAIEMemoryCounterResources(uint64_t deviceId)
+    {
+      return deviceInfo[deviceId]->aieMemoryCountersMap;
     }
 
     inline std::map<uint32_t, uint32_t>&
@@ -1007,10 +1012,10 @@ class aie_cfg_tile
                 freq, mod, aieName) ;
     }
 
-    inline void addAIECounterResources(uint64_t deviceId, uint32_t numCounters, uint32_t numTiles) {
+    inline void addAIECounterResources(uint64_t deviceId, uint32_t numCounters, uint32_t numTiles, bool isCore) {
       if (deviceInfo.find(deviceId) == deviceInfo.end())
         return ;
-      deviceInfo[deviceId]->addAIECounterResources(numCounters, numTiles) ;
+      deviceInfo[deviceId]->addAIECounterResources(numCounters, numTiles, isCore) ;
     }
     
     inline void addAIECoreEventResources(uint64_t deviceId, uint32_t numEvents, uint32_t numTiles) {
@@ -1137,10 +1142,11 @@ class aie_cfg_tile
       return deviceInfo[deviceId]->gmioList.size();
     }
 
-#ifdef XRT_ENABLE_AIE
-    XDP_EXPORT XAie_DevInst * getAieDevInst(void* devHandle) ;
-    XDP_EXPORT std::shared_ptr<xaiefal::XAieDev> getAieDevice(void* devHandle) ;
-#endif
+    XDP_EXPORT void* getAieDevInst(std::function<void* (void*)> fetch,
+                                   void* devHandle) ;
+    XDP_EXPORT void* getAieDevice(std::function<void* (void*)> allocate,
+                                  std::function<void (void*)> deallocate,
+                                  void* devHandle) ;
 
     // Reseting device information whenever a new xclbin is added
     XDP_EXPORT void updateDevice(uint64_t deviceId, void* devHandle) ;

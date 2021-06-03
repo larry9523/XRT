@@ -90,7 +90,10 @@ namespace {
 
 namespace xdp {
 
-  OpenCLDeviceOffloadPlugin::OpenCLDeviceOffloadPlugin() : DeviceOffloadPlugin()
+  OpenCLDeviceOffloadPlugin::OpenCLDeviceOffloadPlugin() :
+    DeviceOffloadPlugin(),
+    counterOffloadEnabled(false),
+    traceOffloadEnabled(false)
   {
     // If we aren't the plugin that is handling the device offload,
     //  don't do anything
@@ -103,6 +106,18 @@ namespace xdp {
     //  xrt_xocl::device objects aren't destroyed before we get a chance
     //  to offload the trace at the end
     platform = xocl::get_shared_platform() ;
+
+    // Based on the xrt.ini flags we will support either offload of
+    //  either counters only or counters and trace.
+    if (xrt_core::config::get_opencl_device_counter()) {
+      counterOffloadEnabled = true ;
+    }
+    if (xrt_core::config::get_timeline_trace() ||
+        xrt_core::config::get_data_transfer_trace() != "off" ||
+        xrt_core::config::get_stall_trace() != "off") {
+      counterOffloadEnabled = true ;
+      traceOffloadEnabled = true ;
+    }
   }
 
   OpenCLDeviceOffloadPlugin::~OpenCLDeviceOffloadPlugin()
@@ -116,35 +131,48 @@ namespace xdp {
       //  do a final flush of our devices, then write
       //  all of our writers, then finally unregister ourselves
       //  from the database.
-      readTrace() ;
-      readCounters() ;
+      if (traceOffloadEnabled) {
+        readTrace() ;
+      }
+      if (counterOffloadEnabled) {
+        readCounters() ;
+      }
       XDPPlugin::endWrite(false);
       db->unregisterPlugin(this) ;
     } // If db alive
     clearOffloaders();
   }
 
+  // readTrace can be called from either the destructor or from a broadcast
+  //  message from another plugin that needs the trace updated before it can
+  //  progress.
   void OpenCLDeviceOffloadPlugin::readTrace()
   {
     if (!active) return ;
     if (getFlowMode() == SW_EMU) return ;
+    if (!traceOffloadEnabled) return ;
 
     for (auto o : offloaders) {
       uint64_t deviceId = o.first ;
       if (deviceIdsToBeFlushed.find(deviceId) != deviceIdsToBeFlushed.end()) {
         deviceIdsToBeFlushed.erase(deviceId) ;
 
-        auto offloader = std::get<0>(o.second) ;
-        if (offloader->continuous_offload()) {
-          offloader->stop_offload() ;
-          // To avoid a race condition, wait until the offloader has stopped
-          while(offloader->get_status() != OffloadThreadStatus::STOPPED) ;
-        }
-        else {
-          offloader->read_trace() ;
-          offloader->read_trace_end() ;
-        }
-        checkTraceBufferFullness(offloader, deviceId);
+        try {
+          auto offloader = std::get<0>(o.second) ;
+          if (offloader->continuous_offload()) {
+            offloader->stop_offload() ;
+            // To avoid a race condition, wait until the offloader has stopped
+            while(offloader->get_status() != OffloadThreadStatus::STOPPED) ;
+          }
+          else {
+            offloader->read_trace() ;
+            offloader->read_trace_end() ;
+          }
+          checkTraceBufferFullness(offloader, deviceId);
+	} catch (std::exception& /*e*/) {
+          // Reading the trace could throw an exception if ioctls fail.
+          //  We should continue to check other devices if they exist
+	}
       }
     }
   }
@@ -170,24 +198,31 @@ namespace xdp {
     std::string path = debugIPLayoutPath(device) ;
 
     uint64_t deviceId = db->addDevice(path) ;
-    
-    if (offloaders.find(deviceId) != offloaders.end())
-    {
-      auto offloader = std::get<0>(offloaders[deviceId]) ;
-      if (offloader->continuous_offload())
-      {
-        offloader->stop_offload() ;
-      }
-      else
-      {
-        offloader->read_trace() ;
-        offloader->read_trace_end() ;
-      }
-      checkTraceBufferFullness(offloader, deviceId);
-    }
-    readCounters() ;
-
     deviceIdsToBeFlushed.erase(deviceId) ;
+    
+    if (traceOffloadEnabled) {
+      try {
+        if (offloaders.find(deviceId) != offloaders.end()) {
+          auto offloader = std::get<0>(offloaders[deviceId]) ;
+          if (offloader->continuous_offload()) {
+            offloader->stop_offload() ;
+            // To avoid a race condition, wait until the offloader has stopped
+            while(offloader->get_status() != OffloadThreadStatus::STOPPED) ;
+          }
+          else {
+            offloader->read_trace() ;
+            offloader->read_trace_end() ;
+          }
+          checkTraceBufferFullness(offloader, deviceId);
+        }
+      } catch (std::exception& /*e*/) {
+        // Reading the trace could throw an exception if ioctls fail.
+        //  We should continue and try to read the counters as well
+      }
+    }
+    if (counterOffloadEnabled) {
+      readCounters() ;
+    }
 
     clearOffloader(deviceId) ;
     (db->getStaticInfo()).deleteCurrentlyUsedDeviceInterface(deviceId) ;
@@ -207,10 +242,7 @@ namespace xdp {
     std::string path = debugIPLayoutPath(device) ;
 
     uint64_t deviceId = 0;
-    if((getFlowMode() == HW || getFlowMode() == HW_EMU) && 
-          (xrt_core::config::get_timeline_trace() || 
-           xrt_core::config::get_data_transfer_trace() != "off" ||
-           xrt_core::config::get_stall_trace()  != "off")) {
+    if((getFlowMode() == HW || getFlowMode() == HW_EMU) && traceOffloadEnabled){
       try {
         deviceId = db->getDeviceId(path) ;
       }
@@ -263,9 +295,7 @@ namespace xdp {
     configureDataflow(deviceId, devInterface) ;
     addOffloader(deviceId, devInterface) ;
 
-    if(getFlowMode() == HW && (xrt_core::config::get_timeline_trace() || 
-          xrt_core::config::get_data_transfer_trace() != "off" ||
-          xrt_core::config::get_stall_trace()  != "off")) {
+    if(getFlowMode() == HW && traceOffloadEnabled) {
       configureTraceIP(devInterface);
       devInterface->clockTraining() ;
       startContinuousThreads(deviceId) ;
@@ -274,7 +304,9 @@ namespace xdp {
       configureTraceIP(devInterface);
       devInterface->clockTraining();
     }
-    devInterface->startCounters() ;
+    if (counterOffloadEnabled) {
+      devInterface->startCounters() ;
+    }
 
     // Disable AMs for unsupported features
     configureFa(deviceId, devInterface) ;

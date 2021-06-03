@@ -32,6 +32,54 @@ MODULE_PARM_DESC(kds_mode,
 
 int kds_echo = 0;
 
+static void zocl_kds_dma_complete(void *arg, int ret)
+{
+	struct kds_command *xcmd = (struct kds_command *)arg;
+	zocl_dma_handle_t *dma_handle = (zocl_dma_handle_t *)xcmd->priv;
+
+	xcmd->status = KDS_COMPLETED;
+	if (ret)
+		xcmd->status = KDS_ERROR;
+	xcmd->cb.notify_host(xcmd, xcmd->status);
+	xcmd->cb.free(xcmd);
+
+	kfree(dma_handle);
+}
+
+static int copybo_ecmd2xcmd(struct drm_zocl_dev *zdev, struct drm_file *filp,
+			    struct ert_start_copybo_cmd *ecmd,
+			    struct kds_command *xcmd)
+{
+	struct drm_device *dev = zdev->ddev;
+	zocl_dma_handle_t *dma_handle;
+	struct drm_zocl_copy_bo args = {
+		.dst_handle = ecmd->dst_bo_hdl,
+		.src_handle = ecmd->src_bo_hdl,
+		.size = ert_copybo_size(ecmd),
+		.dst_offset = ert_copybo_dst_offset(ecmd),
+		.src_offset = ert_copybo_src_offset(ecmd),
+	};
+	int ret = 0;
+
+	dma_handle = kmalloc(sizeof(zocl_dma_handle_t), GFP_KERNEL);
+	if (!dma_handle)
+		return -ENOMEM;
+
+	memset(dma_handle, 0, sizeof(zocl_dma_handle_t));
+
+	ret = zocl_dma_channel_instance(dma_handle, zdev);
+	if (ret)
+		return ret;
+
+	/* We must set up callback for async dma operations. */
+	dma_handle->dma_func = zocl_kds_dma_complete;
+	dma_handle->dma_arg = xcmd;
+	xcmd->priv = dma_handle;
+
+	ret = zocl_copy_bo_async(dev, filp, dma_handle, &args);
+	return ret;
+}
+
 static inline void
 zocl_ctx_to_info(struct drm_zocl_ctx *args, struct kds_ctx_info *info)
 {
@@ -268,6 +316,19 @@ static void notify_execbuf(struct kds_command *xcmd, int status)
 	else if (status == KDS_ABORT)
 		ecmd->state = ERT_CMD_STATE_ABORT;
 
+	if (xcmd->timestamp_enabled) {
+		/* Only start kernel command supports timestamps */
+		struct ert_start_kernel_cmd *scmd;
+		struct cu_cmd_state_timestamps *ts;
+
+		scmd = (struct ert_start_kernel_cmd *)ecmd;
+		ts = ert_start_kernel_timestamps(scmd);
+		ts->skc_timestamps[ERT_CMD_STATE_NEW] = xcmd->timestamp[KDS_NEW];
+		ts->skc_timestamps[ERT_CMD_STATE_QUEUED] = xcmd->timestamp[KDS_QUEUED];
+		ts->skc_timestamps[ERT_CMD_STATE_RUNNING] = xcmd->timestamp[KDS_RUNNING];
+		ts->skc_timestamps[ecmd->state] = xcmd->timestamp[status];
+	}
+
 	ZOCL_DRM_GEM_OBJECT_PUT_UNLOCKED(xcmd->gem_obj);
 
 	if (xcmd->cu_idx >= 0)
@@ -307,8 +368,8 @@ int zocl_command_ioctl(struct drm_zocl_dev *zdev, void *data,
 
 	zocl_bo = to_zocl_bo(gem_obj);
 	if (!zocl_bo_execbuf(zocl_bo)) {
-		ret = -EINVAL;
-		goto out;
+		DRM_ERROR("Command buffer is not exec buf\n");
+		return -EINVAL;
 	}
 
 	ecmd = (struct ert_packet *)zocl_bo->cma_base.vaddr;
@@ -324,27 +385,54 @@ int zocl_command_ioctl(struct drm_zocl_dev *zdev, void *data,
 		goto out;
 	}
 	xcmd->cb.free = kds_free_command;
+	xcmd->cb.notify_host = notify_execbuf;
+	xcmd->execbuf = (u32 *)ecmd;
+	xcmd->gem_obj = gem_obj;
 
 	//print_ecmd_info(ecmd);
 
-	/* TODO: one ecmd to one xcmd now. Maybe we will need
-	 * one ecmd to multiple xcmds
-	 */
-	if (ecmd->opcode == ERT_CONFIGURE)
-		cfg_ecmd2xcmd(to_cfg_pkg(ecmd), xcmd);
-	else if (ecmd->opcode == ERT_START_CU)
+	switch(ecmd->opcode) {
+	case ERT_CONFIGURE:
+		xcmd->status = KDS_COMPLETED;
+		xcmd->cb.notify_host(xcmd, xcmd->status);
+		goto out1;
+	case ERT_START_CU:
 		start_krnl_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
-	else if (ecmd->opcode == ERT_EXEC_WRITE)
-		exec_write_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
-	else if (ecmd->opcode == ERT_START_FA)
+		break;
+	case ERT_EXEC_WRITE:
+		/* third argument in following function is representing number of
+		 * words to skip when configuring CU. This should be consistent
+		 * for both edge/DC, but due to performance and siome use cases,
+		 * this has veen decided that , DC flows skip 6 words whereas
+		 * edge flows doesnt skip any words.
+		 */
+		exec_write_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd, 0);
+		break;
+	case ERT_START_FA:
 		start_fa_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
-	xcmd->cb.notify_host = notify_execbuf;
-	xcmd->gem_obj = gem_obj;
+		break;
+	case ERT_START_COPYBO:
+		ret = copybo_ecmd2xcmd(zdev, filp, to_copybo_pkg(ecmd), xcmd);
+		if (ret)
+			goto out1;
+		goto out;
+	default:
+		DRM_ERROR("Unsupport command\n");
+		ret = -EINVAL;
+		goto out1;
+	}
 
 	/* Now, we could forget execbuf */
 	ret = kds_add_command(&zdev->kds, xcmd);
+	return ret;
 
+out1:
+	xcmd->cb.free(xcmd);
 out:
+	/* Don't forget to put gem object if error happen */
+	if (ret < 0) {
+		ZOCL_DRM_GEM_OBJECT_PUT_UNLOCKED(gem_obj);
+	}
 	return ret;
 }
 
@@ -490,7 +578,7 @@ static void zocl_detect_fa_cmdmem(struct drm_zocl_dev *zdev)
 	zdev->kds.cmdmem.size = size;
 }
 
-int zocl_kds_update(struct drm_zocl_dev *zdev)
+int zocl_kds_update(struct drm_zocl_dev *zdev, struct drm_zocl_kds *cfg)
 {
 	struct drm_zocl_bo *bo = NULL;
 	int i;
@@ -506,7 +594,9 @@ int zocl_kds_update(struct drm_zocl_dev *zdev)
 	}
 
 	zocl_detect_fa_cmdmem(zdev);
-	zdev->kds.cu_intr = 0;
+	
+	// Default supporting interrupt mode
+	zdev->kds.cu_intr_cap = 1;	
 
 	for (i = 0; i < zdev->kds.cu_mgmt.num_cus; i++) {
 		struct xrt_cu *xcu;
@@ -521,6 +611,13 @@ int zocl_kds_update(struct drm_zocl_dev *zdev)
 		}
 		update_cu_idx_in_apt(zdev, apt_idx, i);
 	}
+
+	// Check for polling mode and enable CU interrupt if polling_mode is false
+	if (cfg->polling)
+		zdev->kds.cu_intr = 0;
+	else
+		zdev->kds.cu_intr = 1;
+
 
 	return kds_cfg_update(&zdev->kds);
 }

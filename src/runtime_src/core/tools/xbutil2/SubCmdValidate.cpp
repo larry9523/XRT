@@ -252,6 +252,7 @@ runTestCase( const std::shared_ptr<xrt_core::device>& _dev, const std::string& p
 
   std::ostringstream os_stdout;
   std::ostringstream os_stderr;
+  constexpr static int MAX_TEST_DURATION = 300; //5 minutes
 
   if(json_exists()) {
     //map old testcase names to new testcase names
@@ -285,7 +286,7 @@ runTestCase( const std::shared_ptr<xrt_core::device>& _dev, const std::string& p
     std::vector<std::string> args = { test_dir.parent_path().string(), 
                                       "-d", xrt_core::query::pcie_bdf::to_string(xrt_core::device_query<xrt_core::query::pcie_bdf>(_dev)) };
     try {
-      int exit_code = XBU::runScript("sh", xrtTestCasePath, args, os_stdout, os_stderr, true);
+      int exit_code = XBU::runScript("sh", xrtTestCasePath, args, "Running Test", "Test Duration", MAX_TEST_DURATION, os_stdout, os_stderr, true);
       if (exit_code == EOPNOTSUPP) {
         _ptTest.put("status", "skipped");
       }
@@ -320,9 +321,9 @@ runTestCase( const std::shared_ptr<xrt_core::device>& _dev, const std::string& p
     int exit_code;    
     try {
       if (py.find(".exe") != std::string::npos)
-        exit_code = XBU::runScript("", xrtTestCasePath, args, os_stdout, os_stderr, true);
+        exit_code = XBU::runScript("", xrtTestCasePath, args, "Running Test", "Test Duration:", MAX_TEST_DURATION, os_stdout, os_stderr, true);
       else
-        exit_code = XBU::runScript("python", xrtTestCasePath, args, os_stdout, os_stderr, true);
+        exit_code = XBU::runScript("python", xrtTestCasePath, args, "Running Test", "Test Duration:", MAX_TEST_DURATION, os_stdout, os_stderr, true);
 
       if (exit_code == EOPNOTSUPP) {
         _ptTest.put("status", "skipped");
@@ -818,6 +819,17 @@ dmaTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
   auto membuf = xrt_core::device_query<xrt_core::query::mem_topology_raw>(_dev);
   auto mem_topo = reinterpret_cast<const mem_topology*>(membuf.data());
 
+  std::vector<std::string> dma_thr ;
+
+  try {
+   dma_thr = xrt_core::device_query<xrt_core::query::dma_threads_raw>(_dev);
+  } catch(...){}
+
+  if (dma_thr.size() == 0){
+    _ptTest.put("status", "skipped");
+    return ;
+  }
+
   auto vendor = xrt_core::device_query<xrt_core::query::pcie_vendor>(_dev);
   size_t totalSize = 0;
   switch (vendor) {
@@ -829,8 +841,15 @@ dmaTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
       break;
   }
 
+  auto is_host_mem = [](std::string tag) {
+    return tag.compare(0,4,"HOST") == 0;
+  };
+
   for (auto& mem : boost::make_iterator_range(mem_topo->m_mem_data, mem_topo->m_mem_data + mem_topo->m_count)) {
     auto midx = std::distance(mem_topo->m_mem_data, &mem);
+    if(is_host_mem(std::string(reinterpret_cast<const char*>(mem.m_tag))))
+      continue;
+
     if (mem.m_type == MEM_STREAMING)
       continue;
 
@@ -884,6 +903,17 @@ bandwidthKernelTest(const std::shared_ptr<xrt_core::device>& _dev, boost::proper
 void
 p2pTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptree& _ptTest)
 {
+  uint32_t no_dma = 0;
+  try {
+    no_dma = xrt_core::device_query<xrt_core::query::nodma>(_dev);
+  } catch(...) { }
+
+  if(no_dma != 0) {
+    logger(_ptTest, "Details", "Not supported on NoDMA platform");
+    _ptTest.put("status", "skipped");
+    return;
+  }
+
   if(!search_and_program_xclbin(_dev, _ptTest)) {
     return;
   }
@@ -936,6 +966,17 @@ p2pTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
 void
 m2mTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptree& _ptTest)
 {
+  uint32_t no_dma = 0;
+  try {
+    no_dma = xrt_core::device_query<xrt_core::query::nodma>(_dev);
+  } catch(...) { }
+
+  if(no_dma != 0) {
+    logger(_ptTest, "Details", "Not supported on NoDMA platform");
+    _ptTest.put("status", "skipped");
+    return;
+  }
+
   if(!search_and_program_xclbin(_dev, _ptTest)) {
     return;
   }
@@ -949,14 +990,6 @@ m2mTest(const std::shared_ptr<xrt_core::device>& _dev, boost::property_tree::ptr
   // which causes a hang. Skip m2mtest if this platform is installed
   if (m2m_enabled == 0 || name.find("_u250_xdma_201830_1") != std::string::npos) {
     logger(_ptTest, "Details", "M2M is not available");
-    _ptTest.put("status", "skipped");
-    return;
-  }
-
-  int nodma = xrt_core::device_query<xrt_core::query::nodma>(_dev);
-
-  if (nodma == 1 ) {
-    logger(_ptTest, "Details","M2M Test is not available");
     _ptTest.put("status", "skipped");
     return;
   }
@@ -1097,7 +1130,7 @@ static std::vector<TestCollection> testSuite = {
   { create_init_test("SC version", "Check if SC firmware is up-to-date", ""), scVersionTest },
   { create_init_test("Verify kernel", "Run 'Hello World' kernel test", "verify.xclbin"), verifyKernelTest },
   { create_init_test("DMA", "Run dma test", "verify.xclbin"), dmaTest },
-  { create_init_test("iops", "Run xcl_iops test", "verify.xclbin"), iopsTest },
+  { create_init_test("iops", "Run scheduler performance measure test", "verify.xclbin"), iopsTest },
   { create_init_test("Bandwidth kernel", "Run 'bandwidth kernel' and check the throughput", "bandwidth.xclbin"), bandwidthKernelTest },
   { create_init_test("Peer to peer bar", "Run P2P test", "bandwidth.xclbin"), p2pTest },
   { create_init_test("Memory to memory DMA", "Run M2M test", "bandwidth.xclbin"), m2mTest },
@@ -1202,12 +1235,12 @@ static void
 print_status(test_status status, std::ostream & _ostream)
 {
   if (status == test_status::failed)
-    _ostream<< "Validation failed";
+    _ostream << "Validation failed";
   else
     _ostream << "Validation completed";
   if (status == test_status::warning)
-    _ostream<< ", but with warnings";
-  _ostream<< std::endl;
+    _ostream << ", but with warnings";
+  _ostream << ". Please run the command '--verbose' option for more details" << std::endl;
 }
 
 /*
@@ -1517,7 +1550,7 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
   const std::string formatRunValues = XBU::create_suboption_list_string(testNameDescription);
 
   // -- Retrieve and parse the subcommand options -----------------------------
-  std::vector<std::string> device  = {"all"};
+  std::vector<std::string> device;
   std::vector<std::string> testsToRun = {"all"};
   std::string sFormat = "JSON";
   std::string sOutput = "";
@@ -1526,8 +1559,7 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
   po::options_description commonOptions("Commmon Options");
   commonOptions.add_options()
     ("device,d", boost::program_options::value<decltype(device)>(&device)->multitoken(), "The device of interest. This is specified as follows:\n"
-                                                                           "  <BDF> - Bus:Device.Function (e.g., 0000:d8:00.0)\n"
-                                                                           "  all   - Examines all known devices (default)")
+                                                                           "  <BDF> - Bus:Device.Function (e.g., 0000:d8:00.0)")
     ("format,f", boost::program_options::value<decltype(sFormat)>(&sFormat), (std::string("Report output format. Valid values are:\n") + formatOptionValues).c_str() )
     ("run,r", boost::program_options::value<decltype(testsToRun)>(&testsToRun)->multitoken(), (std::string("Run a subset of the test suite.  Valid options are:\n") + formatRunValues).c_str() )
     ("output,o", boost::program_options::value<decltype(sOutput)>(&sOutput), "Direct the output to the given file")
@@ -1622,6 +1654,19 @@ SubCmdValidate::execute(const SubCmdOptions& _options) const
   } catch (const std::runtime_error& e) {
     std::cerr << boost::format("ERROR: %s\n") % e.what();
     return;
+  }
+
+  // enforce 1 device specification
+  if(deviceCollection.empty() || deviceCollection.size() > 1) {
+    std::cerr << "\nERROR: Please specify a single device using --device option\n\n";
+    std::cout << "List of available devices:" << std::endl;
+    boost::property_tree::ptree available_devices = XBU::get_available_devices(true);
+    for(auto& kd : available_devices) {
+      boost::property_tree::ptree& _dev = kd.second;
+      std::cout << boost::format("  [%s] : %s\n") % _dev.get<std::string>("bdf") % _dev.get<std::string>("vbnv");
+    }
+    std::cout << std::endl;
+    throw xrt_core::error(std::errc::operation_canceled);
   }
 
   // Collect all of the tests of interests

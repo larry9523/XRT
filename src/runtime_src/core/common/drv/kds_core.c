@@ -266,6 +266,7 @@ kds_cu_dispatch(struct kds_cu_mgmt *cu_mgmt, struct kds_command *xcmd)
 		return cu_idx;
 
 	xrt_cu_submit(cu_mgmt->xcus[cu_idx], xcmd);
+	set_xcmd_timestamp(xcmd, KDS_QUEUED);
 	return 0;
 }
 
@@ -333,6 +334,7 @@ kds_submit_ert(struct kds_sched *kds, struct kds_command *xcmd)
 	}
 
 	ert->submit(ert, xcmd);
+	set_xcmd_timestamp(xcmd, KDS_QUEUED);
 	return 0;
 }
 
@@ -492,6 +494,7 @@ struct kds_command *kds_alloc_command(struct kds_client *client, u32 size)
 	xcmd->cu_idx = NO_INDEX;
 	xcmd->opcode = OP_NONE;
 	xcmd->status = KDS_NEW;
+	xcmd->timestamp_enabled = 0;
 
 	xcmd->info = kzalloc(size, GFP_KERNEL);
 	if (!xcmd->info) {
@@ -1123,6 +1126,10 @@ void start_krnl_ecmd2xcmd(struct ert_start_kernel_cmd *ecmd,
 	xcmd->opcode = OP_START;
 
 	xcmd->execbuf = (u32 *)ecmd;
+	if (ecmd->stat_enabled) {
+		xcmd->timestamp_enabled = 1;
+		set_xcmd_timestamp(xcmd, KDS_NEW);
+	}
 
 	xcmd->cu_mask[0] = ecmd->cu_mask;
 	memcpy(&xcmd->cu_mask[1], ecmd->data, ecmd->extra_cu_masks);
@@ -1142,11 +1149,15 @@ void start_krnl_ecmd2xcmd(struct ert_start_kernel_cmd *ecmd,
 }
 
 void exec_write_ecmd2xcmd(struct ert_start_kernel_cmd *ecmd,
-			  struct kds_command *xcmd)
+			  struct kds_command *xcmd, u32 skip)
 {
 	xcmd->opcode = OP_START;
 
 	xcmd->execbuf = (u32 *)ecmd;
+	if (ecmd->stat_enabled) {
+		xcmd->timestamp_enabled = 1;
+		set_xcmd_timestamp(xcmd, KDS_NEW);
+	}
 
 	xcmd->cu_mask[0] = ecmd->cu_mask;
 	memcpy(&xcmd->cu_mask[1], ecmd->data, ecmd->extra_cu_masks);
@@ -1158,8 +1169,8 @@ void exec_write_ecmd2xcmd(struct ert_start_kernel_cmd *ecmd,
 	 * In ert_start_kernel_cmd, the CU register map size is
 	 * (count - (1 + extra_cu_masks)) and skip 6 words for exec_write cmd.
 	 */
-	xcmd->isize = (ecmd->count - xcmd->num_mask - 6) * sizeof(u32);
-	memcpy(xcmd->info, &ecmd->data[6 + ecmd->extra_cu_masks], xcmd->isize);
+	xcmd->isize = (ecmd->count - xcmd->num_mask - skip) * sizeof(u32);
+	memcpy(xcmd->info, &ecmd->data[skip + ecmd->extra_cu_masks], xcmd->isize);
 	xcmd->payload_type = KEY_VAL;
 	ecmd->type = ERT_CU;
 }
@@ -1170,6 +1181,10 @@ void start_fa_ecmd2xcmd(struct ert_start_kernel_cmd *ecmd,
 	xcmd->opcode = OP_START;
 
 	xcmd->execbuf = (u32 *)ecmd;
+	if (ecmd->stat_enabled) {
+		xcmd->timestamp_enabled = 1;
+		set_xcmd_timestamp(xcmd, KDS_NEW);
+	}
 
 	xcmd->cu_mask[0] = ecmd->cu_mask;
 	memcpy(&xcmd->cu_mask[1], ecmd->data, ecmd->extra_cu_masks);
@@ -1183,6 +1198,14 @@ void start_fa_ecmd2xcmd(struct ert_start_kernel_cmd *ecmd,
 	xcmd->isize = (ecmd->count - xcmd->num_mask) * sizeof(u32);
 	memcpy(xcmd->info, &ecmd->data[ecmd->extra_cu_masks], xcmd->isize);
 	ecmd->type = ERT_CTRL;
+}
+
+void set_xcmd_timestamp(struct kds_command *xcmd, enum kds_status s)
+{
+	if (!xcmd->timestamp_enabled)
+		return;
+
+	xcmd->timestamp[s] = ktime_to_ns(ktime_get());
 }
 
 /**

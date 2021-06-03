@@ -105,15 +105,18 @@ namespace xdp {
     for (auto o : offloaders) {
       auto offloader = std::get<0>(o.second) ;
 
-      if(offloader->continuous_offload()) {
-        offloader->stop_offload();
-        // To avoid a race condition, wait until the thread is stopped
-        while (offloader->get_status() != OffloadThreadStatus::STOPPED) ;
-      } else {
-        offloader->read_trace();
-        offloader->read_trace_end();
+      try {
+        if(offloader->continuous_offload()) {
+          offloader->stop_offload();
+          // To avoid a race condition, wait until the thread is stopped
+          while (offloader->get_status() != OffloadThreadStatus::STOPPED) ;
+        } else {
+          offloader->read_trace();
+          offloader->read_trace_end();
+        }
+        checkTraceBufferFullness(offloader, o.first);
+      } catch (std::exception& /*e*/) {
       }
-      checkTraceBufferFullness(offloader, o.first);
     }
   }
 
@@ -140,14 +143,17 @@ namespace xdp {
 
     if (offloaders.find(deviceId) != offloaders.end())
     {
-      auto offloader = std::get<0>(offloaders[deviceId]) ;
-      if (offloader->continuous_offload())
-      {
-	offloader->stop_offload() ;
-      }
-      else
-      {
-	offloader->read_trace() ;
+      try {
+        auto offloader = std::get<0>(offloaders[deviceId]) ;
+        if (offloader->continuous_offload()) {
+          offloader->stop_offload() ;
+          // To avoid a race condition, wait until the offloader has stopped
+          while(offloader->get_status() != OffloadThreadStatus::STOPPED) ;
+        }
+        else {
+          offloader->read_trace() ;
+        }
+      } catch (std::exception& /*e*/) {
       }
     }
     readCounters() ;
@@ -177,13 +183,13 @@ namespace xdp {
 
     if (!(db->getStaticInfo()).validXclbin(userHandle)) {
       std::string msg =
-	"Device profiling is only supported on xclbins built using " ;
+        "Device profiling is only supported on xclbins built using " ;
       msg += std::to_string((db->getStaticInfo()).earliestSupportedToolVersion()) ;
       msg += " tools or later.  To enable device profiling please rebuild." ;
 
       xrt_core::message::send(xrt_core::message::severity_level::warning,
-			      "XRT",
-			      msg) ;
+                              "XRT",
+                              msg) ;
       return ;
     }
     
@@ -194,7 +200,7 @@ namespace xdp {
       struct xclDeviceInfo2 info ;
       if (xclGetDeviceInfo2(userHandle, &info) == 0)
       {
-	(db->getStaticInfo()).setDeviceName(deviceId, std::string(info.mName));
+        (db->getStaticInfo()).setDeviceName(deviceId, std::string(info.mName));
       }
     }
 

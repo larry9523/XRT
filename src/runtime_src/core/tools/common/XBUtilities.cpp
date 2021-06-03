@@ -345,7 +345,8 @@ XBUtilities::get_available_devices(bool inUserDomain)
 
     //if factory mode
     if (is_mfg) {
-      std::string vbnv = "xilinx_" + xrt_core::device_query<xrt_core::query::board_name>(device) + "_GOLDEN";
+      auto mGoldenVer = xrt_core::device_query<xrt_core::query::mfg_ver>(device);
+      std::string vbnv = "xilinx_" + xrt_core::device_query<xrt_core::query::board_name>(device) + "_GOLDEN_"+ std::to_string(mGoldenVer);
       pt_dev.put("vbnv", vbnv);
     }
     else {
@@ -679,6 +680,9 @@ XBUtilities::check_p2p_config(const xrt_core::device* _dev, std::string &msg)
   }
   catch (const std::runtime_error&) {
     msg = "P2P config failed. P2P is not available";
+    return static_cast<int>(p2p_config::not_supported);
+  }
+  catch (const xrt_core::query::no_such_key&) {
     return static_cast<int>(p2p_config::not_supported);
   }
 

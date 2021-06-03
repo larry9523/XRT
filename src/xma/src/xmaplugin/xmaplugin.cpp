@@ -613,8 +613,16 @@ XmaCUCmdObj xma_plg_schedule_work_item(XmaSession s_handle,
     cu_cmd->count = (regmap_size >> 2) + 4;
 
     if (priv1->num_cu_cmds != 0) {
+#ifdef __GNUC__
+# pragma GCC diagnostic push
+# pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+	/* This is no longer supported by new KDS implementation. */
         if (xclExecBufWithWaitList(priv1->dev_handle, 
                         priv1->kernel_execbos[bo_idx].handle, 1, &priv1->last_execbo_handle) != 0) {
+#ifdef __GNUC__
+# pragma GCC diagnostic pop
+#endif
             xma_logmsg(XMA_ERROR_LOG, XMAPLUGIN_MOD,
                         "Failed to submit kernel start with xclExecBuf");
             priv1->execbo_locked = false;
@@ -833,8 +841,16 @@ XmaCUCmdObj xma_plg_schedule_cu_cmd(XmaSession s_handle,
     cu_cmd->count = (regmap_size >> 2) + 4;
     
     if (priv1->num_cu_cmds != 0) {
+#ifdef __GNUC__
+# pragma GCC diagnostic push
+# pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+	/* This is no longer supported by new KDS implementation. */
         if (xclExecBufWithWaitList(priv1->dev_handle, 
                         priv1->kernel_execbos[bo_idx].handle, 1, &priv1->last_execbo_handle) != 0) {
+#ifdef __GNUC__
+# pragma GCC diagnostic pop
+#endif
             xma_logmsg(XMA_ERROR_LOG, XMAPLUGIN_MOD,
                         "Failed to submit kernel start with xclExecBuf");
             priv1->execbo_locked = false;
@@ -1292,7 +1308,7 @@ int32_t xma_plg_work_item_return_code(XmaSession s_handle, XmaCUCmdObj* cmd_obj_
             return XMA_ERROR;
         }
         cmd.cmd_finished = true;
-        cmd.return_code = 0;
+        //cmd.return_code = 0; As return_code is now shared with cmd_id1
         cmd.cmd_state = static_cast<XmaCmdState>(xma_cmd_state::completed);
         cmd.do_not_use1 = nullptr;
         auto itr_tmp2 = priv1->CU_error_cmds.find(cmd.cmd_id1);

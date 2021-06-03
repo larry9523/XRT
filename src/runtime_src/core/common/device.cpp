@@ -47,6 +47,80 @@ is_sw_emulation()
   return swem;
 }
 
+
+// Encode / compress memory connections, a mapping from mem_topology
+// memory index to encoded index.  The compressed indices facilitate
+// small sized std::bitset for representing kernel argument
+// connectivity.
+//
+// The complicated part of this routine is to partition the set of all
+// memory banks into groups of banks with same base address and size
+// such that all banks within a group can share the same encoded index.
+static std::vector<size_t>
+compute_memidx_encoding(const ::mem_topology* mem_topology)
+{
+  // The resulting encoding midx -> eidx
+  std::vector<size_t> enc(mem_topology->m_count, std::numeric_limits<size_t>::max());
+
+  struct membank
+  {
+    const mem_data* mdata;
+    int32_t midx;
+    membank(const mem_data* md, int32_t mi) : mdata(md), midx(mi) {}
+  };
+
+  // Collect all memory banks of interest
+  std::vector<membank> membanks;
+  for (int32_t midx = 0; midx < mem_topology->m_count; ++midx) {
+    const auto& mem = mem_topology->m_mem_data[midx];
+
+    if (!mem.m_used)
+      continue;
+    
+    // skip types that are of no interest for global connection
+    // however in software emulation the connectivity seciton
+    // can be incorrect see (CR-1086919) so keep even these.
+    if (!is_sw_emulation() && (mem.m_type == MEM_STREAMING || mem.m_type == MEM_STREAMING_CONNECTION))
+      continue;
+
+    membanks.emplace_back(&mem, midx);
+  }
+
+  // Sort collected memory banks on addr decreasing order, the size
+  // use stable sort for predicatability (see #3795)
+  std::stable_sort(membanks.begin(), membanks.end(),
+                   [](const auto& mb1, const auto& mb2) {
+                     return (mb1.mdata->m_base_address > mb2.mdata->m_base_address)
+                       || ((mb1.mdata->m_base_address == mb2.mdata->m_base_address)
+                           && (mb1.mdata->m_size > mb2.mdata->m_size));
+                   });
+
+  // Process each memory bank and assign encoded index based on
+  // address/size partitioning, such that memory banks with same
+  // base address and same size share same encoded index
+  size_t eidx = 0;  // encoded index
+  auto itr = membanks.begin();
+  while (itr != membanks.end()) {
+    const auto& mb = *(itr);
+    auto addr = mb.mdata->m_base_address;
+    auto size = mb.mdata->m_size;
+
+    // first element not part of the sorted (decreasing) range
+    auto upper = std::find_if(itr, membanks.end(),
+                              [addr, size] (const auto& mb) {
+                                return ((mb.mdata->m_base_address != addr) || (mb.mdata->m_size != size));
+                              });
+
+    // process the range assigning same encoded index to all banks in group
+    for (; itr != upper; ++itr)
+      enc[(*itr).midx] = eidx;
+
+    ++eidx; // increment for next iteration
+  }
+
+  return enc;
+}
+
 }
 
 namespace xrt_core {
@@ -135,7 +209,7 @@ load_xclbin(const uuid& xclbin_id)
   const axlf* top = reinterpret_cast<axlf *>(xclbin_full.data());
   try {
     // set before register_axlf is called via load_axlf_meta
-    m_xclbin = xrt::xclbin{top};  
+    m_xclbin = xrt::xclbin{top};
     load_axlf_meta(m_xclbin.get_axlf());
   }
   catch (const std::exception&) {
@@ -158,23 +232,21 @@ register_axlf(const axlf* top)
   if (!m_xclbin || m_xclbin.get_uuid() != uuid(top->m_header.uuid))
       m_xclbin = xrt::xclbin{top};
 
-  // encode / compress memory connections, a mapping from mem_topology
-  // memory index to encoded index.  The compressed indices facilitate
+  // Compute memidx encoding / compression. The compressed indices facilitate
   // small sized std::bitset for representing kernel argument connectivity
-  if (auto mem_topology = get_axlf_section<const ::mem_topology*>(ASK_GROUP_TOPOLOGY)) {
-    std::vector<size_t> enc(mem_topology->m_count, std::numeric_limits<size_t>::max());
-    for (int32_t midx = 0, eidx = 0; midx < mem_topology->m_count; ++midx) {
-      const auto& mem = mem_topology->m_mem_data[midx];
-      if (!mem.m_used)
-        continue;
-      // skip types that are of no interest for global connection
-      // however in software emulation the connectivity seciton
-      // can be incorrect see (CR-1086919) so keep even these.
-      if (!is_sw_emulation() && (mem.m_type == MEM_STREAMING || mem.m_type == MEM_STREAMING_CONNECTION))
-        continue;
-      enc[midx] = eidx++;
-    }
-    m_memidx_encoding = std::move(enc);
+  m_memidx_encoding = compute_memidx_encoding(get_axlf_section<const ::mem_topology*>(ASK_GROUP_TOPOLOGY));
+
+  // Compute CU sort order, kernel driver zocl and xocl now assign and
+  // control the sort order, which is accessible via a query request.
+  // For emulation old xclbin_parser::get_cus is used.
+  m_cus.clear();
+  try {
+    auto cudata = xrt_core::device_query<xrt_core::query::kds_cu_stat>(this);
+    std::sort(cudata.begin(), cudata.end(), [](const auto& d1, const auto& d2) { return d1.index < d2.index; });
+    std::transform(cudata.begin(), cudata.end(), std::back_inserter(m_cus), [](const auto& d) { return d.base_addr; });
+  }
+  catch (const query::no_such_key&) {
+    m_cus = xclbin::get_cus(get_axlf_section<const ::ip_layout*>(IP_LAYOUT));
   }
 }
 
@@ -222,9 +294,19 @@ get_memory_type(size_t memidx) const
   auto mtype = static_cast<memory_type>(mem.m_type);
   if (mtype != memory_type::dram)
     return mtype;
-  return (strncmp(reinterpret_cast<const char*>(mem.m_tag), "HOST[0]", 7) == 0) 
+  return (strncmp(reinterpret_cast<const char*>(mem.m_tag), "HOST[0]", 7) == 0)
     ? memory_type::host
     : mtype;
+}
+
+const std::vector<uint64_t>
+device::
+get_cus(const uuid& xclbin_id) const
+{
+  if (xclbin_id && xclbin_id != m_xclbin.get_uuid())
+    throw error(EINVAL, "xclbin id mismatch");
+
+  return m_cus;
 }
 
 std::pair<size_t, size_t>

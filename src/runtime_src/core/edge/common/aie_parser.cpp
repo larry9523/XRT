@@ -70,6 +70,7 @@ get_aiecompiler_options(const pt::ptree& aie_meta)
 {
     adf::aiecompiler_options aiecompiler_options;
     aiecompiler_options.broadcast_enable_core = aie_meta.get<bool>("aie_metadata.aiecompiler_options.broadcast_enable_core");
+    aiecompiler_options.event_trace = aie_meta.get("aie_metadata.aiecompiler_options.event_trace", "runtime");
     return aiecompiler_options;
 }
 
@@ -358,10 +359,10 @@ get_trace_gmio(const pt::ptree& aie_meta)
     gmio.id = gmio_node.second.get<uint32_t>("id");
     //gmio.name = gmio_node.second.get<std::string>("name");
     //gmio.type = gmio_node.second.get<uint16_t>("type");
-    gmio.shim_col = gmio_node.second.get<uint16_t>("shim_column");
-    gmio.channel_number = gmio_node.second.get<uint16_t>("channel_number");
-    gmio.stream_id = gmio_node.second.get<uint16_t>("stream_id");
-    gmio.burst_len = gmio_node.second.get<uint16_t>("burst_length_in_16byte");
+    gmio.shimColumn = gmio_node.second.get<uint16_t>("shim_column");
+    gmio.channelNum = gmio_node.second.get<uint16_t>("channel_number");
+    gmio.streamId = gmio_node.second.get<uint16_t>("stream_id");
+    gmio.burstLength = gmio_node.second.get<uint16_t>("burst_length_in_16byte");
 
     gmios.emplace_back(std::move(gmio));
   }

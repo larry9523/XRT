@@ -198,42 +198,6 @@ namespace xclhwemhal2 {
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
   }
 
-  void HwEmShim::writeStringIntoFile(const std::string& path, const std::string& content)
-  {
-    std::ofstream out(path);
-    out << content << std::endl;
-    out.close();
-  }
-
-  std::string HwEmShim::modifyContent(const std::string& simulatorName, std::string& content)
-  {
-    if (simulatorName == "xcelium") {
-      // Append "-gui " to  xmsim command line if not already present
-      if (content.find("-gui ") == std::string::npos) {
-        content.replace(content.find("xmsim "), 6, "xmsim -gui ");
-      }
-    } else if (simulatorName == "questa") {
-      // Questa always generates simulate.sh with "-c " which is batch mode. Replace "-c " with "-gui " to run in GUI mode
-      if (content.find("-c ") != std::string::npos) {
-        content.replace(content.find("-c "), 3, "-gui ");
-      }
-    }
-    return content;
-  }
-
-  void HwEmShim::writeNewSimulateScript (const std::string& simPath, const std::string& simulatorName )
-  {
-    // Write the contents of this file into a string
-    std::string content = loadFileContentsToString(simPath + "/simulate.sh");
-    // Modify as per simulator name
-    content = modifyContent(simulatorName, content);
-    // overwrite the file with modified string
-    writeStringIntoFile(simPath + "/simulate.sh", content);
-    // give permissions
-    std::string filePath = simPath + "/simulate.sh";
-    systemUtil::makeSystemCall(filePath, systemUtil::systemOperation::PERMISSIONS, "777", boost::lexical_cast<std::string>(__LINE__));
-  }
-
   void HwEmShim::parseHLSPrintf(const std::string& simPath)
   {
     std::ifstream ifs(simPath + "/simulate.log");
@@ -448,8 +412,12 @@ namespace xclhwemhal2 {
     }
     if(xclemulation::config::getInstance()->isNewMbscheduler()) {
         m_scheduler = new hwemu::xocl_scheduler(this);
-    }
-    else {
+    } else if (xclemulation::config::getInstance()->isXgqMode()) {
+        m_xgq = new hwemu::xocl_xgq(this);
+        if (m_xgq) {
+            returnValue = m_xgq->load_xclbin(pdi, pdiSize);
+        }
+    } else {
         mCore = new exec_core;
         mMBSch = new MBScheduler(this);
         mMBSch->init_scheduler_thread();
@@ -574,26 +542,36 @@ namespace xclhwemhal2 {
       for (auto it : mMembanks)
       {
         //CR 966701: alignment to 4k (instead of mDeviceInfo.mDataAlignment)
-        mDDRMemoryManager.push_back(new xclemulation::MemoryManager(it.size, it.base_addr, getpagesize(), it.tag));
+        mDDRMemoryManager.push_back(new xclemulation::MemoryManager(it.size, it.base_addr, getpagesize(), it.tag));        
+
+        std::size_t found = it.tag.find("HOST");
+        if (found != std::string::npos) {
+          host_sptag_idx = it.index;
+        }
       }
-      for (auto it:mDDRMemoryManager)
+
+      for (auto it : mDDRMemoryManager)
       {
-              std::string tag = it->tag();
+        std::string tag = it->tag();
 
-              if(tag.empty() || tag.find("MBG") == std::string::npos)
-        	      continue;
+        //continue if not MBG group
+        if (tag.find("MBG") == std::string::npos) {
+          continue;
+        }
 
-              for (auto it2:mDDRMemoryManager)
-              {
-        	      if(it2->size() !=0 &&
-			 it2 != it &&
-        		 it->start() <= it2->start() &&
-        		 (it->start() + it->size()) >= (it2->start() + it2->size()))
-        	      {
-			      //add child memories
-			      it->mChildMemories.push_back(it2);
-        	      }
-              }
+        // Connectivity provided with the bus direction for HBM[31:0], XCLBIN creates the large group of memory with all the HBM[31:0] size
+        // like MBG. It indicates allocation of sequential memory is possible and not to limited size of one HBM. Hence creating the 
+        // HBM child memories (HBM subsets listed in RTD which falls under the range of MBG) for MBG memory type
+        for (auto it2 : mDDRMemoryManager)
+        {
+          if (it2->size() != 0 && it2 != it &&
+            it->start() <= it2->start() &&
+            (it->start() + it->size()) >= (it2->start() + it2->size()))
+          {
+            //add HBM child memories to MBG large group[
+            it->mChildMemories.push_back(it2);
+          }
+        }
       }
     }
 
@@ -752,7 +730,14 @@ namespace xclhwemhal2 {
     if (!simDontRun)
     {
       wdbFileName = std::string(mDeviceInfo.mName) + "-" + std::to_string(mDeviceIndex) + "-" + xclBinName;
-      xclemulation::DEBUG_MODE lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
+      xclemulation::debug_mode lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
+
+      if (lWaveform == xclemulation::debug_mode::gdb) {
+        std::string dMsg = "ERROR: [HW-EMU 21] debug_mode option 'gdb' is no more valid. Valid options for debug_mode are 'gui', 'batch' and 'off'. Please make sure you build the application with 'wdb' mode";
+        logMessage(dMsg, 0);
+        return -1;
+      }
+
       std::string userSpecifiedSimPath = xclemulation::config::getInstance()->getSimDir();
       if (userSpecifiedSimPath.empty())
       {
@@ -773,7 +758,7 @@ namespace xclhwemhal2 {
         std::transform(simulatorType.begin(), simulatorType.end(), simulatorType.begin(), [](unsigned char c){return std::tolower(c);});
       }
 
-      if (lWaveform == xclemulation::DEBUG_MODE::GUI)
+      if (lWaveform == xclemulation::debug_mode::gui)
       {
         // NOTE: proto inst filename must match name in HPIKernelCompilerHwEmu.cpp
         std::string protoFileName = "./" + bdName + "_behav.protoinst";
@@ -785,11 +770,12 @@ namespace xclhwemhal2 {
         if (boost::filesystem::exists(sim_path) != false) {
           waveformDebugfilePath = sim_path + "/waveform_debug_enable.txt";
 	        if (simulatorType == "xsim") {
-            cmdLineOption << " -g --wdb " << wdbFileName << ".wdb"
-            << " --protoinst " << protoFileName;
-            launcherArgs = launcherArgs + cmdLineOption.str();
+                cmdLineOption << " -g --wdb " << wdbFileName << ".wdb"
+                << " --protoinst " << protoFileName;
+                launcherArgs = launcherArgs + cmdLineOption.str();
 	        } else {
-	          writeNewSimulateScript(sim_path, simulatorType);
+                cmdLineOption << " gui ";
+                launcherArgs = launcherArgs + cmdLineOption.str();
 	        }
         }
 
@@ -806,7 +792,7 @@ namespace xclhwemhal2 {
         setenv("VITIS_KERNEL_TRACE_FILENAME", kernelTraceFileName.c_str(), true);
       }
 
-      if (lWaveform == xclemulation::DEBUG_MODE::BATCH)
+      if (lWaveform == xclemulation::debug_mode::batch)
       {
         // NOTE: proto inst filename must match name in HPIKernelCompilerHwEmu.cpp
         std::string protoFileName = "./" + bdName + "_behav.protoinst";
@@ -833,7 +819,7 @@ namespace xclhwemhal2 {
         setenv("VITIS_KERNEL_TRACE_FILENAME", kernelTraceFileName.c_str(), true);
       }
 
-      if (lWaveform == xclemulation::DEBUG_MODE::OFF) {
+      if (lWaveform == xclemulation::debug_mode::off) {
         // NOTE: proto inst filename must match name in HPIKernelCompilerHwEmu.cpp
         std::string protoFileName = "./" + bdName + "_behav.protoinst";
         std::stringstream cmdLineOption;
@@ -847,7 +833,7 @@ namespace xclhwemhal2 {
         setenv("VITIS_LAUNCH_WAVEFORM_BATCH", "1", true);
       }
 
-      /*if (lWaveform == xclemulation::DEBUG_MODE::GDB) {
+      /*if (lWaveform == xclemulation::debug_mode::gdb) {
         sim_path = binaryDirectory + "/behav_gdb/" + simulatorType;
         setSimPath(sim_path);
       }*/
@@ -866,15 +852,15 @@ namespace xclhwemhal2 {
           setSimPath(sim_path);
         }
 
-        // As GDB feature is unsupported for 2021.1, we removed this cross check. We will re-enable it once we have 2 possibilities
+        // As gdb feature is unsupported for 2021.1, we removed this cross check. We will re-enable it once we have 2 possibilities
         /*if (boost::filesystem::exists(sim_path) == false)
         {
-          if (lWaveform == xclemulation::DEBUG_MODE::GDB) {
+          if (lWaveform == xclemulation::debug_mode::gdb) {
             sim_path = binaryDirectory + "/behav_waveform/" + simulatorType;
             setSimPath(sim_path);
             std::string waveformDebugfilePath = sim_path + "/waveform_debug_enable.txt";
 
-            std::string dMsg = "WARNING: [HW-EMU 07] debug_mode is set to 'gdb' in INI file and none of kernels compiled in GDB mode. Running simulation using waveform mode. Do run v++ link with -g and --xp param:hw_emu.debugMode=gdb options to launch simulation in 'gdb' mode";
+            std::string dMsg = "WARNING: [HW-EMU 07] debug_mode is set to 'gdb' in INI file and none of kernels compiled in 'gdb' mode. Running simulation using waveform mode. Do run v++ link with -g and --xp param:hw_emu.debugMode=gdb options to launch simulation in 'gdb' mode";
             logMessage(dMsg, 0);
 
             std::string protoFileName = "./" + bdName + "_behav.protoinst";
@@ -890,7 +876,7 @@ namespace xclhwemhal2 {
               setenv("VITIS_WAVEFORM_WDB_FILENAME", std::string(wdbFileName + ".wdb").c_str(), true);
             }
 
-            // Commented to set these when DEBUG_MODE is set to GDB
+            // Commented to set these when debug_mode is set to gdb
             //setenv("VITIS_KERNEL_PROFILE_FILENAME", kernelProfileFileName.c_str(), true);
             //setenv("VITIS_KERNEL_TRACE_FILENAME", kernelTraceFileName.c_str(), true);
           }
@@ -898,9 +884,9 @@ namespace xclhwemhal2 {
             std::string dMsg;
             sim_path = binaryDirectory + "/behav_gdb/" + simulatorType;
             setSimPath(sim_path);
-            if (lWaveform == xclemulation::DEBUG_MODE::GUI)
+            if (lWaveform == xclemulation::debug_mode::gui)
               dMsg = "WARNING: [HW-EMU 07] debug_mode is set to 'gui' in ini file. Cannot enable simulator gui in this mode. Using " + sim_path + " as simulation directory.";
-            else if (lWaveform == xclemulation::DEBUG_MODE::BATCH)
+            else if (lWaveform == xclemulation::debug_mode::batch)
               dMsg = "WARNING: [HW-EMU 07] debug_mode is set to 'batch' in ini file. Using " + sim_path + " as simulation directory.";
             else
               dMsg = "WARNING: [HW-EMU 07] debug_mode is set to 'off' in ini file (or) considered by default. Using " + sim_path + " as simulation directory.";
@@ -1429,6 +1415,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       mMemModel->readDevMem(src,dest,size);
       return size;
     }
+
     if (mLogStream.is_open()) {
       mLogStream << __func__ << ", " << std::this_thread::get_id() << ", " << dest << ", "
         << src << ", " << size << ", " << skip << std::endl;
@@ -1523,9 +1510,19 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
 
     uint64_t origSize = size;
     unsigned int paddingFactor = xclemulation::config::getInstance()->getPaddingFactor();
-    uint64_t result = mDDRMemoryManager[flags]->alloc(size, paddingFactor,chunks);
-    if(result == xclemulation::MemoryManager::mNull)
+    uint64_t result = -1;    
+
+    if (boFlags & XCL_BO_FLAGS_HOST_ONLY) {
+      result = mDDRMemoryManager[host_sptag_idx]->alloc(size, paddingFactor, chunks);
+    }
+    else {
+      result = mDDRMemoryManager[flags]->alloc(size, paddingFactor, chunks);
+    }
+
+    if (result == xclemulation::MemoryManager::mNull) {
       return result;
+    }
+
     uint64_t finalValidAddress = result+(paddingFactor*size);
     uint64_t finalSize = size+(2*paddingFactor*size);
     mAddrMap[finalValidAddress] = finalSize;
@@ -1599,7 +1596,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
     }
 
-     xclemulation::DEBUG_MODE lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
+     xclemulation::debug_mode lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
 
     // The following is evil--hardcoding. This name may change.
     // Is there a way we can determine the name from the directories or otherwise?
@@ -1617,7 +1614,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       if(pPath)
       {
         // Copy waveform database
-        if (lWaveform != xclemulation::DEBUG_MODE::OFF) {
+        if (lWaveform != xclemulation::debug_mode::off) {
           std::string extension = "wdb";
           if (boost::filesystem::exists(binaryDirectory+"/msim"))
           {
@@ -1716,6 +1713,11 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
           delete m_scheduler;
           m_scheduler = nullptr;
       }
+      if(m_xgq)
+      {
+          delete m_xgq;
+          m_xgq = nullptr;
+      }
       PRINTENDFUNC;
       if (mLogStream.is_open()) {
         mLogStream.close();
@@ -1726,8 +1728,8 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     resetProgram(false);
 
     int status = 0;
-    xclemulation::DEBUG_MODE lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
-    if(( lWaveform == xclemulation::DEBUG_MODE::GUI || lWaveform == xclemulation::DEBUG_MODE::BATCH || lWaveform == xclemulation::DEBUG_MODE::OFF)
+    xclemulation::debug_mode lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
+    if(( lWaveform == xclemulation::debug_mode::gui || lWaveform == xclemulation::debug_mode::batch || lWaveform == xclemulation::debug_mode::off)
       && xclemulation::config::getInstance()->isInfoSuppressed() == false)
     {
       std::string waitingMsg ="INFO: [HW-EMU 06-0] Waiting for the simulator process to exit";
@@ -1738,7 +1740,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     if(!simDontRun)
       while (-1 == waitpid(0, &status, 0));
 
-    if(( lWaveform == xclemulation::DEBUG_MODE::GUI || lWaveform == xclemulation::DEBUG_MODE::BATCH || lWaveform == xclemulation::DEBUG_MODE::OFF)
+    if(( lWaveform == xclemulation::debug_mode::gui || lWaveform == xclemulation::debug_mode::batch || lWaveform == xclemulation::debug_mode::off)
       && xclemulation::config::getInstance()->isInfoSuppressed() == false)
     {
       std::string waitingMsg ="INFO: [HW-EMU 06-1] All the simulator processes exited successfully";
@@ -1786,6 +1788,11 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       {
           delete m_scheduler;
           m_scheduler = nullptr;
+      }
+      if(m_xgq)
+      {
+          delete m_xgq;
+          m_xgq = nullptr;
       }
       return 0;
     }
@@ -1855,8 +1862,8 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     if(saveWdb)
     {
       int status = 0;
-      xclemulation::DEBUG_MODE lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
-      if(( lWaveform == xclemulation::DEBUG_MODE::GUI || lWaveform == xclemulation::DEBUG_MODE::BATCH || lWaveform == xclemulation::DEBUG_MODE::OFF )
+      xclemulation::debug_mode lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
+      if(( lWaveform == xclemulation::debug_mode::gui || lWaveform == xclemulation::debug_mode::batch || lWaveform == xclemulation::debug_mode::off )
         && xclemulation::config::getInstance()->isInfoSuppressed() == false)
       {
         std::string waitingMsg ="INFO: [HW-EMU 06-0] Waiting for the simulator process to exit";
@@ -1867,7 +1874,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       if(!simDontRun)
         while (-1 == waitpid(0, &status, 0));
 
-      if(( lWaveform == xclemulation::DEBUG_MODE::GUI || lWaveform == xclemulation::DEBUG_MODE::BATCH || lWaveform == xclemulation::DEBUG_MODE::OFF )
+      if(( lWaveform == xclemulation::debug_mode::gui || lWaveform == xclemulation::debug_mode::batch || lWaveform == xclemulation::debug_mode::off )
         && xclemulation::config::getInstance()->isInfoSuppressed() == false)
       {
         std::string waitingMsg ="INFO: [HW-EMU 06-1] All the simulator processes exited successfully";
@@ -1892,6 +1899,11 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     {
         delete m_scheduler;
         m_scheduler = nullptr;
+    }
+    if(m_xgq)
+    {
+        delete m_xgq;
+        m_xgq = nullptr;
     }
 
     return 0;
@@ -1940,6 +1952,11 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     {
         delete m_scheduler;
         m_scheduler = nullptr;
+    }
+    if(m_xgq)
+    {
+        delete m_xgq;
+        m_xgq = nullptr;
     }
     if(mDataSpace)
     {
@@ -2059,6 +2076,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     buf = nullptr;
     buf_size = 0;
     binaryCounter = 0;
+    host_sptag_idx = -1;
     sock = nullptr;
 
     deviceName = "device"+std::to_string(deviceIndex);
@@ -2083,10 +2101,10 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
 
     // Delete detailed kernel trace data mining results file
     // NOTE: do this only if we're going to write a new one
-    xclemulation::DEBUG_MODE lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
-    if (lWaveform == xclemulation::DEBUG_MODE::GUI
-        || lWaveform == xclemulation::DEBUG_MODE::BATCH
-        || lWaveform == xclemulation::DEBUG_MODE::OFF) {
+    xclemulation::debug_mode lWaveform = xclemulation::config::getInstance()->getLaunchWaveform();
+    if (lWaveform == xclemulation::debug_mode::gui
+        || lWaveform == xclemulation::debug_mode::batch
+        || lWaveform == xclemulation::debug_mode::off) {
       char path[FILENAME_MAX];
       size_t size = MAXPATHLEN;
       char* pPath = GetCurrentDir(path,size);
@@ -2103,6 +2121,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     mCore = nullptr;
     mMBSch = nullptr;
     m_scheduler = nullptr;
+    m_xgq = nullptr;
     mIsDebugIpLayoutRead = false;
     mIsDeviceProfiling = false;
     mMemoryProfilingNumberSlots = 0;
@@ -2204,11 +2223,16 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     return 0;
   }
 
+  std::shared_ptr<xrt_core::device> HwEmShim::getMCoreDevice()
+  {
+    return mCoreDevice;
+  }
+
   bool HwEmShim::isLegacyErt()
   {
-    if(xclemulation::config::getInstance()->getLegacyErt() == xclemulation::ERTMODE::LEGACY)
+    if(xclemulation::config::getInstance()->getLegacyErt() == xclemulation::ertmode::legacy)
       return true;
-    else if(xclemulation::config::getInstance()->getLegacyErt() == xclemulation::ERTMODE::UPDATED)
+    else if(xclemulation::config::getInstance()->getLegacyErt() == xclemulation::ertmode::updated)
       return false;
 
     //Following platforms uses legacyErt As per Emulation team.
@@ -2752,8 +2776,10 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
     PRINTENDFUNC;
     return -1;
   }
-
-  if ( deviceQuery(key_type::m2m) && getM2MAddress() != 0 ) {
+   
+  // Disabling the m2m for timebeing as it is not working as expected. So still data is getting transferred thru DMA.
+  // Will enable this logic unless we have a clarity from the m2m hw_emu kernel. Please do not remove this code 
+  /*if ( deviceQuery(key_type::m2m) && getM2MAddress() != 0 ) {
 
     char hostBuf[M2M_KERNEL_ARGS_SIZE];
     std::memset(hostBuf, 0, M2M_KERNEL_ARGS_SIZE);
@@ -2786,7 +2812,7 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
 
     PRINTENDFUNC;
     return 0;
-  }
+  }*/
 
   // source buffer is host_only and destination buffer is device_only
   if (xclemulation::xocl_bo_host_only(sBO) && !xclemulation::xocl_bo_p2p(sBO) && xclemulation::xocl_bo_dev_only(dBO)) {
@@ -3047,8 +3073,16 @@ int HwEmShim::xclExecBuf(unsigned int cmdBO)
       ret = m_scheduler->add_exec_buffer(bo);
       PRINTENDFUNC;
       return ret;
-  }
-  else {
+  } else if (xclemulation::config::getInstance()->isXgqMode()) {
+      if (!m_xgq || !bo)
+      {
+          PRINTENDFUNC;
+          return ret;
+      }
+      ret = m_xgq->add_exec_buffer(bo);
+      PRINTENDFUNC;
+      return ret;
+  } else {
     if(!mMBSch || !bo)
     {
       PRINTENDFUNC;

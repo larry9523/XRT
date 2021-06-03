@@ -558,8 +558,8 @@ int XQSPIPS_Flasher::xclUpgradeFirmware(std::istream& binStream)
     total_size = static_cast<int>(binStream.tellg());
     binStream.seekg(0, binStream.beg);
 
-    std::cout << "INFO: ***BOOT.BIN has " << total_size << " bytes" << std::endl;
     if (total_size >= GOLDEN_BASE) {
+        std::cout << "INFO: **BOOT.BIN has " << total_size << " bytes" << std::endl;
         std::cout << "[ERROR]: BOOT.BIN can't go beyond 96MB!" << std::endl;
         exit(-EINVAL);
     }
@@ -595,11 +595,11 @@ int XQSPIPS_Flasher::xclUpgradeFirmware(std::istream& binStream)
     //eraseBulk();
 
     program(binStream);
-    verify(binStream);
+    int ret = verify(binStream);
 
     enterOrExitFourBytesMode(EXIT_4B);
 
-    return 0;
+    return ret;
 }
 
 void XQSPIPS_Flasher::initQSpiPS()
