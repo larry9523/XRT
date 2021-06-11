@@ -46,7 +46,7 @@ ext {
 
     artifactoryUpload = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
     artifactoryServer = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.upload') : 'http://xcort11'
-    artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8hzNTgzqBevKAH4ovhPBHMgPHGq3L8yEb3rVQN9wP8DhTUKPviM4KKYUxhsctye2sAyHk'
+    artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8jQTbFVVsDGArETGEFVP1TQamFhM272WSATCJyn4k9BJ5vakWHr1kfvBHzmxMdcgu4WcA'
 
 }
 
@@ -71,10 +71,12 @@ dependencies {
 tasks.register('buildXRT'){
   description 'Execute XRT-IPU build.'
   doFirst {
-    exec {
+/*    exec {
       workingDir "$wsRootDir/../.."
       commandLine 'sudo', 'apt-get', 'update'
     }
+
+*/
     exec {
       workingDir "$wsRootDir/../../src/runtime_src/tools/scripts/"
       commandLine 'sudo', './xrtdeps.sh', '-docker'
@@ -96,6 +98,51 @@ tasks.register('cleanXRT', Exec) {
   }
 }
 
+
+// Publish rpm files to artifactory
+task publishRpm {
+  description 'Publish rpm files to artifactory using upload service'
+  doFirst {
+    def rpmKey = "rpmFiles"
+    def rpmFileList = []
+    def nfsPath = System.getenv("NFSPATH")
+    def releaseDir = System.getenv("REL_DIR")
+    def getRpmFiles = fileTree(include:['**/*.rpm'], dir:"$wsRootDir/../"+releaseDir)
+    def wsRootDirs = wsRootDir.tokenize('/')
+    def nfsPaths = nfsPath.tokenize('/')
+    wsRootDirs.removeLast()
+    nfsPaths.removeLast()
+    wsRootDir = wsRootDirs.join('/')
+    nfsPath = nfsPaths.join('/')
+
+    getRpmFiles.each {
+      rpmFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
+    }
+    def data = [
+      "dryRun": "False",
+      "appName" : project.name,
+      "$rpmKey": rpmFileList,
+      "servers": [[
+        "authToken": artifactoryAuthToken,
+        "server": artifactoryServer
+      ]]
+    ]
+    def message = groovy.json.JsonOutput.toJson(data)
+    println(message)
+    def requestUrl = new URL(artifactoryUpload)
+    def connection = requestUrl.openConnection()
+    connection.setRequestMethod("PUT")
+    connection.setDoOutput(true)
+    connection.setRequestProperty("Content-Type", "application/json")
+    connection.getOutputStream().write(message.getBytes("UTF-8"))
+    def resp = new JsonSlurper().parseText(connection.getInputStream().getText())
+    assert connection.responseCode == 200
+    println(resp)
+    assert resp[rpmKey]['failures'] == []
+
+  }
+}
+
 // Publish debian files to artifactory
 task publishDeb {
   description 'Publish debian files to artifactory using upload service'
@@ -103,7 +150,15 @@ task publishDeb {
     def debKey = "debFiles"
     def debFileList = []
     def nfsPath = System.getenv("NFSPATH")
-    def getDebFiles = fileTree(include:['**/*.deb'], dir:"$wsRootDir/../Release")
+    def releaseDir = System.getenv("REL_DIR")
+    def getDebFiles = fileTree(include:['**/*.deb'], dir:"$wsRootDir/../"+releaseDir)
+    def wsRootDirs = wsRootDir.tokenize('/')
+    def nfsPaths = nfsPath.tokenize('/')
+    wsRootDirs.removeLast()
+    nfsPaths.removeLast()
+    wsRootDir = wsRootDirs.join('/')
+    nfsPath = nfsPaths.join('/')
+
     getDebFiles.each {
       debFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
     }
