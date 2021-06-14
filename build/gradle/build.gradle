@@ -52,56 +52,52 @@ ext {
 
 
 String getCentOsVer(fname){
-String ret = null
-  if (fname.contains("_9.") || fname.contains("-9.")){
-    ret = "9"
-} else if (fname.contains("_8.") || fname.contains("-8.")){
-    ret = "8"
-}else if (fname.contains("_7.") || fname.contains("-7.")){
-    ret = "7"
-}else if (fname.contains("_6.") || fname.contains("-6.")){
-    ret = "6"
-}
-  return ret
-
-
+    String ret = null
+    if (fname.contains("_9.") || fname.contains("-9.")){
+        ret = "9"
+    } else if (fname.contains("_8.") || fname.contains("-8.")){
+        ret = "8"
+    }else if (fname.contains("_7.") || fname.contains("-7.")){
+        ret = "7"
+    }else if (fname.contains("_6.") || fname.contains("-6.")){
+        ret = "6"
+    }
+    return ret
 }
 
 
 String getRpmArch(fname){
-String arch = null
-  if (fname.contains("amd64") || fname.contains("x86")){
-    arch = "x86_64"
-} else if (fname.contains("ppc64el")){
-    arch = "ppc64le"
+    String arch = null
+    if (fname.contains("amd64") || fname.contains("x86")){
+        arch = "x86_64"
+     } else if (fname.contains("ppc64el")){
+        arch = "ppc64le"
+     }
+     return arch
 }
-  return arch
-}
-
 
 String getDebArch(fname){
-String arch = null
-  if (fname.contains("arm64")){
-    arch = "arm64"
-} else if (fname.contains("ppc64el")){
-    arch = "ppc64le"
-}else if (fname.contains("amd64")){
-    arch = "amd64"
+    String arch = null
+    if (fname.contains("arm64")){
+        arch = "arm64"
+    } else if (fname.contains("ppc64el")){
+        arch = "ppc64le"
+    }else if (fname.contains("amd64")){
+        arch = "amd64"
+    }
+    return arch
 }
-  return arch
-}
-
 
 String getDebDistro(fname){
-String distro = null
-  if (fname.contains("_18.04")){
-    distro = "bionic"
-} else if (fname.contains("_16.04")){
-    distro = "xenial"
-}else {
-    distro = "focal"
-}
-  return distro
+    String distro = null
+    if (fname.contains("_18.04")){
+        distro = "bionic"
+    } else if (fname.contains("_16.04")){
+        distro = "xenial"
+    }else {
+        distro = "focal"
+    }
+    return distro
 }
 
 
@@ -126,12 +122,6 @@ dependencies {
 tasks.register('buildXRT'){
   description 'Execute XRT-IPU build.'
   doFirst {
-/*    exec {
-      workingDir "$wsRootDir/../.."
-      commandLine 'sudo', 'apt-get', 'update'
-    }
-
-*/
     exec {
       workingDir "$wsRootDir/../../src/runtime_src/tools/scripts/"
       commandLine 'sudo', './xrtdeps.sh', '-docker'
@@ -174,22 +164,11 @@ task publishRpm {
       rpmFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
     }
 
-/*
-    def data = [
-      "dryRun": "False",
-      "appName" : project.name,
-      "$rpmKey": rpmFileList,
-      "servers": [[
-        "authToken": artifactoryAuthToken,
-        "server": artifactoryServer
-      ]]
-    ]
-*/
     rpmFileList.each {
       def fileName = it.tokenize('/')[-1]
       def centOsVer = getCentOsVer(fileName)
       def arch = getRpmArch(fileName)
-      def command = "curl -uadmin:%s -XPUT /artifactory/xrt-ipu-rpm-local/%s/%s/"+fileName+" -T %s"
+      def command = "curl -H X-JFrog-Art-Api:%s -XPUT /artifactory/xrt-ipu-rpm-local/%s/%s/"+fileName+" -T %s"
       def curlCommand = String.format(command, artifactoryAuthToken,artifactoryServer, arch, centOsVer, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
@@ -198,23 +177,6 @@ task publishRpm {
       println process.text
     }
 
-/*
-    def message = groovy.json.JsonOutput.toJson(data)
-    println(message)
-    def requestUrl = new URL(artifactoryUpload)
-    def connection = requestUrl.openConnection()
-    connection.setRequestMethod("PUT")
-    connection.setDoOutput(true)
-    connection.setRequestProperty("Content-Type", "application/json")
-    connection.getOutputStream().write(message.getBytes("UTF-8"))
-    def resp = new JsonSlurper().parseText(connection.getInputStream().getText())
-    assert connection.responseCode == 200
-    println(resp)
-    assert resp[rpmKey]['failures'] == []
-
-  }
-
-*/
 }
 
 // Publish debian files to artifactory
@@ -237,22 +199,11 @@ task publishDeb {
       debFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
     }
 
-/*
-    def data = [
-      "dryRun": "False",
-      "appName" : project.name,
-      "$debKey": debFileList,
-      "servers": [[
-        "authToken": artifactoryAuthToken,
-        "server": artifactoryServer
-      ]]
-    ]
-*/
     debFileList.each {
       def fileName = it.tokenize('/')[-1]
       def debDistro = getDebDistro(fileName)
       def debArch = getDebArch(fileName)
-      def command = 'curl -uadmin:%s -XPUT %s/artifactory/xrt-ipu-debian-local/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
+      def command = 'curl -H X-JFrog-Art-Api:%s -XPUT %s/artifactory/xrt-ipu-debian-local/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
       def curlCommand = String.format(command, artifactoryAuthToken, artifactoryServer, fileName, debDistro, debArch, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
@@ -261,20 +212,6 @@ task publishDeb {
       println process.text
     }
 
-/*  
-    def message = groovy.json.JsonOutput.toJson(data)
-    println(message)
-    def requestUrl = new URL(artifactoryUpload)
-    def connection = requestUrl.openConnection()
-    connection.setRequestMethod("PUT")
-    connection.setDoOutput(true)
-    connection.setRequestProperty("Content-Type", "application/json")
-    connection.getOutputStream().write(message.getBytes("UTF-8"))
-    def resp = new JsonSlurper().parseText(connection.getInputStream().getText())
-    assert connection.responseCode == 200
-    println(resp)
-    assert resp[debKey]['failures'] == []
-*/
 
   }
 }

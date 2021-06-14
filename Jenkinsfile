@@ -1,6 +1,7 @@
 #!/usr/bin/env groovy
 boolean prBuild = env.ghprbPullLink != null;
-env.WORKSPACE = "/proj/rdi/buildsD/xbb/XRT_IPU/"
+env.WORKSPACE = params.DEV ? "/proj/rdi/buildsD/xbb/XRT_IPU_DEV/" : "/proj/rdi/buildsD/xbb/XRT_IPU/"
+
 /**
  * sync the git WS.
  * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit
@@ -20,7 +21,6 @@ def syncWS(boolean prBuild) {
                 [$class: 'WipeWorkspace'],
                 [$class: 'CheckoutOption', timeout: 30],
                 [$class: 'RelativeTargetDirectory', 'relativeTargetDir': "${env.WORKSPACE}"],
-                [$class: 'SubmoduleOption', disableSubmodules: false, parentCredentials: true, recursiveSubmodules: true, reference: '', trackingSubmodules: true]
             ],
             submoduleCfg: [],
             userRemoteConfigs: [
@@ -42,7 +42,6 @@ def syncWS(boolean prBuild) {
                 [$class: 'WipeWorkspace'],
                 [$class: 'CheckoutOption', timeout: 30],
                 [$class: 'RelativeTargetDirectory', 'relativeTargetDir': "${env.WORKSPACE}"],
-                [$class: 'SubmoduleOption', disableSubmodules: false, parentCredentials: true, recursiveSubmodules: true, reference: '', trackingSubmodules: true]
             ],
             submoduleCfg: [],
             userRemoteConfigs: [
