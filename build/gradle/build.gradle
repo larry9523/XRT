@@ -50,6 +50,61 @@ ext {
 
 }
 
+
+String getCentOsVer(fname){
+String ret = null
+  if (fname.contains("_9.") || fname.contains("-9.")){
+    ret = "9"
+} else if (fname.contains("_8.") || fname.contains("-8.")){
+    ret = "8"
+}else if (fname.contains("_7.") || fname.contains("-7.")){
+    ret = "7"
+}else if (fname.contains("_6.") || fname.contains("-6.")){
+    ret = "6"
+}
+  return ret
+
+
+}
+
+
+String getRpmArch(fname){
+String arch = null
+  if (fname.contains("amd64") || fname.contains("x86")){
+    arch = "x86_64"
+} else if (fname.contains("ppc64el")){
+    arch = "ppc64le"
+}
+  return arch
+}
+
+
+String getDebArch(fname){
+String arch = null
+  if (fname.contains("arm64")){
+    arch = "arm64"
+} else if (fname.contains("ppc64el")){
+    arch = "ppc64le"
+}else if (fname.contains("amd64")){
+    arch = "amd64"
+}
+  return arch
+}
+
+
+String getDebDistro(fname){
+String distro = null
+  if (fname.contains("_18.04")){
+    distro = "bionic"
+} else if (fname.contains("_16.04")){
+    distro = "xenial"
+}else {
+    distro = "focal"
+}
+  return distro
+}
+
+
 version = "${release}-${buildNumber}"
 group 'com.xilinx'
 
@@ -118,6 +173,8 @@ task publishRpm {
     getRpmFiles.each {
       rpmFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
     }
+
+/*
     def data = [
       "dryRun": "False",
       "appName" : project.name,
@@ -127,6 +184,21 @@ task publishRpm {
         "server": artifactoryServer
       ]]
     ]
+*/
+    rpmFileList.each {
+      def fileName = it.tokenize('/')[-1]
+      def centOsVer = getCentOsVer(fileName)
+      def arch = getRpmArch(fileName)
+      def command = "curl -uadmin:%s -XPUT /artifactory/xrt-ipu-rpm-local/%s/%s/"+fileName+" -T %s"
+      def curlCommand = String.format(command, artifactoryAuthToken,artifactoryServer, arch, centOsVer, it)
+      ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
+      Process process = builder.start();
+      process.waitFor()
+      println process.err.text
+      println process.text
+    }
+
+/*
     def message = groovy.json.JsonOutput.toJson(data)
     println(message)
     def requestUrl = new URL(artifactoryUpload)
@@ -141,6 +213,8 @@ task publishRpm {
     assert resp[rpmKey]['failures'] == []
 
   }
+
+*/
 }
 
 // Publish debian files to artifactory
@@ -162,6 +236,8 @@ task publishDeb {
     getDebFiles.each {
       debFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
     }
+
+/*
     def data = [
       "dryRun": "False",
       "appName" : project.name,
@@ -171,6 +247,21 @@ task publishDeb {
         "server": artifactoryServer
       ]]
     ]
+*/
+    debFileList.each {
+      def fileName = it.tokenize('/')[-1]
+      def debDistro = getDebDistro(fileName)
+      def debArch = getDebArch(fileName)
+      def command = 'curl -uadmin:%s -XPUT %s/artifactory/xrt-ipu-debian-local/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
+      def curlCommand = String.format(command, artifactoryAuthToken, artifactoryServer, fileName, debDistro, debArch, it)
+      ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
+      Process process = builder.start();
+      process.waitFor()
+      println process.err.text
+      println process.text
+    }
+
+/*  
     def message = groovy.json.JsonOutput.toJson(data)
     println(message)
     def requestUrl = new URL(artifactoryUpload)
@@ -183,6 +274,8 @@ task publishDeb {
     assert connection.responseCode == 200
     println(resp)
     assert resp[debKey]['failures'] == []
+*/
 
   }
+}
 }
