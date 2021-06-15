@@ -3,6 +3,7 @@
 boolean prBuild = env.ghprbPullLink != null;
 env.WORKSPACE = params.DEV ? "/proj/rdi/buildsD/xbb/XRT_IPU_DEV/" : "/proj/rdi/buildsD/xbb/XRT_IPU/"
 env.AUTH_TOKEN = params.AUTH_TOKEN
+env.IS_CI = params.DEV ? false : true
 /**
  * sync the git WS.
  * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit
@@ -74,10 +75,6 @@ pipeline {
         label 'AIEIPUPOOL'
     }
 
-    environment {
-        IS_CI = true
-    }
-
     stages {
         stage('Sync Workspace') {
             steps {
@@ -94,13 +91,7 @@ pipeline {
 
                                 catchError {
                                     script {
-                                        if (params.DEV) {
-                                            withEnv(["IS_CI=false"]) {
-                                                sh runBuild("xrt-ipu-ubuntu2004")
-                                            }
-                                        } else {
-                                            sh runBuild("xrt-ipu-ubuntu2004")
-                                        }
+                                          sh runBuild("xrt-ipu-ubuntu2004")
                                     }
                                 }
                             }
@@ -115,13 +106,7 @@ pipeline {
 
                                 catchError {
                                     script {
-                                        if (params.DEV) {
-                                            withEnv(["IS_CI=false"]) {
-                                                sh runBuild("xrt-ipu-centos76")
-                                            }
-                                        } else {
-                                            sh runBuild("xrt-ipu-centos76")
-                                        }
+                                        sh runBuild("xrt-ipu-centos76")
                                     }
                                 }
                             }
@@ -150,7 +135,7 @@ pipeline {
                                     dir("${env.WORKSPACE}" + "/build/docker") {
                                         catchError {
                                             withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
-                                                withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER={USER}", "IS_CI=${env.IS_CI}"]) {
+                                                withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}"]) {
                                             sh publishDeb("xrt-ipu-ubuntu2004")
                                                 }
                                             }
@@ -172,7 +157,7 @@ pipeline {
                                     dir("${env.WORKSPACE}" + "/build/docker") {
                                         catchError {
                                          withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
-                                             withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER={USER}", "IS_CI=${env.IS_CI}"]) {
+                                             withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}"]) {
                                             sh publishRpm("xrt-ipu-centos76")
                                                 }
                                             }
