@@ -2,7 +2,7 @@
 
 boolean prBuild = env.ghprbPullLink != null;
 env.WORKSPACE = params.DEV ? "/proj/rdi/buildsD/xbb/XRT_IPU_DEV/" : "/proj/rdi/buildsD/xbb/XRT_IPU/"
-
+env.AUTH_TOKEN = params.AUTH_TOKEN
 /**
  * sync the git WS.
  * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit

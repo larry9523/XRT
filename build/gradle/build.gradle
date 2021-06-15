@@ -46,7 +46,9 @@ ext {
 
     artifactoryUpload = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
     artifactoryServer = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.upload') : 'http://xcort11'
-    artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8jQTbFVVsDGArETGEFVP1TQamFhM272WSATCJyn4k9BJ5vakWHr1kfvBHzmxMdcgu4WcA'
+    //artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8jQTbFVVsDGArETGEFVP1TQamFhM272WSATCJyn4k9BJ5vakWHr1kfvBHzmxMdcgu4WcA'
+    artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
+    artifactoryAuthToken = System.getenv("AUTH_TOKEN")
     rpmRepoKey = System.getenv("IS_CI") ? 'xrt-ipu-rpm-prod-local' : 'xrt-ipu-rpm-dev-local'
     debRepoKey = System.getenv("IS_CI") ? 'xrt-ipu-deb-prod-local' : 'xrt-ipu-deb-dev-local'
 }
@@ -169,8 +171,8 @@ task publishRpm {
       def fileName = it.tokenize('/')[-1]
       def centOsVer = getCentOsVer(fileName)
       def arch = getRpmArch(fileName)
-      def command = "curl -H X-JFrog-Art-Api:%s -XPUT %s/artifactory/%s/%s/%s/"+fileName+" -T %s"
-      def curlCommand = String.format(command, artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
+      def command = "curl -u%s:%s -XPUT %s/artifactory/%s/%s/%s/"+fileName+" -T %s"
+      def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
@@ -204,8 +206,8 @@ task publishDeb {
       def fileName = it.tokenize('/')[-1]
       def debDistro = getDebDistro(fileName)
       def debArch = getDebArch(fileName)
-      def command = 'curl -H X-JFrog-Art-Api:%s -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
-      def curlCommand = String.format(command, artifactoryAuthToken, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
+      def command = 'curl -u%s:%s -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
+      def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
