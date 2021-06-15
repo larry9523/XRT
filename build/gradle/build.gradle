@@ -45,7 +45,7 @@ ext {
     release = project.hasProperty('release') ? project.release.toString() : infraCore.branchParameters.get('config.release')
 
     artifactoryUpload = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
-    artifactoryServer = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.upload') : 'http://xcort11'
+    artifactoryServer = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.upload') : 'https://xcoartifactory'
     //artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8jQTbFVVsDGArETGEFVP1TQamFhM272WSATCJyn4k9BJ5vakWHr1kfvBHzmxMdcgu4WcA'
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
@@ -207,8 +207,10 @@ task publishDeb {
       def fileName = it.tokenize('/')[-1]
       def debDistro = getDebDistro(fileName)
       def debArch = getDebArch(fileName)
-      def command = 'curl -u%s:%s -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
-      def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
+      //def command = 'curl -u%s:%s -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
+      def command = 'curl -u'+artifactoryUser+':'+artifactoryAuthToken+' -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
+      //def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
+      def curlCommand = String.format(command, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
       println(curlCommand)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
