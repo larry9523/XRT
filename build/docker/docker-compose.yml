@@ -99,6 +99,8 @@ services:
       - XRT_VERSION_PATCH=${BUILD_NUMBER}
       - NFSPATH=${PWD}
       - AUTH_TOKEN
+      - USER
+      - IS_CI
       - RDI_ROOT=/opt/xrt-ipu/buildcentos76
       - GRADLE_USER_HOME=/tmp/gradlecentos76
       - REL_DIR=Release_centos76
