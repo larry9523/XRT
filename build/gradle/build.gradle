@@ -45,8 +45,7 @@ ext {
     release = project.hasProperty('release') ? project.release.toString() : infraCore.branchParameters.get('config.release')
 
     artifactoryUpload = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
-    artifactoryServer = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.upload') : 'https://xcoartifactory'
-    //artifactoryAuthToken = System.getenv("IS_CI") ? System.getenv("AUTH_TOKEN"): 'AKCp8jQTbFVVsDGArETGEFVP1TQamFhM272WSATCJyn4k9BJ5vakWHr1kfvBHzmxMdcgu4WcA'
+    artifactoryServer = System.getenv("IS_CI") ? 'https://xcoartifactory' : 'http://xcort11'
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
     rpmRepoKey = System.getenv("IS_CI") ? 'xrt-ipu-rpm-prod-local' : 'xrt-ipu-rpm-dev-local'

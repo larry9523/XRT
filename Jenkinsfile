@@ -149,7 +149,11 @@ pipeline {
                                 } else {
                                     dir("${env.WORKSPACE}" + "/build/docker") {
                                         catchError {
+                                            withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
+                                                withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER={USER}", "IS_CI=${env.IS_CI}"]) {
                                             sh publishDeb("xrt-ipu-ubuntu2004")
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -167,7 +171,11 @@ pipeline {
                                 } else {
                                     dir("${env.WORKSPACE}" + "/build/docker") {
                                         catchError {
+                                         withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
+                                             withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER={USER}", "IS_CI=${env.IS_CI}"]) {
                                             sh publishRpm("xrt-ipu-centos76")
+                                                }
+                                            }
                                         }
                                     }
                                 }
