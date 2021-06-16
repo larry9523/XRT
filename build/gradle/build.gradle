@@ -112,11 +112,12 @@ group 'com.xilinx'
 }
 */
 
-
+/*
 // extractManifest task gets the latest from artifactory.
 dependencies {
     implementation "com.xilinx:xrt-ipu:${release}-+"
 }
+*/
 
 // Task to build IPU repo
 tasks.register('buildXRT'){
