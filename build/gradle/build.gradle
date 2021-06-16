@@ -21,14 +21,12 @@ plugins {
     id "maven-publish"
     id "base"
     id "com.jfrog.artifactory" version "4.10.0" // Allow Jenkins to inject credentials, as well as control the repo
-    id "com.xilinx.infra.prep-product" version "1.6.0" apply false
-    id "com.xilinx.infra.manifest"
 }
 
 ext {
-    release = infraCore.getRelease().get()
+    release = project.hasProperty('release') ? project.release.toString() : System.getenv().getOrDefault("RELEASE", "2021.2.0")
     trimmedRelease = release.endsWith('.0') ? release.substring(0, release.length()-2) : release
-    buildNumber = infraCore.getBuildNumber().get()
+    buildNumber = System.getenv().getOrDefault("BUILD_NUMBER", "0")
     startTime = new Date().format('yyyyMMdd_HHmmss')
     wsRootDir = project.hasProperty('wsRootDir') ? project.wsRootDir.toString() : (System.getenv("WS_ROOT_DIR") ?: projectDir.absolutePath)
     if (!wsRootDir) {
@@ -36,15 +34,13 @@ ext {
     }
     logger.info("wsRootDir is set as ${wsRootDir}")
 
-    branch = project.hasProperty('branch') ? project.branch.toString() : infraCore.branchParameters.get('config.branch')
+    branch = project.hasProperty('branch') ? project.branch.toString() : System.getenv().getOrDefault("BRANCH", "2021.2")
     if (!branch) {
         throw new GradleException("could not deutermine branch, either pass it as -Pbranch or by setting branch value in branch.json; -Pbranch takes precedence")
     }
     logger.info("branch is set as ${branch}")
     taUsed = System.getenv().getOrDefault("TA", "/proj/xbuilds/${branch}_daily_latest")
-    release = project.hasProperty('release') ? project.release.toString() : infraCore.branchParameters.get('config.release')
 
-    //artifactoryUpload = System.getenv("IS_CI") == "true" ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
     artifactoryServer = System.getenv("IS_CI") == "true" ? 'https://xcoartifactory' : 'http://xcort11'
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
@@ -172,14 +168,12 @@ task publishRpm {
       def arch = getRpmArch(fileName)
       def command = "curl -u%s:%s -k -XPUT %s/artifactory/%s/%s/%s/"+fileName+" -T %s"
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
-      println(curlCommand)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
       println process.err.text
       println process.text
     }
-
 }
 
 // Publish debian files to artifactory
@@ -208,15 +202,12 @@ task publishDeb {
       def debArch = getDebArch(fileName)
       def command = 'curl -u%s:%s -k -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
-      println(curlCommand)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
       println process.err.text
       println process.text
     }
-
-
   }
-}
+ }
 }
