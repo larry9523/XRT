@@ -102,23 +102,6 @@ String getDebDistro(fname){
 version = "${release}-${buildNumber}"
 group 'com.xilinx'
 
-// Data to be published in manifest file
-/*coreManifest {
-    // manifestReleaseRepo = "aie-ipu-dev-local"
-    artifactNfsLocation = wsRootDir
-    customManifestFields.put('buildNumber', buildNumber)
-    customManifestFields.put('version', version)
-    customManifestFields.put('TA', taUsed)
-}
-*/
-
-/*
-// extractManifest task gets the latest from artifactory.
-dependencies {
-    implementation "com.xilinx:xrt-ipu:${release}-+"
-}
-*/
-
 // Task to build IPU repo
 tasks.register('buildXRT'){
   description 'Execute XRT-IPU build.'
