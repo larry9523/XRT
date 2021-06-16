@@ -46,8 +46,6 @@ services:
       dockerfile: Dockerfile-ubuntu20.04
     image: "xrt-ipu-ubuntu2004:latest" 
     volumes:
-      # To run without your user .bashrc/.cshrc comment this out:
-      - /home/${XDOCK_USER:-xbuild}:/home/${XDOCK_USER:-xbuild}:shared
       # Easy access to TA and workspaces, but keep in mind that this opens you up for unwanted dependencies:
       - /proj:/proj:shared
       - /wrk:/wrk:shared
@@ -87,8 +85,6 @@ services:
       dockerfile: Dockerfile-centos7.6
     image: "xrt-ipu-centos76:latest"
     volumes:
-      # To run without your user .bashrc/.cshrc comment this out:
-      - /home/${XDOCK_USER:-xbuild}:/home/${XDOCK_USER:-xbuild}:shared
       # Easy access to TA and workspaces, but keep in mind that this opens you up for unwanted dependencies:
       - /proj:/proj:shared
       - /wrk:/wrk:shared

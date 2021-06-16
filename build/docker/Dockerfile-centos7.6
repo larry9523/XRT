@@ -18,13 +18,7 @@
 
 FROM centos:7.6.1810
 
-ENV DEBIAN_FRONTEND noninteractive
-
-#RUN apt-get update -y
-
 RUN yum install -y sudo wget tzdata net-tools locales vim java-11-openjdk.x86_64 openjdk-11-jdk epel-release 
-
-RUN yum install -y repolist
 
 RUN yum install -y centos-release-scl-rh
  
@@ -33,8 +27,6 @@ RUN yum install -y devtoolset-9
 RUN ln -fns /usr/share/zoneinfo/America/Los_Angeles /etc/localtime && echo America/Los_Angeles > /etc/timezone
 
 RUN cd /tmp && wget https://github.com/Xilinx/XRT/raw/master/src/runtime_src/tools/scripts/xrtdeps.sh && chmod +x xrtdeps.sh && ./xrtdeps.sh -docker
-
-RUN localedef --quiet -c -i en_US -f UTF-8 en_US.UTF-8
 
 ARG USER_ID
 ARG USER_NAME
