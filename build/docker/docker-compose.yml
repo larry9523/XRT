@@ -60,6 +60,8 @@ services:
       - XRT_VERSION_PATCH=${BUILD_NUMBER}
       - NFSPATH=${PWD}
       - AUTH_TOKEN
+      - USER
+      - IS_CI
       - RDI_ROOT=/opt/xrt-ipu/buildubuntu2004
       - GRADLE_USER_HOME=/tmp/gradleubuntu2004
       - REL_DIR=Release_ubuntu2004
