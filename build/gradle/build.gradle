@@ -44,12 +44,12 @@ ext {
     taUsed = System.getenv().getOrDefault("TA", "/proj/xbuilds/${branch}_daily_latest")
     release = project.hasProperty('release') ? project.release.toString() : infraCore.branchParameters.get('config.release')
 
-    artifactoryUpload = System.getenv("IS_CI") ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
-    artifactoryServer = System.getenv("IS_CI") ? 'https://xcoartifactory' : 'http://xcort11'
+    //artifactoryUpload = System.getenv("IS_CI") == "true" ? infraCore.branchParameters.get('config.package_servers.proxy') : 'http://xcort20:5000/upload'
+    artifactoryServer = System.getenv("IS_CI") == "true" ? 'https://xcoartifactory' : 'http://xcort11'
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
-    rpmRepoKey = System.getenv("IS_CI") ? 'xrt-ipu-rpm-prod-local' : 'xrt-ipu-rpm-dev-local'
-    debRepoKey = System.getenv("IS_CI") ? 'xrt-ipu-deb-prod-local' : 'xrt-ipu-deb-dev-local'
+    rpmRepoKey = System.getenv("IS_CI") == "true" ? 'xrt-ipu-rpm-prod-local' : 'xrt-ipu-rpm-dev-local'
+    debRepoKey = System.getenv("IS_CI") == "true" ? 'xrt-ipu-deb-prod-local' : 'xrt-ipu-deb-dev-local'
 }
 
 
@@ -172,6 +172,7 @@ task publishRpm {
       def arch = getRpmArch(fileName)
       def command = "curl -u%s:%s -k -XPUT %s/artifactory/%s/%s/%s/"+fileName+" -T %s"
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
+      println(curlCommand)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
@@ -207,6 +208,7 @@ task publishDeb {
       def debArch = getDebArch(fileName)
       def command = 'curl -u%s:%s -k -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
+      println(curlCommand)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
