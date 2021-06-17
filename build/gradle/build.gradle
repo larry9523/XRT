@@ -134,18 +134,11 @@ task publishRpm {
   doFirst {
     def rpmKey = "rpmFiles"
     def rpmFileList = []
-    def nfsPath = System.getenv("NFSPATH")
     def releaseDir = System.getenv("REL_DIR")
     def getRpmFiles = fileTree(include:['**/*.rpm'], dir:"$wsRootDir/../"+releaseDir)
-    def wsRootDirs = wsRootDir.tokenize('/')
-    def nfsPaths = nfsPath.tokenize('/')
-    wsRootDirs.removeLast()
-    nfsPaths.removeLast()
-    wsRootDir = wsRootDirs.join('/')
-    nfsPath = nfsPaths.join('/')
 
     getRpmFiles.each {
-      rpmFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
+      rpmFileList.add(it['absolutePath'])
     }
 
     rpmFileList.each {
@@ -168,18 +161,11 @@ task publishDeb {
   doFirst {
     def debKey = "debFiles"
     def debFileList = []
-    def nfsPath = System.getenv("NFSPATH")
     def releaseDir = System.getenv("REL_DIR")
     def getDebFiles = fileTree(include:['**/*.deb'], dir:"$wsRootDir/../"+releaseDir)
-    def wsRootDirs = wsRootDir.tokenize('/')
-    def nfsPaths = nfsPath.tokenize('/')
-    wsRootDirs.removeLast()
-    nfsPaths.removeLast()
-    wsRootDir = wsRootDirs.join('/')
-    nfsPath = nfsPaths.join('/')
 
     getDebFiles.each {
-      debFileList.add(it['absolutePath'].replaceAll(wsRootDir, nfsPath))
+      debFileList.add(it['absolutePath'])
     }
 
     debFileList.each {
