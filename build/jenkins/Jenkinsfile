@@ -77,19 +77,6 @@ node('AIEIPUPOOL') {
       timeout(time: 1, unit: 'HOURS') {
 
          Map buildStages = [: ]
-         buildStages["Build Ubuntu 2004"] = {
-            stage("Build Ubuntu 2004") {
-               dir("${env.WORKSPACE}" + "/build/docker") {
-                  try {
-                     script {
-                        sh runBuild("xrt-ipu-ubuntu2004")
-                     }
-                  } catch (all) {
-                     throw (all)
-                  }
-               }
-            }
-         }
          buildStages["Build Centos 76"] = {
             stage("Build Centos 76") {
                dir("${env.WORKSPACE}" + "/build/docker") {
@@ -116,25 +103,6 @@ node('AIEIPUPOOL') {
 
       timeout(time: 1, unit: 'HOURS') {
          Map publishStages = [: ]
-         publishStages["Publish Ubuntu 2004"] = {
-            stage("Publish Ubuntu 2004") {
-               if (prBuild || params.DEV) {
-                  echo "Skipping the Adding artifacts to Artifactory Step"
-               } else {
-                  dir("${env.WORKSPACE}" + "/build/docker") {
-                     try {
-                        withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
-                           withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}"]) {
-                              sh publishDeb("xrt-ipu-ubuntu2004")
-                           }
-                        }
-                     } catch (all) {
-                        throw (all)
-                     }
-                  }
-               }
-            }
-         }
 
          publishStages["Publish Centos76"] = {
             stage("Publish Centos76") {
