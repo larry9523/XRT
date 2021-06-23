@@ -148,11 +148,12 @@ task publishRpm {
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
-      println curlCommand
-      println process.waitFor()
+      def statusCode = process.waitFor()
       println process.err.text
       println process.text
     }
+
+    assert statusCode == 0
 }
 
 // Publish debian files to artifactory
