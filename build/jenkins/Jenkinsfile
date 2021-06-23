@@ -4,7 +4,7 @@ boolean prBuild = env.ghprbPullLink != null;
 env.AUTH_TOKEN = params.AUTH_TOKEN
 env.DEBREPOKEY = params.DEBREPOKEY
 env.RPMREPOKEY = params.RPMREPOKEY
-env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER
+env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSERVER:'https://xcoartifactory/artifactory'
 /**
  * sync the git WS.
  * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit

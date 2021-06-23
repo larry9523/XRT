@@ -144,7 +144,7 @@ task publishRpm {
       def fileName = it.tokenize('/')[-1]
       def centOsVer = getCentOsVer(fileName)
       def arch = getRpmArch(fileName)
-      def command = "curl -u%s:%s -k -XPUT %s/artifactory/%s/%s/%s/"+fileName+" -T %s"
+      def command = "curl -u%s:%s -k -XPUT %s/%s/%s/%s/"+fileName+" -T %s"
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
@@ -153,7 +153,9 @@ task publishRpm {
       println process.text
     }
 
-    assert statusCode == 0
+    println "---------------"
+    println statusCode
+    assert statusCode == '0'
 }
 
 // Publish debian files to artifactory
@@ -173,7 +175,7 @@ task publishDeb {
       def fileName = it.tokenize('/')[-1]
       def debDistro = getDebDistro(fileName)
       def debArch = getDebArch(fileName)
-      def command = 'curl -u%s:%s -k -XPUT %s/artifactory/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
+      def command = 'curl -u%s:%s -k -XPUT %s/%s/pool/%s;deb.distribution=%s;deb.component=main;deb.architecture=%s -T %s'
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken, artifactoryServer,debRepoKey, fileName, debDistro, debArch, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
