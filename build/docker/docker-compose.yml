@@ -59,7 +59,6 @@ services:
       - NFSPATH=${PWD}
       - AUTH_TOKEN
       - USER
-      - RPMREPOKEY
       - DEBREPOKEY
       - ARTIFACTORYSERVER
       - RDI_ROOT=/opt/xrt-ipu/buildubuntu2004
@@ -101,7 +100,6 @@ services:
       - AUTH_TOKEN
       - USER
       - RPMREPOKEY
-      - DEBREPOKEY
       - ARTIFACTORYSERVER
       - RDI_ROOT=/opt/xrt-ipu/buildcentos76
       - GRADLE_USER_HOME=/tmp/gradlecentos76

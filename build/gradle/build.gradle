@@ -39,7 +39,6 @@ ext {
         throw new GradleException("could not deutermine branch, either pass it as -Pbranch or by setting branch value in branch.json; -Pbranch takes precedence")
     }
     logger.info("branch is set as ${branch}")
-    taUsed = System.getenv().getOrDefault("TA", "/proj/xbuilds/${branch}_daily_latest")
 
     artifactoryServer = System.getenv("ARTIFACTORYSERVER")
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
