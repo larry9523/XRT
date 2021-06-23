@@ -2,7 +2,9 @@
 
 boolean prBuild = env.ghprbPullLink != null;
 env.AUTH_TOKEN = params.AUTH_TOKEN
-env.IS_CI = params.DEV ? false : true
+env.DEBREPOKEY = params.DEBREPOKEY
+env.RPMREPOKEY = params.RPMREPOKEY
+env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER
 /**
  * sync the git WS.
  * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit

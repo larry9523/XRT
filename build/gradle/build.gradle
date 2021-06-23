@@ -41,11 +41,11 @@ ext {
     logger.info("branch is set as ${branch}")
     taUsed = System.getenv().getOrDefault("TA", "/proj/xbuilds/${branch}_daily_latest")
 
-    artifactoryServer = System.getenv("IS_CI") == "true" ? 'https://xcoartifactory' : 'http://xcort11'
+    artifactoryServer = System.getenv("ARTIFACTORYSERVER")
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
-    rpmRepoKey = System.getenv("IS_CI") == "true" ? 'xrt-ipu-rpm-prod-local' : 'xrt-ipu-rpm-dev-local'
-    debRepoKey = System.getenv("IS_CI") == "true" ? 'xrt-ipu-deb-prod-local' : 'xrt-ipu-deb-dev-local'
+    rpmRepoKey = System.getenv("RPMREPOKEY") 
+    debRepoKey = System.getenv("DEBREPOKEY") 
 }
 
 
