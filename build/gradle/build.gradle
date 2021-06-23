@@ -148,7 +148,8 @@ task publishRpm {
       def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
-      process.waitFor()
+      println curlCommand
+      println process.waitFor()
       println process.err.text
       println process.text
     }
