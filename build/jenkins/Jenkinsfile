@@ -22,13 +22,11 @@ Jenkins job parameters needed:
 1. RELEASE (String) - Map to internal release Ex: 2021.2.0
 2. GITPROJECTURL (String) - Git repo URL
 3. GITBRANCH (String) - Git branch to build
-4. UPDATE_TA (Boolean) - Whether the run has to try a new TA and update in artifactory
 5. DEV (Boolean) - DEV or PROD build
-6. USE_TA (String) - Override and Use a specific TA instead of RELEASE_plus_daily_latest
-7. BUILD_XLNX (Boolean) - WHether the Build is run in Xilinx or non-xilinx env
 8. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
 9. ARTIFACTORY_URL (String) - Artifactory to publish packages
 10.ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
+11.EMAIL_RECIPIENTS(String) - List of Email recipients
 */
 
 //Check if a PR Build or Not
