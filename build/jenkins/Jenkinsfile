@@ -1,5 +1,37 @@
 #!/usr/bin/env groovy
 
+/*
+ *  Copyright (C) 2021, Xilinx Inc
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"). You may
+ * not use this file except in compliance with the License. A copy of the
+ * License is located at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ */
+
+/*
+These will be added to jenkinsfile as parameters and its default values once parameters are finalized.
+Jenkins job parameters needed:
+1. RELEASE (String) - Map to internal release Ex: 2021.2.0
+2. GITPROJECTURL (String) - Git repo URL
+3. GITBRANCH (String) - Git branch to build
+4. UPDATE_TA (Boolean) - Whether the run has to try a new TA and update in artifactory
+5. DEV (Boolean) - DEV or PROD build
+6. USE_TA (String) - Override and Use a specific TA instead of RELEASE_plus_daily_latest
+7. BUILD_XLNX (Boolean) - WHether the Build is run in Xilinx or non-xilinx env
+8. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
+9. ARTIFACTORY_URL (String) - Artifactory to publish packages
+10.ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
+*/
+
+
 boolean prBuild = env.ghprbPullLink != null;
 env.AUTH_TOKEN = params.AUTH_TOKEN
 env.DEBREPOKEY = params.DEBREPOKEY != null ? params.DEBREPOKEY:'xrt-ipu-deb-prod-local'
@@ -10,6 +42,20 @@ env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSER
  * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit
  * 
  */
+
+properties([
+   parameters([
+   booleanParam(defaultValue: false, description: 'DEV Run', name: 'DEV'),
+   string(defaultValue: 'HEAD', name: 'RELEASE', description: 'RELEASE value e.g HEAD'),
+   string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
+   string(defaultValue: 'xrt-ipu-rpm-prod-local', name: 'RPMREPOKEY', description: 'RPM repo Key'),
+   string(defaultValue: 'xrt-ipu-deb-prod-local', name: 'DEBREPOKEY', description: 'Deb repo Key'),
+   string(defaultValue: 'https://xcoartifactory/artifactory', name: 'ARTIFACTORYSERVER', description: 'Artifactory Server URK'),
+   string(defaultValue: 'kbhardwa@xilinx.com; abalasa@xilinx.com; jliang@xilinx.com', name: 'EMAIL_RECIPIENTS', description: 'Email Receipients'),
+   string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
+   string(defaultValue: 'https://gitenterprise.xilinx.com/KBHARDWA/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
+])
+])
 
 def syncWS(boolean prBuild) {
    def scmVars
@@ -131,7 +177,7 @@ node('AIEIPUPOOL') {
        if (prBuild) {
           echo "Skipping Failure Email"
         } else {
-          emailext body: 'Something is wrong with ${BUILD_URL}', to: params.RECIPIENTS, recipientProviders: [[$class: 'DevelopersRecipientProvider']], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
+          emailext body: 'Something is wrong with ${BUILD_URL}', to: params.EMAIL_RECIPIENTS, recipientProviders: [[$class: 'DevelopersRecipientProvider']], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
         }
 
       throw (all)
