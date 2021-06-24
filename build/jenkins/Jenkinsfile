@@ -128,6 +128,12 @@ node('AIEIPUPOOL') {
          parallel(publishStages)
       }
    } catch (all) {
+       if (params.SENDFAILUREEMAIL) {
+          emailext body: 'Something is wrong with ${BUILD_URL}', to: 'kbhardwa@xilinx.com;abalasa@xilinx.com;jliang@xilinx.com', recipientProviders: [[$class: 'DevelopersRecipientProvider']], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
+        } else {
+          echo "Skipping Failure Email"
+        }
+
       throw (all)
    } finally {
       echo "cleaning up ${env.WORKSPACE} on ${env.NODE_NAME}"
