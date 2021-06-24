@@ -128,7 +128,7 @@ node('AIEIPUPOOL') {
          parallel(publishStages)
       }
    } catch (all) {
-       if (prBuilds) {
+       if (prBuild) {
           echo "Skipping Failure Email"
         } else {
           emailext body: 'Something is wrong with ${BUILD_URL}', to: params.RECIPIENTS, recipientProviders: [[$class: 'DevelopersRecipientProvider']], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
