@@ -2,8 +2,8 @@
 
 boolean prBuild = env.ghprbPullLink != null;
 env.AUTH_TOKEN = params.AUTH_TOKEN
-env.DEBREPOKEY = params.DEBREPOKEY
-env.RPMREPOKEY = params.RPMREPOKEY
+env.DEBREPOKEY = params.DEBREPOKEY != null ? params.DEBREPOKEY:'xrt-ipu-deb-prod-local'
+env.RPMREPOKEY = params.RPMREPOKEY != null ? params.RPMREPOKEY:'xrt-ipu-rpm-prod-local'
 env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSERVER:'https://xcoartifactory/artifactory'
 /**
  * sync the git WS.

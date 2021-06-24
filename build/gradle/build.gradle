@@ -40,11 +40,11 @@ ext {
     }
     logger.info("branch is set as ${branch}")
 
-    artifactoryServer = System.getenv("ARTIFACTORYSERVER")
+    artifactoryServer = System.getenv().getOrDefault("ARTIFACTORYSERVER", "https://xcoartifactory/artifactory")
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
-    rpmRepoKey = System.getenv("RPMREPOKEY") 
-    debRepoKey = System.getenv("DEBREPOKEY") 
+    rpmRepoKey = System.getenv.getOrDefault("RPMREPOKEY", "xrt-ipu-rpm-prod-local") 
+    debRepoKey = System.getenv.getOrDefault("DEBREPOKEY", "xrt-ipu-deb-prod-local") 
 }
 
 
