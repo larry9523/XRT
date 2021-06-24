@@ -144,8 +144,8 @@ task publishRpm {
       def fileName = it.tokenize('/')[-1]
       def centOsVer = getCentOsVer(fileName)
       def arch = getRpmArch(fileName)
-      def command = "curl -u%s:%s -k -XPUT %s/%s/%s/%s/"+fileName+" -T %s"
-      def curlCommand = String.format(command, artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
+      def command = "curl -o -I -L -s -w %s -u%s:%s -k -XPUT %s/%s/%s/%s/"+fileName+" -T %s"
+      def curlCommand = String.format(command, "%{http_code}", artifactoryUser,artifactoryAuthToken,artifactoryServer,rpmRepoKey, arch, centOsVer, it)
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
