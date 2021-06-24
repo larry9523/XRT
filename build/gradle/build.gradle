@@ -135,7 +135,7 @@ task publishRpm {
     def rpmFileList = []
     def releaseDir = System.getenv("REL_DIR")
     def getRpmFiles = fileTree(include:['**/*.rpm'], dir:"$wsRootDir/../"+releaseDir)
-    def statusCode = 0
+    def statusCode = "200"
     getRpmFiles.each {
       rpmFileList.add(it['absolutePath'])
     }
@@ -149,14 +149,13 @@ task publishRpm {
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
-      statusCode = process.exitValue()
+      statusCode = process.text
       println process.err.text
       println process.text
     }
 
-    println "---------------"
     println statusCode
-    assert statusCode == 0
+    assert statusCode == "200"
 }
 
 // Publish debian files to artifactory
@@ -167,7 +166,7 @@ task publishDeb {
     def debFileList = []
     def releaseDir = System.getenv("REL_DIR")
     def getDebFiles = fileTree(include:['**/*.deb'], dir:"$wsRootDir/../"+releaseDir)
-
+    def statusCode = 0
     getDebFiles.each {
       debFileList.add(it['absolutePath'])
     }
@@ -181,9 +180,11 @@ task publishDeb {
       ProcessBuilder builder = new ProcessBuilder(curlCommand.split(' '));
       Process process = builder.start();
       process.waitFor()
+      statusCode = process.exitValue()
       println process.err.text
       println process.text
     }
+   assert statusCode == 0
   }
  }
 }
