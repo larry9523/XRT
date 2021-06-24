@@ -31,18 +31,15 @@ Jenkins job parameters needed:
 10.ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
 */
 
-
+//Check if a PR Build or Not
 boolean prBuild = env.ghprbPullLink != null;
 env.AUTH_TOKEN = params.AUTH_TOKEN
 env.DEBREPOKEY = params.DEBREPOKEY != null ? params.DEBREPOKEY:'xrt-ipu-deb-prod-local'
 env.RPMREPOKEY = params.RPMREPOKEY != null ? params.RPMREPOKEY:'xrt-ipu-rpm-prod-local'
 env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSERVER:'https://xcoartifactory/artifactory'
-/**
- * sync the git WS.
- * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit
- * 
- */
 
+
+//Parameters for Jenkins Job
 properties([
    parameters([
    booleanParam(defaultValue: false, description: 'DEV Run', name: 'DEV'),
@@ -57,6 +54,13 @@ properties([
    string(defaultValue: 'https://gitenterprise.xilinx.com/KBHARDWA/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
 ])
 ])
+
+
+/**
+ * sync the git WS.
+ * @param prBuild if true then it will get the PR to the sandbox, otherwise the commit
+ * 
+ */
 
 def syncWS(boolean prBuild) {
    def scmVars
@@ -103,17 +107,43 @@ def syncWS(boolean prBuild) {
 
 }
 
+/*
+ * Run Build @param Docker Container Name, run the buildXRT task in the docker container  
+ */
+
+
 def runBuild(docker_container_name) {
    return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew buildXRT --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
 }
+
+
+/*
+ * Publish Deb Packages @param Docker Container Name, run the publishDeb task in the docker container  
+ */
 
 def publishDeb(docker_container_name) {
    return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew publishDeb --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
 }
 
+
+/*
+ * Publish RPM packages @param Docker Container Name, run the publishRPM task in the docker container  
+ */
+
+
 def publishRpm(docker_container_name) {
    return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew publishRpm --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
 }
+
+
+/*
+
+Stages: 
+
+1. Sync Workspace
+2. Build XRT
+3. Publish Packages
+*/
 
 node('AIEIPUPOOL') {
 
