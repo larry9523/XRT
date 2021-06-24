@@ -43,8 +43,8 @@ ext {
     artifactoryServer = System.getenv().getOrDefault("ARTIFACTORYSERVER", "https://xcoartifactory/artifactory")
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
-    rpmRepoKey = System.getenv.getOrDefault("RPMREPOKEY", "xrt-ipu-rpm-prod-local") 
-    debRepoKey = System.getenv.getOrDefault("DEBREPOKEY", "xrt-ipu-deb-prod-local") 
+    rpmRepoKey = System.getenv().getOrDefault("RPMREPOKEY", "xrt-ipu-rpm-prod-local") 
+    debRepoKey = System.getenv().getOrDefault("DEBREPOKEY", "xrt-ipu-deb-prod-local") 
 }
 
 
