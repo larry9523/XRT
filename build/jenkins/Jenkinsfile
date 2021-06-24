@@ -128,10 +128,10 @@ node('AIEIPUPOOL') {
          parallel(publishStages)
       }
    } catch (all) {
-       if (params.SENDFAILUREEMAIL) {
-          emailext body: 'Something is wrong with ${BUILD_URL}', to: 'kbhardwa@xilinx.com;abalasa@xilinx.com;jliang@xilinx.com', recipientProviders: [[$class: 'DevelopersRecipientProvider']], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
-        } else {
+       if (prBuilds) {
           echo "Skipping Failure Email"
+        } else {
+          emailext body: 'Something is wrong with ${BUILD_URL}', to: params.RECIPIENTS, recipientProviders: [[$class: 'DevelopersRecipientProvider']], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
         }
 
       throw (all)
