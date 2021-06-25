@@ -23,10 +23,10 @@ Jenkins job parameters needed:
 2. GITPROJECTURL (String) - Git repo URL
 3. GITBRANCH (String) - Git branch to build
 5. DEV (Boolean) - DEV or PROD build
-8. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
-9. ARTIFACTORY_URL (String) - Artifactory to publish packages
-10.ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
-11.EMAIL_RECIPIENTS(String) - List of Email recipients
+6. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
+7. ARTIFACTORY_URL (String) - Artifactory to publish packages
+8.ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
+9.EMAIL_RECIPIENTS(String) - List of Email recipients
 */
 
 //Check if a PR Build or Not
