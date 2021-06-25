@@ -22,11 +22,11 @@ Jenkins job parameters needed:
 1. RELEASE (String) - Map to internal release Ex: 2021.2.0
 2. GITPROJECTURL (String) - Git repo URL
 3. GITBRANCH (String) - Git branch to build
-5. DEV (Boolean) - DEV or PROD build
-6. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
-7. ARTIFACTORY_URL (String) - Artifactory to publish packages
-8.ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
-9.EMAIL_RECIPIENTS(String) - List of Email recipients
+4. DEV (Boolean) - DEV or PROD build
+5. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
+6. ARTIFACTORY_URL (String) - Artifactory to publish packages
+7. ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
+8. EMAIL_RECIPIENTS(String) - List of Email recipients
 */
 
 //Check if a PR Build or Not
