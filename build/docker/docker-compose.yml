@@ -26,7 +26,7 @@
 #   docker-compose run --rm xrt-ipu 
 
 #If running the docker container from command line, please source setEnvUser.sh script to set the User environment variables
-
+#source build/docker/setEncUser.sh
 
 version: "3.3"
 services:
