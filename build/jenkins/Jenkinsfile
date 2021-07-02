@@ -23,36 +23,36 @@ Jenkins job parameters needed:
 2. GITPROJECTURL (String) - Git repo URL
 3. GITBRANCH (String) - Git branch to build
 4. DEV (Boolean) - DEV or PROD build
-5. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
-6. ARTIFACTORY_URL (String) - Artifactory to publish packages
-7. ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
-8. EMAIL_RECIPIENTS(String) - List of Email recipients
+5. BUILD_XLNX (Boolean) - Whether the Build is run in Xilinx or non-xilinx env
+6. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
+7. ARTIFACTORY_URL (String) - Artifactory to publish packages
+8. ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
+9. EMAIL_RECIPIENTS(String) - List of Email recipients
 */
 
 //Check if a PR Build or Not
 boolean prBuild = env.ghprbPullLink != null;
 env.AUTH_TOKEN = params.AUTH_TOKEN
-env.DEBREPOKEY = params.DEBREPOKEY != null ? params.DEBREPOKEY:'xrt-ipu-deb-prod-local'
-env.RPMREPOKEY = params.RPMREPOKEY != null ? params.RPMREPOKEY:'xrt-ipu-rpm-prod-local'
-env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSERVER:'https://xcoartifactory/artifactory'
-
+env.DEBREPOKEY = params.DEBREPOKEY != null ? params.DEBREPOKEY : 'xrt-ipu-deb-prod-local'
+env.RPMREPOKEY = params.RPMREPOKEY != null ? params.RPMREPOKEY : 'xrt-ipu-rpm-prod-local'
+env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSERVER : 'https://xcoartifactory/artifactory'
 
 //Parameters for Jenkins Job
 properties([
-   parameters([
-   booleanParam(defaultValue: false, description: 'DEV Run', name: 'DEV'),
-   string(defaultValue: 'HEAD', name: 'RELEASE', description: 'RELEASE value e.g HEAD'),
-   string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
-   string(defaultValue: 'xrt-ipu-rpm-prod-local', name: 'RPMREPOKEY', description: 'RPM repo Key'),
-   string(defaultValue: 'xrt-ipu-deb-prod-local', name: 'DEBREPOKEY', description: 'Deb repo Key'),
-   credentials(name: 'AUTH_TOKEN', description: 'A user to build with', credentialType: 'com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl', defaultValue: 'xbuild-xcoartifactory-accesstoken'),
-   string(defaultValue: 'https://xcoartifactory/artifactory', name: 'ARTIFACTORYSERVER', description: 'Artifactory Server URK'),
-   string(defaultValue: 'kbhardwa@xilinx.com; abalasa@xilinx.com; jliang@xilinx.com', name: 'EMAIL_RECIPIENTS', description: 'Email Receipients'),
-   string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
-   string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
+  parameters([
+    booleanParam(defaultValue: false, description: 'DEV Run', name: 'DEV'),
+    booleanParam(defaultValue: true, description: 'Whether the Build is run in Xilinx or non-xilinx env', name: 'BUILD_XLNX'),
+    string(defaultValue: 'HEAD', name: 'RELEASE', description: 'RELEASE value e.g HEAD'),
+    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
+    string(defaultValue: 'xrt-ipu-rpm-prod-local', name: 'RPMREPOKEY', description: 'RPM repo Key'),
+    string(defaultValue: 'xrt-ipu-deb-prod-local', name: 'DEBREPOKEY', description: 'Deb repo Key'),
+    credentials(name: 'AUTH_TOKEN', description: 'A user to build with', credentialType: 'com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl', defaultValue: 'xbuild-xcoartifactory-accesstoken'),
+    string(defaultValue: 'https://xcoartifactory/artifactory', name: 'ARTIFACTORYSERVER', description: 'Artifactory Server URK'),
+    string(defaultValue: 'kbhardwa@xilinx.com; abalasa@xilinx.com; jliang@xilinx.com', name: 'EMAIL_RECIPIENTS', description: 'Email Receipients'),
+    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
+    string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
+  ])
 ])
-])
-
 
 /**
  * sync the git WS.
@@ -61,47 +61,47 @@ properties([
  */
 
 def syncWS(boolean prBuild) {
-   def scmVars
-   if (prBuild) {
-      scmVars = checkout([$class: 'GitSCM',
-         branches: [
-            [name: "${env.sha1}"]
-         ],
-         doGenerateSubmoduleConfigurations: false,
-         extensions: [
-            [$class: 'WipeWorkspace'],
-            [$class: 'CheckoutOption', timeout: 30]
-         ],
-         submoduleCfg: [],
-         userRemoteConfigs: [
-            [credentialsId: 'xbuild-ml-frontend-gitenterprise-token',
-               name: 'origin',
-               refspec: "+refs/heads/*:refs/remotes/origin/* +refs/pull/*:refs/remotes/origin/pr/*",
-               url: "${env.GITPROJECTURL}"
-            ]
-         ]
-      ])
+  def scmVars
+  if (prBuild) {
+    scmVars = checkout([$class: 'GitSCM',
+      branches: [
+        [name: "${env.sha1}"]
+      ],
+      doGenerateSubmoduleConfigurations: false,
+      extensions: [
+        [$class: 'WipeWorkspace'],
+        [$class: 'CheckoutOption', timeout: 30]
+      ],
+      submoduleCfg: [],
+      userRemoteConfigs: [
+        [credentialsId: 'xbuild-ml-frontend-gitenterprise-token',
+          name: 'origin',
+          refspec: "+refs/heads/*:refs/remotes/origin/* +refs/pull/*:refs/remotes/origin/pr/*",
+          url: "${env.GITPROJECTURL}"
+        ]
+      ]
+    ])
 
-   } else {
-      scmVars = checkout([$class: 'GitSCM',
-         branches: [
-            [name: "*/" + "${env.GITBRANCH}"]
-         ],
-         doGenerateSubmoduleConfigurations: false,
-         extensions: [
-            [$class: 'WipeWorkspace'],
-            [$class: 'CheckoutOption', timeout: 30]
-         ],
-         submoduleCfg: [],
-         userRemoteConfigs: [
-            [credentialsId: 'xbuild-ml-frontend-gitenterprise-token',
-               name: 'origin',
-               url: "${env.GITPROJECTURL}"
-            ]
-         ]
-      ])
+  } else {
+    scmVars = checkout([$class: 'GitSCM',
+      branches: [
+        [name: "*/" + "${env.GITBRANCH}"]
+      ],
+      doGenerateSubmoduleConfigurations: false,
+      extensions: [
+        [$class: 'WipeWorkspace'],
+        [$class: 'CheckoutOption', timeout: 30]
+      ],
+      submoduleCfg: [],
+      userRemoteConfigs: [
+        [credentialsId: 'xbuild-ml-frontend-gitenterprise-token',
+          name: 'origin',
+          url: "${env.GITPROJECTURL}"
+        ]
+      ]
+    ])
 
-   }
+  }
 
 }
 
@@ -109,30 +109,33 @@ def syncWS(boolean prBuild) {
  * Run Build @param Docker Container Name, run the buildXRT task in the docker container  
  */
 
-
 def runBuild(docker_container_name) {
-   return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew buildXRT --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
+  return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew buildXRT --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
 }
 
+/*
+ * Copy tar files generated by the build to a NFS location
+ */
+
+def copyTarFiles(docker_container_name) {
+  return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew copyTarFiles --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
+}
 
 /*
  * Publish Deb Packages @param Docker Container Name, run the publishDeb task in the docker container  
  */
 
 def publishDeb(docker_container_name) {
-   return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew publishDeb --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
+  return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew publishDeb --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
 }
-
 
 /*
  * Publish RPM packages @param Docker Container Name, run the publishRPM task in the docker container  
  */
 
-
 def publishRpm(docker_container_name) {
-   return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew publishRpm --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
+  return 'docker-compose run --rm ' + "${docker_container_name}" + ' "cd build/gradle; ./gradlew publishRpm --project-cache-dir=/tmp/' + "${docker_container_name}" + '"'
 }
-
 
 /*
 
@@ -145,74 +148,90 @@ Stages:
 
 node('AIEIPUPOOL') {
 
-   try {
+  try {
 
-      stage('Sync Workspace') {
-         syncWS(prBuild)
-      }
+    stage('Sync Workspace') {
+      syncWS(prBuild)
+    }
 
-      timeout(time: 1, unit: 'HOURS') {
+    def XDOCK_USER = "${USER}"
+    def XDOCK_UID = sh(
+      script: "id -u ${USER}",
+      returnStdout: true
+    ).trim()
+    def XDOCK_GROUP = "${GROUP}"
+    def XDOCK_GID = sh(
+      script: "id -g ${USER}",
+      returnStdout: true
+    ).trim()
 
-         Map buildStages = [: ]
-         buildStages["Build Centos 76"] = {
-            stage("Build Centos 76") {
-               dir("${env.WORKSPACE}" + "/build/docker") {
+    timeout(time: 1, unit: 'HOURS') {
 
-                  try {
-                     script {
-                        sh runBuild("xrt-ipu-centos76")
-                     }
-                  } catch (all) {
-                     throw (all)
-                  }
-               }
+      Map buildStages = [: ]
+      buildStages["Build Centos 76"] = {
+        stage("Build Centos 76") {
+          withEnv(["XDOCK_UID=${XDOCK_UID}", "XDOCK_USER=${XDOCK_USER}", "XDOCK_GROUP=${XDOCK_GROUP}", "XDOCK_GID=${XDOCK_GID}"]) {
+            dir("${env.WORKSPACE}" + "/build/docker") {
+
+              try {
+                sh runBuild("xrt-ipu-centos76")
+                if (params.BUILD_XLNX) {
+                  sh copyTarFiles("xrt-ipu-centos76")
+                }
+              } catch (all) {
+                throw (all)
+              }
             }
-         }
-
-         parallel(buildStages)
-
-      }
-      stage('Test') {
-         timeout(time: 1, unit: 'HOURS') {
-            echo "Running Tests"
-         }
-      }
-
-      timeout(time: 1, unit: 'HOURS') {
-         Map publishStages = [: ]
-
-         publishStages["Publish Centos76"] = {
-            stage("Publish Centos76") {
-               if (prBuild || params.DEV) {
-                  echo "Skipping the Adding artifacts to Artifactory Step"
-               } else {
-                  dir("${env.WORKSPACE}" + "/build/docker") {
-                     try {
-                        withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
-                           withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}"]) {
-                              sh publishRpm("xrt-ipu-centos76")
-                           }
-                        }
-                     } catch (all) {
-                        throw (all)
-                     }
-                  }
-               }
-            }
-         }
-         parallel(publishStages)
-      }
-   } catch (all) {
-       if (prBuild) {
-          echo "Skipping Failure Email"
-        } else {
-          emailext body: 'Something is wrong with ${BUILD_URL}', to: params.EMAIL_RECIPIENTS, recipientProviders: [[$class: 'DevelopersRecipientProvider']], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
+          }
         }
+      }
 
-      throw (all)
-   } finally {
-      echo "cleaning up ${env.WORKSPACE} on ${env.NODE_NAME}"
-      cleanWs()
+      parallel(buildStages)
 
-   }
+    }
+    stage('Test') {
+      timeout(time: 1, unit: 'HOURS') {
+        echo "Running Tests"
+      }
+    }
+
+    timeout(time: 1, unit: 'HOURS') {
+      Map publishStages = [: ]
+
+      publishStages["Publish Centos76"] = {
+        stage("Publish Centos76") {
+          if (prBuild || params.DEV) {
+            echo "Skipping the Adding artifacts to Artifactory Step"
+          } else {
+            dir("${env.WORKSPACE}" + "/build/docker") {
+              try {
+                withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
+                  withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}"]) {
+                    sh publishRpm("xrt-ipu-centos76")
+                  }
+                }
+              } catch (all) {
+                throw (all)
+              }
+            }
+          }
+        }
+      }
+      parallel(publishStages)
+    }
+  } catch (all) {
+    if (prBuild) {
+      echo "Skipping Failure Email"
+    } else {
+      emailext body: 'Something is wrong with ${BUILD_URL}', to: params.EMAIL_RECIPIENTS, recipientProviders: [
+        [$class: 'DevelopersRecipientProvider']
+      ], subject: "Failed Pipeline: ${currentBuild.fullDisplayName}"
+    }
+
+    throw (all)
+  } finally {
+    echo "cleaning up ${env.WORKSPACE} on ${env.NODE_NAME}"
+    cleanWs()
+
+  }
 }

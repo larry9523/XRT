@@ -45,6 +45,7 @@ ext {
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
     rpmRepoKey = System.getenv().getOrDefault("RPMREPOKEY", "xrt-ipu-rpm-prod-local") 
     debRepoKey = System.getenv().getOrDefault("DEBREPOKEY", "xrt-ipu-deb-prod-local") 
+    filesNFSloc = System.getenv("DEV") == "true" ? "/proj/xbuilds/XRT-IPU-DEV/" : "/proj/xbuilds/XRT-IPU/"
 }
 
 
@@ -189,4 +190,41 @@ task publishDeb {
    assert statusCode == "200" || statusCode == "201"
   }
  }
+
+//Copy tar.gz files
+task copyTarFiles {
+  description 'Copy tar files to /proj/xbuilds area'
+  doFirst {
+    def tarFileList = []
+    def releaseDir = System.getenv("REL_DIR")
+    def getTarFiles = fileTree(include:['**/*.tar.gz'], dir:"$wsRootDir/../"+releaseDir)
+    def statusCode = 0
+    def startDate = new Date().format('yyyy_MM_dd_HHmm')
+    getTarFiles.each {
+      tarFileList.add(it['absolutePath'])
+    }
+
+    tarFileList.each {
+      def fileName = it.tokenize('/')[-1]
+      def dir = fileName.split("_")
+      def loc = filesNFSloc+release+"/"+dir[1]
+      exec {
+        commandLine 'mkdir', '-p', loc
+      }
+
+      def command = 'cp %s %s'
+      def cpCommand = String.format(command, it, loc)
+      println cpCommand
+      ProcessBuilder builder = new ProcessBuilder(cpCommand.split(' '));
+      Process process = builder.start();
+      process.waitFor()
+      println process.err.text
+      statusCode = process.exitValue()
+
+    }
+
+   assert statusCode == 0
+  }
+ }
+
 }

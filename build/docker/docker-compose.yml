@@ -25,6 +25,9 @@
 # To build xrt-ipu in docker container:
 #   docker-compose run --rm xrt-ipu 
 
+#If running the docker container from command line, please source setEnvUser.sh script to set the User environment variables
+
+
 version: "3.3"
 services:
   xrt-ipu-centos76:
@@ -38,10 +41,10 @@ services:
         # 2. Set these environment variables per user with .bashrc or .cshrc
         #    but most of the time these variables will already be set for you.
         # NOTE: These variables are read at build-time and at run-time
-        USER_ID: ${XDOCK_UID:-65673}
-        USER_NAME: ${XDOCK_USER:-xbuild}
-        GROUP_ID: ${XDOCK_GID:-10115}
-        GROUP_NAME: ${XDOCK_GROUP:-hd}
+        USER_ID: ${XDOCK_UID}
+        USER_NAME: ${XDOCK_USER}
+        GROUP_ID: ${XDOCK_GID}
+        GROUP_NAME: ${XDOCK_GROUP}
       context: .
       dockerfile: Dockerfile-centos7.6
     image: "xrt-ipu-centos76:latest"
@@ -51,7 +54,7 @@ services:
       - /wrk:/wrk:shared
       # We mount the current project to /app
       - ../../:/opt/xrt-ipu:rshared
-    user: ${XDOCK_USER:-xbuild}
+    user: ${XDOCK_USER}
     working_dir: /opt/xrt-ipu
     environment:
       - BUILD_NUMBER
