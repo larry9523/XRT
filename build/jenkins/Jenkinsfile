@@ -49,7 +49,7 @@ properties([
    string(defaultValue: 'https://xcoartifactory/artifactory', name: 'ARTIFACTORYSERVER', description: 'Artifactory Server URK'),
    string(defaultValue: 'kbhardwa@xilinx.com; abalasa@xilinx.com; jliang@xilinx.com', name: 'EMAIL_RECIPIENTS', description: 'Email Receipients'),
    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
-   string(defaultValue: 'https://gitenterprise.xilinx.com/KBHARDWA/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
+   string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
 ])
 ])
 
