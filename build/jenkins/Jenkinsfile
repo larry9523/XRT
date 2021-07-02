@@ -154,19 +154,22 @@ node('AIEIPUPOOL') {
       syncWS(prBuild)
     }
 
-    def XDOCK_USER = sh(
+    env.XDOCK_USER = sh(
       script: "id -u -n",
       returnStdout: true
     ).trim()
-    def XDOCK_UID = sh(
+
+    env.XDOCK_UID = sh(
       script: "id -u ${USER}",
       returnStdout: true
     ).trim()
-    def XDOCK_GROUP =  sh(
+
+    env.XDOCK_GROUP =  sh(
       script: "id -g -n",
       returnStdout: true
     ).trim()
-    def XDOCK_GID = sh(
+
+    env.XDOCK_GID = sh(
       script: "id -g ${USER}",
       returnStdout: true
     ).trim()
@@ -176,9 +179,7 @@ node('AIEIPUPOOL') {
       Map buildStages = [: ]
       buildStages["Build Centos 76"] = {
         stage("Build Centos 76") {
-          withEnv(["XDOCK_UID=${XDOCK_UID}", "XDOCK_USER=${XDOCK_USER}", "XDOCK_GROUP=${XDOCK_GROUP}", "XDOCK_GID=${XDOCK_GID}"]) {
             dir("${env.WORKSPACE}" + "/build/docker") {
-
               try {
                 sh runBuild("xrt-ipu-centos76")
                 if (params.BUILD_XLNX) {
@@ -188,7 +189,6 @@ node('AIEIPUPOOL') {
                 throw (all)
               }
             }
-          }
         }
       }
 
@@ -212,7 +212,7 @@ node('AIEIPUPOOL') {
             dir("${env.WORKSPACE}" + "/build/docker") {
               try {
                 withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
-                  withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}","XDOCK_UID=${XDOCK_UID}", "XDOCK_USER=${XDOCK_USER}", "XDOCK_GROUP=${XDOCK_GROUP}", "XDOCK_GID=${XDOCK_GID}"]) {
+                  withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}"]) {
                     sh publishRpm("xrt-ipu-centos76")
                   }
                 }
