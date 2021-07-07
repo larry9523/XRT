@@ -1,0 +1,28 @@
+NOTICE:  THIS FILE CONTAINS THE FOLLOWING FOUR SEPARATE FILES THAT TOGETHER FORM THE INSTRUCTIONS AND MEANS FOR YOU TO INSTALL FROM THE INTERNET A GRADLE BUILD ON YOUR SYSTEM.  GRADLE IS A BUILD TOOL THAT FOCUSES ON BUILD AUTOMATION AND SUPPORT FOR MULTI-LANGUAGE DEVELOPMENT.  THE FOUR FILES ARE:
+1)  “GRADLEW” © COPYRIGHT 2021 GRADLE, INC. 
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+2)  “GRADLE-WRAPPER.JAR” © COPYRIGHT 2021 GRADLE, INC.
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+3)  “SETTINGS.GRADLE” © COPYRIGHT 2021 XILINX, INC.
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+4)  “GRADLE.PROPERTIES” © COPYRIGHT 2021 GRADLE, INC.
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+THE AFORMENTIONED FILES TOGETHER COMPRISE A GRADLE WRAPPER TASK SCRIPT THAT, WHEN EXECUTED BY YOU, WILL CAUSE A VERSION OF GRADLE (V 6.6.1) TO BE DOWNLOADED ONTO YOUR SYSTEM.  
+THIS FILE DOES NOT CONTAIN A DISTRIBUTION OF ANY GRADLE SOFTWARE, OTHER THAN THE GRADLE-WRAPPER.JAR AND THE GRADLEW FOR BUILDING GRADLE IN A LINUX ENVIRONMENT.  FOR MORE INFORMATION ON THE GRADLE WRAPPER TASK AND GRADLE-WRAPPER.JAR, SEE HTTPS://DOCS.GRADLE.ORG/CURRENT/USERGUIDE/GRADLE_WRAPPER.HTML.
+GRADLE SOFTWARE, VERSION 6.6.1, MAY BE DOWNLOADED FROM HTTPS://SERVICES.GRADLE.ORG/DISTRIBUTIONS/.
+SOURCE CODE FOR GRADLE VERSION 6.6.1 MAY BE DOWNLOADED FROM HTTPS://GITHUB.COM/GRADLE/GRADLE/TREE/V6.6.1.  
+GRADLE SOFTWARE IS COPYRIGHTED BY GRADLE, INC. AND OTHERS AND IS SUBJECT TO VARIOUS LICENSE AGREEMENTS THAT ARE CONTAINED IN THE SOURCE CODE CORRESPONDING TO ALL SUCH SOFTWARE.  XILINX DOES NOT GRANT TO YOU ANY RIGHTS OR LICENSES TO SUCH THIRD PARTY SOFTWARE, OTHER THAN TO EXECUTE THE GRADLE-WRAPPER.JAR AND GRADLEW AS PART OF THE GRADLE WRAPPER TASK SOLELY TO BUILD YOUR GRADLE ENVIRONMENT.  
+YOU AGREE TO CAREFULLY REVIEW AND ABIDE BY THE TERMS AND CONDITIONS OF ALL LICENSE AGREEMENTS TO THE EXTENT THAT THEY GOVERN THE SOFTWARE THAT GETS DOWNLOADED FROM THE INTERENT ONTO YOUR SYSTEM.
+BY ELECTING TO CONTINUE, YOU WILL CAUSE THIS SCRIPT FILE TO AUTOMATICALLY INSTALL THE GRADLE SOFTWARE FROM THE INTERENT ONTO YOUR SYSTEM. YOU AGREE TO CAREFULLY REVIEW AND ABIDE BY THE TERMS AND CONDITIONS OF SUCH LICENSE AGREEMENTS TO THE EXTENT THAT THEY GOVERN SUCH SOFTWARE.
+YOU ACKNOWLEDGE AND AGREE, FOR YOURSELF AND ON BEHALF OF YOUR EMPLOYER (IF APPLICABLE), THAT XILINX IS NOT DISTRIBUTING TO YOU IN THIS FILE ANY GRADLE SOFTWARE (OTHER THAN THE GRADLE-WRAPPER.JAR AND GRADLEW), AND THAT YOU ARE SOLELY RESPONSIBLE FOR THE INSTALLATION OF SUCH GRADLE SOFTWARE ON YOUR SYSTEM.
+DO NOT EXECUTE THIS GRADLE WRAPPER SCRIPT IF YOU DO NOT AGREE.
