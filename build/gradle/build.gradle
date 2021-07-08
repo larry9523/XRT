@@ -48,7 +48,6 @@ ext {
     filesNFSloc = System.getenv("DEV") == "true" ? "/proj/xbuilds/XRT-IPU-DEV/" : "/proj/xbuilds/XRT-IPU/"
 }
 
-
 String getCentOsVer(fname){
     String ret = null
     if (fname.contains("_9.") || fname.contains("-9.")){

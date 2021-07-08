@@ -14,37 +14,4 @@
  * under the License.
  */
 
-import groovy.io.FileType
-import groovy.json.JsonSlurper
-
-pluginManagement {
-    def branch = new JsonSlurper().parseText(new File(rootProject.projectDir, coreBranchFile).text);
-    // This allows us to use the plugins published to the local/xilinx repo
-    resolutionStrategy {
-        Map pluginMap = ["core": ["manifest", "clean"]]
-        eachPlugin {
-            if (requested.version == null) {
-                String requestedName = requested.id.toString().replaceFirst("^${requested.id.namespace}\\.(.*)", '$1')
-                String artifactId = pluginMap.find{ it.value.contains(requestedName) }?.key ?: requestedName
-                String requestedId = requested.id.toString().replace(requestedName, artifactId)
-                if (branch.config.gradle_plugins.containsKey(requestedId)) {
-                    def coordinate = "${requested.id.namespace}:${artifactId}:${branch.config.gradle_plugins[requestedId]}"
-                    useModule(coordinate)
-                    logger.info("Centralized plugin version '{}' (from {})", coordinate, coreBranchFile)
-                } else {
-                    logger.info("Plugin id '{}' is not centralized (in {})", requestedId, coreBranchFile)
-                }
-            }
-        }
-    }
-    // To resolve plugin dependencies...
-    repositories {
-        maven {
-            def pluginsUrl = settings.hasProperty("coreUrl") ? settings.coreUrl : branch.config.artifact_servers.artifactory_default."plugins-url"
-            url = "${pluginsUrl}/${branch.config.artifact_servers.artifactory_default."plugins-release-repo"}"
-        }
-        gradlePluginPortal()
-    }
-}
- 
 rootProject.name = 'xrt-ipu'
