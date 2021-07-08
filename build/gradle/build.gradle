@@ -29,7 +29,6 @@ buildscript {
 plugins {
     id "maven-publish"
     id "base"
-    id "com.jfrog.artifactory" version "4.10.0" // Allow Jenkins to inject credentials, as well as control the repo
 }
 apply plugin: "com.jfrog.artifactory"
 
