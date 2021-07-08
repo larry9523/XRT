@@ -121,7 +121,7 @@ tasks.register('buildXRT'){
     }
     exec {
       workingDir "$wsRootDir/.."
-      commandLine './build.sh'
+      commandLine './build.sh', '-noctest'
     }
   }
 }

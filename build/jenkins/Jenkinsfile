@@ -182,7 +182,7 @@ node('AIEIPUPOOL') {
             dir("${env.WORKSPACE}" + "/build/docker") {
               try {
                 sh runBuild("xrt-ipu-centos76")
-                if (params.BUILD_XLNX) {
+                if (params.BUILD_XLNX && !prBuild) {
                   sh copyTarFiles("xrt-ipu-centos76")
                 }
               } catch (all) {
