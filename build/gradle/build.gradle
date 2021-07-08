@@ -17,11 +17,22 @@
 import groovy.io.FileType
 import groovy.json.JsonSlurper
 
+buildscript {
+  repositories {
+    mavenCentral()
+  }
+  dependencies {
+    classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4.10.0"
+  }
+}
+
 plugins {
     id "maven-publish"
     id "base"
     id "com.jfrog.artifactory" version "4.10.0" // Allow Jenkins to inject credentials, as well as control the repo
 }
+apply plugin: "com.jfrog.artifactory"
+
 
 ext {
     release = project.hasProperty('release') ? project.release.toString() : System.getenv().getOrDefault("RELEASE", "2021.2.0")

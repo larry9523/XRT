@@ -49,9 +49,6 @@ services:
       dockerfile: Dockerfile-centos7.6
     image: "xrt-ipu-centos76:latest"
     volumes:
-      # Easy access to TA and workspaces, but keep in mind that this opens you up for unwanted dependencies:
-      - /proj:/proj:shared
-      - /wrk:/wrk:shared
       # We mount the current project to /app
       - ../../:/opt/xrt-ipu:rshared
     user: ${XDOCK_USER}
