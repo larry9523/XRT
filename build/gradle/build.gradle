@@ -192,7 +192,7 @@ task publishDeb {
       Process process = builder.start();
       process.waitFor()
       println process.err.text
-      statusCode = process.exitValue()
+      statusCode = process.text
     }
 
    println statusCode
