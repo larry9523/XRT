@@ -30,7 +30,7 @@
 
 version: "3.3"
 services:
-  xrt-ipu-ubuntu2004:   
+  xrt-ipu-ubuntu1804:   
     network_mode: bridge        
     build:      
       args:
@@ -46,8 +46,8 @@ services:
         GROUP_ID: ${XDOCK_GID}   
         GROUP_NAME: ${XDOCK_GROUP}  
       context: .        
-      dockerfile: Dockerfile-ubuntu20.04        
-    image: "xrt-ipu-ubuntu2004:latest"  
+      dockerfile: Dockerfile-ubuntu18.04        
+    image: "xrt-ipu-ubuntu1804:latest"  
     volumes:
       # We mount the current project to /app
       - ../../:/opt/xrt-ipu:rshared     

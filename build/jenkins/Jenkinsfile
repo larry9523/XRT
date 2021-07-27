@@ -211,9 +211,9 @@ node('AIEIPUPOOL') {
         stage("Build Ubuntu 2004") {
             dir("${env.WORKSPACE}" + "/build/docker") {
               try {
-                sh runBuild("xrt-ipu-ubuntu2004")
+                sh runBuild("xrt-ipu-ubuntu1804")
                 if (params.BUILD_XLNX && !prBuild) {
-                  sh copyTarFiles("Release_ubuntu2004")
+                  sh copyTarFiles("Release_ubuntu1804")
 
                 }
               } catch (all) {
@@ -264,7 +264,7 @@ node('AIEIPUPOOL') {
               try {
                 withCredentials([usernamePassword(credentialsId: env.AUTH_TOKEN, usernameVariable: 'USER', passwordVariable: 'AUTH_TOKEN')]) {
                   withEnv(["AUTH_TOKEN=${AUTH_TOKEN}", "USER=${USER}"]) {
-                    sh publishDeb("xrt-ipu-ubuntu2004")
+                    sh publishDeb("xrt-ipu-ubuntu1804")
                   }
                 }
               } catch (all) {
