@@ -207,8 +207,8 @@ node('AIEIPUPOOL') {
             }
         }
       }
-      buildStages["Build Ubuntu 2004"] = {
-        stage("Build Ubuntu 2004") {
+      buildStages["Build Ubuntu 1804"] = {
+        stage("Build Ubuntu 1804") {
             dir("${env.WORKSPACE}" + "/build/docker") {
               try {
                 sh runBuild("xrt-ipu-ubuntu1804")
@@ -255,8 +255,8 @@ node('AIEIPUPOOL') {
         }
       }
 
-      publishStages["Publish Ubuntu2004"] = {
-        stage("Publish Ubuntu2004") {
+      publishStages["Publish Ubuntu1804"] = {
+        stage("Publish Ubuntu1804") {
           if (prBuild || params.DEV) {
             echo "Skipping the Adding artifacts to Artifactory Step"
           } else {
