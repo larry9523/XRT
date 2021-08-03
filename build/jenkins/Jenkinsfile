@@ -39,21 +39,21 @@ env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSER
 env.FILEPATHNFS = params.DEV ? "/proj/xbuilds/XRT-IPU-DEV/" : "/proj/xbuilds/XRT-IPU/"
 
 //Parameters for Jenkins Job
-properties([
-  parameters([
-    booleanParam(defaultValue: false, description: 'DEV Run', name: 'DEV'),
-    booleanParam(defaultValue: true, description: 'Whether the Build is run in Xilinx or non-xilinx env', name: 'BUILD_XLNX'),
-    string(defaultValue: '2021.2', name: 'RELEASE', description: 'RELEASE value e.g 2021.2'),
-    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
-    string(defaultValue: 'xrt-ipu-rpm-prod-local', name: 'RPMREPOKEY', description: 'RPM repo Key'),
-    string(defaultValue: 'xrt-ipu-deb-prod-local', name: 'DEBREPOKEY', description: 'Deb repo Key'),
-    credentials(name: 'AUTH_TOKEN', description: 'A user to build with', credentialType: 'com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl', defaultValue: 'xbuild-xcoartifactory-accesstoken'),
-    string(defaultValue: 'https://xcoartifactory/artifactory', name: 'ARTIFACTORYSERVER', description: 'Artifactory Server URK'),
-    string(defaultValue: 'kbhardwa@xilinx.com; abalasa@xilinx.com; jliang@xilinx.com', name: 'EMAIL_RECIPIENTS', description: 'Email Receipients'),
-    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
-    string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
-  ])
-])
+//properties([
+//  parameters([
+//    booleanParam(defaultValue: false, description: 'DEV Run', name: 'DEV'),
+//    booleanParam(defaultValue: true, description: 'Whether the Build is run in Xilinx or non-xilinx env', name: 'BUILD_XLNX'),
+//    string(defaultValue: '2021.2', name: 'RELEASE', description: 'RELEASE value e.g 2021.2'),
+//    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
+//    string(defaultValue: 'xrt-ipu-rpm-prod-local', name: 'RPMREPOKEY', description: 'RPM repo Key'),
+//    string(defaultValue: 'xrt-ipu-deb-prod-local', name: 'DEBREPOKEY', description: 'Deb repo Key'),
+//    credentials(name: 'AUTH_TOKEN', description: 'A user to build with', credentialType: 'com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl', defaultValue: 'xbuild-xcoartifactory-accesstoken'),
+//    string(defaultValue: 'https://xcoartifactory/artifactory', name: 'ARTIFACTORYSERVER', description: 'Artifactory Server URK'),
+//    string(defaultValue: 'kbhardwa@xilinx.com; abalasa@xilinx.com; jliang@xilinx.com', name: 'EMAIL_RECIPIENTS', description: 'Email Receipients'),
+//    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
+//    string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
+//  ])
+//])
 
 /**
  * sync the git WS.
@@ -103,7 +103,6 @@ def syncWS(boolean prBuild) {
     ])
 
   }
-
 }
 
 /*
