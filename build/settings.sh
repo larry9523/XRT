@@ -8,7 +8,7 @@ arch=$(uname -m)
 host=`hostname`
 OSDIST=`lsb_release -i |awk -F: '{print tolower($2)}' | tr -d ' \t'`
 OSREL=`lsb_release -r |awk -F: '{print tolower($2)}' |tr -d ' \t'`
-default_dir=XRT-IPU/${arch}/centos-default
+default_dir=${arch}/centos-default
 
 # Setup XRT environment variables
 if [[ $OSDIST == "ubuntu" ]]; then
@@ -37,7 +37,7 @@ if [[ $OSDIST == "centos" ]] || [[ $OSDIST == "redhat"* ]]; then
     OSDIST="centos"
 
 fi
-dir=XRT-IPU/${arch}/${OSDIST}-default
+dir=${arch}/${OSDIST}-default
 
 if [ ! -d "${root}/${dir}" ]; then
   tmpDir=${arch}/${OSDIST}-default
