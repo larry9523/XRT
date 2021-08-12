@@ -134,6 +134,7 @@ def copyTarFiles(releaseDir, os) {
      extractedFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/'''+os+'''-default
      mkdir -p ${fullXRTFolderPath}
      mkdir -p ${extractedFolderPath}
+     cp '''+"${env.WORKSPACE}"+'''/build/settings.sh '''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}"
      cp '''+"${env.WORKSPACE}"+'''/build/'''+"${releaseDir}"+'''/*.tar.gz ${fullXRTFolderPath} 
      for f in ${fullXRTFolderPath}/*.tar.gz; do tar -xvf "$f" -C ${extractedFolderPath}; done
          '''
