@@ -131,7 +131,7 @@ def copyTarFiles(releaseDir, os) {
           release="${release}.0"
      fi
      fullXRTFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/'''+releaseDir+'''
-     extractedFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/'''+os+'''-default
+     extractedFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/x86_64/'''+os+'''-default
      mkdir -p ${fullXRTFolderPath}
      mkdir -p ${extractedFolderPath}
      cp '''+"${env.WORKSPACE}"+'''/build/settings.sh '''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}"
