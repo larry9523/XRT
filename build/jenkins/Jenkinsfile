@@ -247,7 +247,7 @@ node('AIEIPUPOOL') {
 
                 }
                 if (!prBuild){
-                  sh extractTarFiles("Release_centos76", "ubuntu")
+                  sh extractTarFiles("Release_ubuntu1804", "ubuntu")
                 }
               } catch (all) {
                 throw (all)
