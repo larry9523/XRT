@@ -130,7 +130,7 @@ def extractTarFiles(releaseDir, os){
        then
           release="${release}.0"
      fi
-     tarFilesPath="'''+"${env.WORKSPACE}"+'''/build/'''+"${releaseDir}"+'''
+     tarFilesPath="'''+"${env.WORKSPACE}"+'''/build/'''+"${releaseDir}"+'''"
      cp '''+"${env.WORKSPACE}"+'''/build/settings.sh '''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}"
      extractedFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/x86_64/'''+os+'''-default
      mkdir -p ${extractedFolderPath}
