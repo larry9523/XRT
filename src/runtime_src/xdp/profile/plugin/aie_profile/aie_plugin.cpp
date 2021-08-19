@@ -26,7 +26,6 @@
 #include "core/common/config_reader.h"
 #include "core/include/experimental/xrt-next.h"
 #include "core/edge/user/shim.h"
-#include "core/edge/common/aie_parser.h"
 #include "xdp/profile/database/database.h"
 
 #include <boost/algorithm/string.hpp>
@@ -35,10 +34,14 @@
 #define NUM_MEMORY_COUNTERS 2
 #define BASE_MEMORY_COUNTER 128
 
-#define GROUP_DMA_MASK      0xf000
-#define GROUP_LOCK_MASK     0x55555555
-#define GROUP_CONFLICT_MASK 0xff
-#define GROUP_ERROR_MASK    0x3fff
+#define GROUP_DMA_MASK                   0xf000
+#define GROUP_LOCK_MASK                  0x55555555
+#define GROUP_CONFLICT_MASK              0xff
+#define GROUP_ERROR_MASK                 0x3fff
+#define GROUP_STREAM_SWITCH_IDLE_MASK    0x11111111
+#define GROUP_STREAM_SWITCH_RUNNING_MASK 0x22222222
+#define GROUP_STREAM_SWITCH_STALLED_MASK 0x44444444
+#define GROUP_STREAM_SWITCH_TLAST_MASK   0x88888888
 
 namespace {
   static void* fetchAieDevInst(void* devHandle)
@@ -71,6 +74,7 @@ namespace {
 } // end anonymous namespace
 
 namespace xdp {
+  using severity_level = xrt_core::message::severity_level;
 
   AIEProfilingPlugin::AIEProfilingPlugin() 
       : XDPPlugin()
@@ -83,33 +87,93 @@ namespace xdp {
     // Pre-defined metric sets
     //
     // **** Core Module Counters ****
-    mCoreMetricSets = {"heat_map", "stalls", "execution"};
     mCoreStartEvents = {
-      {"heat_map",  {XAIE_EVENT_ACTIVE_CORE,               XAIE_EVENT_GROUP_CORE_STALL_CORE,
-                     XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE}},
-      {"stalls",    {XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE,
-                     XAIE_EVENT_LOCK_STALL_CORE,           XAIE_EVENT_CASCADE_STALL_CORE}},
-      {"execution", {XAIE_EVENT_INSTR_CALL_CORE,           XAIE_EVENT_INSTR_VECTOR_CORE,
-                     XAIE_EVENT_INSTR_LOAD_CORE,           XAIE_EVENT_INSTR_STORE_CORE}}
+      {"heat_map",              {XAIE_EVENT_ACTIVE_CORE,               XAIE_EVENT_GROUP_CORE_STALL_CORE,
+                                 XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE}},
+      {"stalls",                {XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE,
+                                 XAIE_EVENT_LOCK_STALL_CORE,           XAIE_EVENT_CASCADE_STALL_CORE}},
+      {"execution",             {XAIE_EVENT_INSTR_CALL_CORE,           XAIE_EVENT_INSTR_VECTOR_CORE,
+                                 XAIE_EVENT_INSTR_LOAD_CORE,           XAIE_EVENT_INSTR_STORE_CORE}},
+      {"floating_point",        {XAIE_EVENT_FP_OVERFLOW_CORE,          XAIE_EVENT_FP_UNDERFLOW_CORE,
+                                 XAIE_EVENT_FP_INVALID_CORE,           XAIE_EVENT_FP_DIV_BY_ZERO_CORE}},
+      {"stream_put_get",        {XAIE_EVENT_INSTR_CASCADE_GET_CORE,    XAIE_EVENT_INSTR_CASCADE_PUT_CORE,
+                                 XAIE_EVENT_INSTR_STREAM_GET_CORE,     XAIE_EVENT_INSTR_STREAM_PUT_CORE}},
+      {"stream_switch_idle",    {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_IDLE_0_CORE,
+                                 XAIE_EVENT_PORT_IDLE_1_CORE,          XAIE_EVENT_PORT_IDLE_2_CORE}},
+      {"stream_switch_running", {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_RUNNING_0_CORE,
+                                 XAIE_EVENT_PORT_RUNNING_1_CORE,       XAIE_EVENT_PORT_RUNNING_2_CORE}},
+      {"stream_switch_stalled", {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_STALLED_0_CORE,
+                                 XAIE_EVENT_PORT_STALLED_1_CORE,       XAIE_EVENT_PORT_STALLED_2_CORE}},
+      {"stream_switch_tlast",   {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_TLAST_0_CORE,
+                                 XAIE_EVENT_PORT_TLAST_1_CORE,         XAIE_EVENT_PORT_TLAST_2_CORE}}
     };
     mCoreEndEvents = {
-      {"heat_map",  {XAIE_EVENT_ACTIVE_CORE,               XAIE_EVENT_GROUP_CORE_STALL_CORE,
-                     XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE}},
-      {"stalls",    {XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE,
-                     XAIE_EVENT_LOCK_STALL_CORE,           XAIE_EVENT_CASCADE_STALL_CORE}},
-      {"execution", {XAIE_EVENT_INSTR_CALL_CORE,           XAIE_EVENT_INSTR_VECTOR_CORE,
-                     XAIE_EVENT_INSTR_LOAD_CORE,           XAIE_EVENT_INSTR_STORE_CORE}}
+      {"heat_map",              {XAIE_EVENT_ACTIVE_CORE,               XAIE_EVENT_GROUP_CORE_STALL_CORE,
+                                 XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE}},
+      {"stalls",                {XAIE_EVENT_MEMORY_STALL_CORE,         XAIE_EVENT_STREAM_STALL_CORE,
+                                 XAIE_EVENT_LOCK_STALL_CORE,           XAIE_EVENT_CASCADE_STALL_CORE}},
+      {"execution",             {XAIE_EVENT_INSTR_CALL_CORE,           XAIE_EVENT_INSTR_VECTOR_CORE,
+                                 XAIE_EVENT_INSTR_LOAD_CORE,           XAIE_EVENT_INSTR_STORE_CORE}},
+      {"floating_point",        {XAIE_EVENT_FP_OVERFLOW_CORE,          XAIE_EVENT_FP_UNDERFLOW_CORE,
+                                 XAIE_EVENT_FP_INVALID_CORE,           XAIE_EVENT_FP_DIV_BY_ZERO_CORE}},
+      {"stream_put_get",        {XAIE_EVENT_INSTR_CASCADE_GET_CORE,    XAIE_EVENT_INSTR_CASCADE_PUT_CORE,
+                                 XAIE_EVENT_INSTR_STREAM_GET_CORE,     XAIE_EVENT_INSTR_STREAM_PUT_CORE}},
+      {"stream_switch_idle",    {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_IDLE_0_CORE,
+                                 XAIE_EVENT_PORT_IDLE_1_CORE,          XAIE_EVENT_PORT_IDLE_2_CORE}},
+      {"stream_switch_running", {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_RUNNING_0_CORE,
+                                 XAIE_EVENT_PORT_RUNNING_1_CORE,       XAIE_EVENT_PORT_RUNNING_2_CORE}},
+      {"stream_switch_stalled", {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_STALLED_0_CORE,
+                                 XAIE_EVENT_PORT_STALLED_1_CORE,       XAIE_EVENT_PORT_STALLED_2_CORE}},
+      {"stream_switch_tlast",   {XAIE_EVENT_GROUP_STREAM_SWITCH_CORE,  XAIE_EVENT_PORT_TLAST_0_CORE,
+                                 XAIE_EVENT_PORT_TLAST_1_CORE,         XAIE_EVENT_PORT_TLAST_2_CORE}}
     };
 
     // **** Memory Module Counters ****
-    mMemoryMetricSets = {"dma_locks", "conflicts"};
     mMemoryStartEvents = {
-      {"dma_locks", {XAIE_EVENT_GROUP_DMA_ACTIVITY_MEM,    XAIE_EVENT_GROUP_LOCK_MEM}},
-      {"conflicts", {XAIE_EVENT_GROUP_MEMORY_CONFLICT_MEM, XAIE_EVENT_GROUP_ERRORS_MEM}}
+      {"conflicts",             {XAIE_EVENT_GROUP_MEMORY_CONFLICT_MEM, XAIE_EVENT_GROUP_ERRORS_MEM}},
+      {"dma_locks",             {XAIE_EVENT_GROUP_DMA_ACTIVITY_MEM,    XAIE_EVENT_GROUP_LOCK_MEM}},
+      {"dma_stalls_s2mm",       {XAIE_EVENT_DMA_S2MM_0_STALLED_LOCK_ACQUIRE_MEM,
+                                 XAIE_EVENT_DMA_S2MM_1_STALLED_LOCK_ACQUIRE_MEM}},
+      {"dma_stalls_mm2s",       {XAIE_EVENT_DMA_MM2S_0_STALLED_LOCK_ACQUIRE_MEM,
+                                 XAIE_EVENT_DMA_MM2S_1_STALLED_LOCK_ACQUIRE_MEM}}
     };
     mMemoryEndEvents = {
-      {"dma_locks", {XAIE_EVENT_GROUP_DMA_ACTIVITY_MEM,    XAIE_EVENT_GROUP_LOCK_MEM}}, 
-      {"conflicts", {XAIE_EVENT_GROUP_MEMORY_CONFLICT_MEM, XAIE_EVENT_GROUP_ERRORS_MEM}}
+      {"conflicts",             {XAIE_EVENT_GROUP_MEMORY_CONFLICT_MEM, XAIE_EVENT_GROUP_ERRORS_MEM}},
+      {"dma_locks",             {XAIE_EVENT_GROUP_DMA_ACTIVITY_MEM,    XAIE_EVENT_GROUP_LOCK_MEM}}, 
+      {"dma_stalls_s2mm",       {XAIE_EVENT_DMA_S2MM_0_STALLED_LOCK_ACQUIRE_MEM,
+                                 XAIE_EVENT_DMA_S2MM_1_STALLED_LOCK_ACQUIRE_MEM}},
+      {"dma_stalls_mm2s",       {XAIE_EVENT_DMA_MM2S_0_STALLED_LOCK_ACQUIRE_MEM,
+                                 XAIE_EVENT_DMA_MM2S_1_STALLED_LOCK_ACQUIRE_MEM}}
+    };
+
+    // String event values for guidance and output
+    mCoreEventStrings = {
+      {"heat_map",              {"ACTIVE_CORE",               "GROUP_CORE_STALL_CORE",
+                                 "MEMORY_STALL_CORE",         "STREAM_STALL_CORE"}},
+      {"stalls",                {"MEMORY_STALL_CORE",         "STREAM_STALL_CORE",
+                                 "LOCK_STALL_CORE",           "CASCADE_STALL_CORE"}},
+      {"execution",             {"INSTR_CALL_CORE",           "INSTR_VECTOR_CORE",
+                                 "INSTR_LOAD_CORE",           "INSTR_STORE_CORE"}},
+      {"floating_point",        {"FP_OVERFLOW_CORE",          "FP_UNDERFLOW_CORE",
+                                 "FP_INVALID_CORE",           "FP_DIV_BY_ZERO_CORE"}},
+      {"stream_put_get",        {"INSTR_CASCADE_GET_CORE",    "INSTR_CASCADE_PUT_CORE",
+                                 "INSTR_STREAM_GET_CORE",     "INSTR_STREAM_PUT_CORE"}},
+      {"stream_switch_idle",    {"GROUP_STREAM_SWITCH_CORE",  "PORT_IDLE_0_CORE",
+                                 "PORT_IDLE_1_CORE",          "PORT_IDLE_2_CORE"}},
+      {"stream_switch_running", {"GROUP_STREAM_SWITCH_CORE",  "PORT_RUNNING_0_CORE",
+                                 "PORT_RUNNING_1_CORE",       "PORT_RUNNING_2_CORE"}},
+      {"stream_switch_stalled", {"GROUP_STREAM_SWITCH_CORE",  "PORT_STALLED_0_CORE",
+                                 "PORT_STALLED_1_CORE",       "PORT_STALLED_2_CORE"}},
+      {"stream_switch_tlast",   {"GROUP_STREAM_SWITCH_CORE",  "PORT_TLAST_0_CORE",
+                                 "PORT_TLAST_1_CORE",         "PORT_TLAST_2_CORE"}}
+    };
+    mMemoryEventStrings = {
+      {"conflicts",             {"GROUP_MEMORY_CONFLICT_MEM", "GROUP_ERRORS_MEM"}},
+      {"dma_locks",             {"GROUP_DMA_ACTIVITY_MEM",    "GROUP_LOCK_MEM"}},
+      {"dma_stalls_s2mm",       {"DMA_S2MM_0_STALLED_LOCK_ACQUIRE_MEM",
+                                 "DMA_S2MM_1_STALLED_LOCK_ACQUIRE_MEM"}},
+      {"dma_stalls_mm2s",       {"DMA_MM2S_0_STALLED_LOCK_ACQUIRE_MEM",
+                                 "DMA_MM2S_1_STALLED_LOCK_ACQUIRE_MEM"}}
     };
   }
 
@@ -131,11 +195,96 @@ namespace xdp {
   {
     // Get polling interval (in usec; minimum is 100)
     mPollingInterval = xrt_core::config::get_aie_profile_interval_us();
-    if (mPollingInterval < 100) {
-      mPollingInterval = 100;
-      xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", 
-          "Minimum supported AIE profile interval is 100 usec.");
+    //if (mPollingInterval < 100) {
+    //  mPollingInterval = 100;
+    //  xrt_core::message::send(severity_level::warning, "XRT", 
+    //      "Minimum supported AIE profile interval is 100 usec.");
+    //}
+  }
+
+  void AIEProfilingPlugin::printTileModStats(xaiefal::XAieDev* aieDevice, const tile_type& tile, bool isCore)
+  {
+    auto col = tile.col;
+    auto row = tile.row + 1;
+    auto loc = XAie_TileLoc(col, row);
+    std::string modType = isCore ? "Core" : "Memory";
+    XAie_ModuleType mod = isCore ? XAIE_CORE_MOD :  XAIE_MEM_MOD;
+    std::stringstream msg;
+
+    const std::string groups[3] = {
+      XAIEDEV_DEFAULT_GROUP_GENERIC,
+      XAIEDEV_DEFAULT_GROUP_STATIC,
+      XAIEDEV_DEFAULT_GROUP_AVAIL
+    };
+
+    msg << "Resource usage stats for Tile : (" << col << "," << row << ") Module : " << modType << std::endl;
+    for (auto&g : groups) {
+      auto stats = aieDevice->getRscStat(g);
+      auto pc = stats.getNumRsc(loc, mod, XAIE_PERFCNT_RSC);
+      auto ts = stats.getNumRsc(loc, mod, xaiefal::XAIE_TRACE_EVENTS_RSC);
+      auto bc = stats.getNumRsc(loc, mod, XAIE_BCAST_CHANNEL_RSC);
+      msg << "Resource Group : " << std::left <<  std::setw(10) << g << " "
+          << "Performance Counters : " << pc << " "
+          << "Trace Slots : " << ts << " "
+          << "Broadcast Channels : " << bc << " "
+          << std::endl;
     }
+
+    xrt_core::message::send(severity_level::info, "XRT", msg.str());
+  }
+
+  uint32_t AIEProfilingPlugin::getNumFreeCtr(xaiefal::XAieDev* aieDevice,
+                                          const std::vector<tile_type>& tiles,
+                                          bool isCore,
+                                          const std::string& metricSet)
+  {
+    uint32_t numFreeCtr = 0;
+    uint32_t tileId = 0;
+    XAie_ModuleType mod = isCore ? XAIE_CORE_MOD : XAIE_MEM_MOD ;
+    auto stats = aieDevice->getRscStat(XAIEDEV_DEFAULT_GROUP_AVAIL);
+
+    for (unsigned int i=0; i < tiles.size(); i++) {
+      auto loc = XAie_TileLoc(tiles[i].col, tiles[i].row + 1);
+      auto avail = stats.getNumRsc(loc, mod, XAIE_PERFCNT_RSC);
+      if (i == 0) {
+        numFreeCtr = avail;
+      } else {
+        if (avail < numFreeCtr) {
+          numFreeCtr = avail;
+          tileId = i;
+        }
+      }
+    }
+
+    auto& requestedEvents = isCore ? mCoreStartEvents[metricSet] : mMemoryStartEvents[metricSet];
+    auto& EventStrings =    isCore ? mCoreEventStrings[metricSet] : mMemoryEventStrings[metricSet];
+
+    auto numTotalEvents = requestedEvents.size();
+    if (numFreeCtr < numTotalEvents) {
+      std::stringstream msg;
+      std::string modType = isCore ? "core" : "memory";
+      msg << "Only " << numFreeCtr << " out of " << numTotalEvents
+          << " metrics were available for aie "
+          << modType <<  " module profiling due to resource constraints. "
+          << "AIE profiling uses performance counters which could be already used by AIE trace, ECC, etc."
+          << std::endl;
+
+      msg << "Available metrics : ";
+      for (unsigned int i=0; i < numFreeCtr; i++) {
+        msg << EventStrings[i] << " ";
+      }
+      msg << std::endl;
+
+      msg << "Unavailable metrics : ";
+      for (unsigned int i=numFreeCtr; i < numTotalEvents; i++) {
+        msg << EventStrings[i] << " ";
+      }
+
+      xrt_core::message::send(severity_level::warning, "XRT", msg.str());
+      printTileModStats(aieDevice, tiles[tileId], isCore);
+    }
+
+    return numFreeCtr;
   }
 
   bool AIEProfilingPlugin::setMetrics(uint64_t deviceId, void* handle)
@@ -145,7 +294,7 @@ namespace xdp {
     xaiefal::XAieDev* aieDevice =
       static_cast<xaiefal::XAieDev*>(db->getStaticInfo().getAieDevice(allocateAieDevice, deallocateAieDevice, handle)) ;
     if (!aieDevInst || !aieDevice) {
-      xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", 
+      xrt_core::message::send(severity_level::warning, "XRT", 
           "Unable to get AIE device. There will be no AIE profiling.");
       return false;
     }
@@ -188,13 +337,13 @@ namespace xdp {
       std::string moduleName = isCore ? "core" : "memory";
 
       // Ensure requested metric set is supported (if not, use default)
-      if ((isCore && (mCoreMetricSets.find(metricSet) == mCoreMetricSets.end()))
-          || (!isCore && (mMemoryMetricSets.find(metricSet) == mMemoryMetricSets.end()))) {
-        std::string defaultSet = isCore ? "heat_map" : "dma_locks";
+      if ((isCore && (mCoreStartEvents.find(metricSet) == mCoreStartEvents.end()))
+          || (!isCore && (mMemoryStartEvents.find(metricSet) == mMemoryStartEvents.end()))) {
+        std::string defaultSet = isCore ? "heat_map" : "conflicts";
         std::stringstream msg;
         msg << "Unable to find " << moduleName << " metric set " << metricSet 
             << ". Using default of " << defaultSet << ".";
-        xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg.str());
+        xrt_core::message::send(severity_level::warning, "XRT", msg.str());
         metricSet = defaultSet;
       }
 
@@ -206,6 +355,9 @@ namespace xdp {
         auto graphs = xrt_core::edge::aie::get_graphs(device.get());
         
         for (auto& graph : graphs) {
+          // TODO: include DMA-only tiles if and when required
+          //auto currTiles = xrt_core::edge::aie::get_event_tiles(device.get(), 
+          //    graph, static_cast<xrt_core::edge::aie::module_type>(module));
           auto currTiles = xrt_core::edge::aie::get_tiles(device.get(), graph);
           std::copy(currTiles.begin(), currTiles.end(), back_inserter(tiles));
         }
@@ -247,7 +399,7 @@ namespace xdp {
         for (auto& tile : tiles) {
           msg << "(" << tile.col << "," << tile.row << "), ";
         }
-        xrt_core::message::send(xrt_core::message::severity_level::debug, "XRT", msg.str());
+        xrt_core::message::send(severity_level::debug, "XRT", msg.str());
       }
 
       // Get vector of pre-defined metrics for this set
@@ -261,6 +413,9 @@ namespace xdp {
       int NUM_COUNTERS = isCore ? NUM_CORE_COUNTERS : NUM_MEMORY_COUNTERS;
       int numTileCounters[NUM_COUNTERS+1] = {0};
 
+      // Ask Resource manager for resource availability
+      auto numFreeCounters  = getNumFreeCtr(aieDevice, tiles, isCore, metricSet);
+
       // Iterate over tiles and metrics to configure all desired counters
       for (auto& tile : tiles) {
         int numCounters = 0;
@@ -270,7 +425,7 @@ namespace xdp {
         auto& core   = aieDevice->tile(col, row + 1).core();
         auto& memory = aieDevice->tile(col, row + 1).mem();
 
-        for (int i=0; i < startEvents.size(); ++i) {
+        for (int i=0; i < numFreeCounters; ++i) {
           // Request counter from resource manager
           // NOTE: Let's use the extended class XAieStallCycles. 
           //       It uses a mask of 0x19f (not active or disable events)
@@ -315,6 +470,16 @@ namespace xdp {
             XAie_EventGroupControl(aieDevInst, loc, mod, startEvents.at(i), GROUP_LOCK_MASK);
           else if (startEvents.at(i) == XAIE_EVENT_GROUP_MEMORY_CONFLICT_MEM)
             XAie_EventGroupControl(aieDevInst, loc, mod, startEvents.at(i), GROUP_CONFLICT_MASK);
+          else if (startEvents.at(i) == XAIE_EVENT_GROUP_STREAM_SWITCH_CORE) {
+            if (metricSet == "stream_switch_idle")
+              XAie_EventGroupControl(aieDevInst, loc, mod, startEvents.at(i), GROUP_STREAM_SWITCH_IDLE_MASK);
+            else if (metricSet == "stream_switch_running")
+              XAie_EventGroupControl(aieDevInst, loc, mod, startEvents.at(i), GROUP_STREAM_SWITCH_RUNNING_MASK);
+            else if (metricSet == "stream_switch_stalled")
+              XAie_EventGroupControl(aieDevInst, loc, mod, startEvents.at(i), GROUP_STREAM_SWITCH_STALLED_MASK);
+            else if (metricSet == "stream_switch_tlast")
+              XAie_EventGroupControl(aieDevInst, loc, mod, startEvents.at(i), GROUP_STREAM_SWITCH_TLAST_MASK);
+          }
           //else if (startEvents.at(i) == XAIE_EVENT_GROUP_ERRORS_MEM)
           //  XAie_EventGroupControl(aieDevInst, loc, mod, startEvents.at(i), GROUP_ERROR_MASK);
 
@@ -328,7 +493,7 @@ namespace xdp {
 
         std::stringstream msg;
         msg << "Reserved " << numCounters << " counters for profiling AIE tile (" << col << "," << row << ").";
-        xrt_core::message::send(xrt_core::message::severity_level::debug, "XRT", msg.str());
+        xrt_core::message::send(severity_level::debug, "XRT", msg.str());
         numTileCounters[numCounters]++;
       }
 
@@ -343,7 +508,7 @@ namespace xdp {
 
           (db->getStaticInfo()).addAIECounterResources(deviceId, n, numTileCounters[n], isCore);
         }
-        xrt_core::message::send(xrt_core::message::severity_level::info, "XRT", msg.str());
+        xrt_core::message::send(severity_level::info, "XRT", msg.str());
       }
 
       runtimeCounters = true;
@@ -459,7 +624,7 @@ namespace xdp {
         if (counters.empty()) {
           std::string msg = "AIE Profile Counters were not found for this design. "
                             "Please specify aie_profile_core_metrics and/or aie_profile_memory_metrics in your xrt.ini.";
-          xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg);
+          xrt_core::message::send(severity_level::warning, "XRT", msg);
         }
         else {
           for (auto& counter : counters) {
