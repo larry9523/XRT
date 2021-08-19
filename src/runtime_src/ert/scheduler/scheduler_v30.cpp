@@ -657,12 +657,9 @@ configure_cu(addr_type cu_addr, addr_type regmap_addr, size_type regmap_size)
 {
   // write register map, starting at base + 0x10
   // 0x4, 0x8, 0xc used for interrupt, which is initialized in setup
-#ifdef ERT_HW_EMU
+
   for (size_type idx = 4; idx < regmap_size; ++idx)
     write_reg(cu_addr + (idx << 2), read_reg(regmap_addr + (idx << 2)));
-#else
-  uint32_t *addr_ptr = (uint32_t *)(uintptr_t)cu_addr;
-  uint32_t *regmap_ptr = (uint32_t *)(uintptr_t)regmap_addr;
 
   /* We know for-loop is 2% slower than memcpy().
    * But unstable behavior are observed when using memcpy().
@@ -670,10 +667,6 @@ configure_cu(addr_type cu_addr, addr_type regmap_addr, size_type regmap_size)
    * We failed to find a stable pattern to use memcpy().
    * Don't waste your life to it again.
    */
-  //memcpy(addr_ptr+4, regmap_ptr+4, (regmap_size-4)<<2);
-  for (size_type i = 4; i < regmap_size; ++i)
-    *(addr_ptr + i) = *(regmap_ptr + i);
-#endif
   // start kernel at base + 0x0
   write_reg(cu_addr, 0x1);
 }
@@ -685,8 +678,7 @@ inline void
 configure_cu_ooo(addr_type cu_addr, addr_type regmap_addr, size_type regmap_size)
 {
   // write register map addr, value pairs starting 
-  // past reserved 4 ctrl + 2 ctx 
-  for (size_type idx = 6; idx < regmap_size; idx += 2) {
+  for (size_type idx = 0; idx < regmap_size; idx += 2) {
     addr_type offset = read_reg(regmap_addr + (idx << 2));
     value_type value = read_reg(regmap_addr + ((idx + 1) << 2));
     write_reg(cu_addr + offset, value);
@@ -934,6 +926,7 @@ exit_mb(size_type slot_idx)
   slot.header_value = (slot.header_value & ~0xF) | 0x4; // free
   write_reg(slot.slot_addr,slot.header_value); // acknowledge the completed control command
   CTRL_DEBUGF("scheduler loop exits slot(%d) header=0x%x\r\n",slot_idx,slot.header_value);
+  notify_host(slot_idx);
 #ifndef ERT_HW_EMU
   mb_sleep();
 #endif

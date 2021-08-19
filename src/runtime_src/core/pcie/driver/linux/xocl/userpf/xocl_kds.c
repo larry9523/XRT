@@ -482,6 +482,21 @@ static bool copy_and_validate_execbuf(struct xocl_dev *xdev,
 	return true;
 }
 
+/* This function is only used to convert ERT_EXEC_WRITE to
+ * ERT_START_KEY_VAL.
+ * The only difference is that ERT_EXEC_WRITE skip 6 words in the payload.
+ */
+static void convert_exec_write2key_val( struct ert_start_kernel_cmd *ecmd)
+{
+	/* end index of payload = count - (1 + 6) */
+	int end = ecmd->count - 7;
+	int i;
+
+	/* Shift payload 6 words up */
+	for (i = ecmd->extra_cu_masks; i < end; i++)
+		ecmd->data[i] = ecmd->data[i + 6];
+}
+
 static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 			      struct drm_file *filp, bool in_kernel)
 {
@@ -557,6 +572,7 @@ static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 	/* xcmd->u_execbuf points to user's original for write back/notice */
 	xcmd->u_execbuf = xobj->vmapping;
 	xcmd->gem_obj = obj;
+	xcmd->exec_bo_handle = args->exec_bo_handle;
 
 	print_ecmd_info(ecmd);
 
@@ -583,13 +599,12 @@ static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 		start_krnl_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
 		break;
 	case ERT_EXEC_WRITE:
-		/* third argument in following function is representing number of
-		 * words to skip when writing to CU. This should be consistent
-		 * for both edge/DC, but Due to performance and some use cases
-		 * this is been decided that, DC flows skips first 6 words
-		 * whereas edge flows doesnt skip any words
-		 */
-		exec_write_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd, 6);
+		userpf_info(xdev, "ERT_EXEC_WRITE is obsoleted, use ERT_START_KEY_VAL\n");
+		convert_exec_write2key_val(to_start_krnl_pkg(ecmd));
+		start_krnl_kv_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
+		break;
+	case ERT_START_KEY_VAL:
+		start_krnl_kv_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
 		break;
 	case ERT_START_FA:
 		start_fa_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
@@ -621,6 +636,9 @@ static int xocl_command_ioctl(struct xocl_dev *xdev, void *data,
 	case ERT_CU_STAT:
 		xcmd->opcode = OP_GET_STAT;
 		xcmd->priv = &XDEV(xdev)->kds;
+		break;
+	case ERT_ABORT:
+		abort_ecmd2xcmd(to_abort_pkg(ecmd), xcmd);
 		break;
 	default:
 		userpf_err(xdev, "Unsupport command\n");
@@ -751,7 +769,14 @@ int xocl_client_ioctl(struct xocl_dev *xdev, int op, void *data,
 
 int xocl_init_sched(struct xocl_dev *xdev)
 {
-	return kds_init_sched(&XDEV(xdev)->kds);
+	int ret;
+	ret = kds_init_sched(&XDEV(xdev)->kds);
+	if (ret)
+		goto out;
+
+	ret = xocl_create_client(xdev, (void **)&XDEV(xdev)->kds.anon_client);
+out:
+	return ret;
 }
 
 void xocl_fini_sched(struct xocl_dev *xdev)
@@ -764,6 +789,7 @@ void xocl_fini_sched(struct xocl_dev *xdev)
 		xocl_drm_free_bo(&bo->base);
 	}
 
+	xocl_destroy_client(xdev, (void **)&XDEV(xdev)->kds.anon_client);
 	kds_fini_sched(&XDEV(xdev)->kds);
 }
 
@@ -1126,7 +1152,6 @@ static int xocl_config_ert(struct xocl_dev *xdev, struct drm_xocl_kds cfg)
 	struct kds_client *client;
 	struct ert_packet *ecmd;
 	struct kds_sched *kds = &XDEV(xdev)->kds;
-	pid_t pid = pid_nr(get_pid(task_pid(current)));
 	int ret = 0;
 
 	/* TODO: Use hard code size is not ideal. Let's refine this later */
@@ -1134,9 +1159,7 @@ static int xocl_config_ert(struct xocl_dev *xdev, struct drm_xocl_kds cfg)
 	if (!ecmd)
 		return -ENOMEM;
 
-	client = kds_get_client(kds, pid);
-	BUG_ON(!client);
-
+	client = kds->anon_client;
 	ret = xocl_cfg_cmd(xdev, client, ecmd, &cfg);
 	if (ret) {
 		userpf_err(xdev, "ERT config command failed");

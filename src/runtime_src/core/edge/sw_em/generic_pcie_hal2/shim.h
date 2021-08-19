@@ -91,6 +91,7 @@ namespace xclcpuemhal2 {
       // HAL2 RELATED member functions end
 
       //Configuration
+      void socketConnection(bool isTCPSocket);
       void xclOpen(const char* logfileName);
       int xclLoadXclBin(const xclBin *buffer);
       int xclLoadXclBinNewFlow(const xclBin *buffer);
@@ -385,7 +386,8 @@ namespace xclcpuemhal2 {
       exec_core* mCore;
       SWScheduler* mSWSch;
       bool mIsKdsSwEmu;
-      bool mIsAieEnabled;   
+      bool mDeviceProcessInQemu;
+      std::string mFpgaDevice;
   };
 
   class GraphType {
