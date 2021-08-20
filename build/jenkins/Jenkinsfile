@@ -25,9 +25,10 @@ Jenkins job parameters needed:
 4. DEV (Boolean) - DEV or PROD build
 5. BUILD_XLNX (Boolean) - Whether the Build is run in Xilinx or non-xilinx env
 6. AUTH_TOKEN (Credentials) - Username and password/access token for artifactory publishes
-7. ARTIFACTORY_URL (String) - Artifactory to publish packages
-8. ARTIFACTORY_REPO (String) - Artifactory repo name to publish packages
-9. EMAIL_RECIPIENTS(String) - List of Email recipients
+7. ARTIFACTORYSERVER (String) - Artifactory server url to publish packages
+8. EMAIL_RECIPIENTS(String) - List of Email recipients
+9. RPMREPOKEY(String) - RPM repo key in artifactory
+10. DEBREPOKEY(String) - Deb repo key in artifactory
 */
 
 //Check if a PR Build or Not
@@ -44,7 +45,6 @@ env.FILEPATHNFS = params.DEV ? "/proj/xbuilds/XRT-IPU-DEV/" : "/proj/xbuilds/XRT
 //    booleanParam(defaultValue: false, description: 'DEV Run', name: 'DEV'),
 //    booleanParam(defaultValue: true, description: 'Whether the Build is run in Xilinx or non-xilinx env', name: 'BUILD_XLNX'),
 //    string(defaultValue: '2021.2', name: 'RELEASE', description: 'RELEASE value e.g 2021.2'),
-//    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
 //    string(defaultValue: 'xrt-ipu-rpm-prod-local', name: 'RPMREPOKEY', description: 'RPM repo Key'),
 //    string(defaultValue: 'xrt-ipu-deb-prod-local', name: 'DEBREPOKEY', description: 'Deb repo Key'),
 //    credentials(name: 'AUTH_TOKEN', description: 'A user to build with', credentialType: 'com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl', defaultValue: 'xbuild-xcoartifactory-accesstoken'),
