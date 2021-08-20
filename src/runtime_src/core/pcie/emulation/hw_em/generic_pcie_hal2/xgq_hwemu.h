@@ -52,9 +52,42 @@
 #include "xgq_cmd.h"
 #include "xgq_hwemu_plat.h"
 
+#define IPU_LX6
+
+#ifdef IPU_LX6
+
+typedef struct os_ipu_mnmg_ch_t_ {
+      uint32_t    tail_ptr;
+      uint32_t    head_ptr;
+      uint32_t    buffer_ptr;
+      uint32_t    buffer_size;
+} os_ipu_mnmg_ch_t;
+
+typedef struct os_ipu_mnmg_t_ {
+  os_ipu_mnmg_ch_t os_to_ipu_ch;
+  os_ipu_mnmg_ch_t ipu_to_os_ch;
+} os_ipu_mnmg_t;
+
+typedef union os_ipu_mnmg_u_ {
+  os_ipu_mnmg_t f;
+  uint32_t      d[sizeof(os_ipu_mnmg_t)/4];
+} os_ipu_mnmg_u;
+
+static const uint32_t ALIVE_PTR = 0x1F700000;
+
+//
+// IPU SMN Base Addresses from the Phoenix SMN memory map (scf_smn_map.json)
+//
+static const uint64_t IPU_SMN_MMIO_BASE_ADDR = 0x1F600000;
+static const uint64_t IPU_SMN_SRAM_BASE_ADDR = 0x1F700000;
+static const uint64_t IPU_SMN_MMIO_MASK      = 0x000FFFFF;
+
+#endif
+
 namespace xclhwemhal2 {
   class HwEmShim;
 }
+
 
 constexpr uint64_t XRT_QUEUE1_RING_BASE = 0x7B000;
 constexpr uint32_t XRT_QUEUE1_RING_LENGTH = 0x5000; // hard code for now 20K
@@ -95,6 +128,10 @@ namespace hwemu {
       xclhwemhal2::HwEmShim*   device;
       xocl_xgq*                xgqp;
 
+#ifdef IPU_LX6
+      os_ipu_mnmg_u            mngInfo;
+      void                     wait_for_ert();
+#endif
       int      submit_worker();
       int      complete_worker();
       void     update_doorbell();

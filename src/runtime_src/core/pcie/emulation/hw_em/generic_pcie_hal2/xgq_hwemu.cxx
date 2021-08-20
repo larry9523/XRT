@@ -38,6 +38,20 @@
 #include "shim.h"
 #include "xgq_cmd.h"
 
+#ifdef IPU_LX6
+
+static inline uint32_t prepAddr(uint32_t addr)
+{
+  return ((addr & IPU_SMN_MMIO_MASK) | IPU_SMN_MMIO_BASE_ADDR);
+}
+
+uint32_t prepSRAMAddr(uint32_t addr)
+{
+  return ((addr & IPU_SMN_MMIO_MASK) | IPU_SMN_SRAM_BASE_ADDR);
+}
+
+#endif
+
 using namespace xclhwemhal2;
 
 namespace hwemu {
@@ -45,14 +59,22 @@ namespace hwemu {
   void xgq_hwemu_mem_write32(uint64_t io_hdl, uint64_t addr, uint32_t val)
   {
     auto device = reinterpret_cast<xclhwemhal2::HwEmShim *>(io_hdl);
+#ifdef IPU_LX6
+    device->xclWrite(XCL_ADDR_KERNEL_CTRL, addr, (void*)(&val), 4);
+#else
     device->xclWrite(XCL_ADDR_SPACE_DEVICE_RAM, addr, (void*)(&val), 4);
+#endif
   }
 
   uint32_t xgq_hwemu_mem_read32(uint64_t io_hdl, uint64_t addr)
   {
     uint32_t value;
     auto device = reinterpret_cast<xclhwemhal2::HwEmShim *>(io_hdl);
+#ifdef IPU_LX6
+    device->xclRead(XCL_ADDR_KERNEL_CTRL, addr, (void*)(&value), 4);
+#else
     device->xclRead(XCL_ADDR_SPACE_DEVICE_RAM, addr, (void*)(&value), 4);
+#endif
     return value;
   }
 
@@ -78,6 +100,10 @@ namespace hwemu {
     , xgq_sub_base(in_xgq_sub_base)
     , xgq_com_base(in_xgq_com_base)
   {
+#ifdef IPU_LX6
+    wait_for_ert();
+#endif
+
     stop = false;
     qid = 0;
 
@@ -86,7 +112,18 @@ namespace hwemu {
 
     size_t ring_len = XRT_QUEUE1_RING_LENGTH;
     auto devp = reinterpret_cast<uint64_t>(device);
+
+#ifdef IPU_LX6
+    uint64_t ring_base = prepSRAMAddr(mngInfo.f.os_to_ipu_ch.buffer_ptr);
+    ring_len = mngInfo.f.os_to_ipu_ch.buffer_size;
+    slot_size = 256;
+    xgq_sub_base = prepSRAMAddr(mngInfo.f.ipu_to_os_ch.buffer_ptr);
+    xgq_com_base = prepSRAMAddr(mngInfo.f.ipu_to_os_ch.buffer_ptr + 8);
+
+    xgq_alloc(&queue, false, devp, ring_base, &ring_len, slot_size, xgq_sub_base, xgq_com_base);
+#else
     xgq_alloc(&queue, false, devp, XRT_QUEUE1_RING_BASE, &ring_len, slot_size, xgq_sub_base, xgq_com_base);
+#endif
   }
 
   xgq_queue::~xgq_queue()
@@ -107,6 +144,32 @@ namespace hwemu {
     }
   }
 
+#ifdef IPU_LX6
+  void xgq_queue::wait_for_ert()
+  {
+    uint32_t rv = ioread32_ctrl(ALIVE_PTR);
+
+    while (rv == 0x0) {
+      rv = ioread32_ctrl(ALIVE_PTR);
+      sleep(1);
+    }
+
+    std::cout << "IPU Alive indicator showed up" << std::endl;
+    for (uint8_t i=0; i < sizeof(os_ipu_mnmg_t)/4; i++) {
+      mngInfo.d[i]=ioread32_ctrl(prepAddr(rv) + (i * 4));
+    }
+    iowrite32_ctrl(ALIVE_PTR, 0x0);
+    std::cout << "(X2E)Tail Ptr = " << std::hex << mngInfo.f.os_to_ipu_ch.tail_ptr << std::endl;
+    std::cout << "(X2E)Head Ptr = " << std::hex << mngInfo.f.os_to_ipu_ch.head_ptr << std::endl;
+    std::cout << "(X2E)Buffer Ptr = " << std::hex << mngInfo.f.os_to_ipu_ch.buffer_ptr<< std::endl;
+    std::cout << "(X2E)Buffer Size = " << std::hex << mngInfo.f.os_to_ipu_ch.buffer_size << std::endl;
+    std::cout << "(E2X)Tail Ptr = " << std::hex << mngInfo.f.ipu_to_os_ch.tail_ptr << std::endl;
+    std::cout << "(E2X)Head Ptr = " << std::hex << mngInfo.f.ipu_to_os_ch.head_ptr << std::endl;
+    std::cout << "(E2E)Buffer Ptr = " << std::hex << mngInfo.f.ipu_to_os_ch.buffer_ptr<< std::endl;
+    std::cout << "(E2X)Buffer Size = " << std::hex << mngInfo.f.ipu_to_os_ch.buffer_size << std::endl;
+  }
+#endif
+
   void xgq_queue::iowrite32_ctrl(uint32_t addr, uint32_t data)
   {
     device->xclWrite(XCL_ADDR_KERNEL_CTRL, addr, (void*)(&data), 4);
@@ -121,13 +184,21 @@ namespace hwemu {
 
   void xgq_queue::iowrite32_mem(uint32_t addr, uint32_t data)
   {
+#ifdef IPU_LX6
+    device->xclWrite(XCL_ADDR_KERNEL_CTRL, addr, (void*)(&data), 4);
+#else
     device->xclWrite(XCL_ADDR_SPACE_DEVICE_RAM, addr, (void*)(&data), 4);
+#endif
   }
 
   uint32_t xgq_queue::ioread32_mem(uint32_t addr)
   {
     uint32_t value;
+#ifdef IPU_LX6
+    device->xclRead(XCL_ADDR_KERNEL_CTRL, addr, (void*)(&value), 4);
+#else
     device->xclRead(XCL_ADDR_SPACE_DEVICE_RAM, addr, (void*)(&value), 4);
+#endif
     return value;
   }
 
@@ -324,6 +395,7 @@ namespace hwemu {
   {
     auto data = xbo.map();
     memcpy(data, buf, size);
+    xbo.sync(XCL_BO_SYNC_BO_TO_DEVICE, size, 0);
     auto paddr = static_cast<uint32_t>(xbo.address());
 
     sq_buf.resize(sizeof(xrt_cmd_load_xclbin));
