@@ -29,6 +29,7 @@ Jenkins job parameters needed:
 8. EMAIL_RECIPIENTS(String) - List of Email recipients
 9. RPMREPOKEY(String) - RPM repo key in artifactory
 10. DEBREPOKEY(String) - Deb repo key in artifactory
+11. XRT_IPU_NFS_LOC(String) - NFS Location for XRT
 */
 
 //Check if a PR Build or Not
@@ -37,7 +38,7 @@ env.AUTH_TOKEN = params.AUTH_TOKEN
 env.DEBREPOKEY = params.DEBREPOKEY != null ? params.DEBREPOKEY : 'xrt-ipu-deb-prod-local'
 env.RPMREPOKEY = params.RPMREPOKEY != null ? params.RPMREPOKEY : 'xrt-ipu-rpm-prod-local'
 env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSERVER : 'https://xcoartifactory/artifactory'
-env.FILEPATHNFS = params.DEV ? "/proj/xbuilds/XRT-IPU-DEV/" : "/proj/xbuilds/XRT-IPU/"
+env.FILEPATHNFS = params.XRT_IPU_NFS_LOC != null ? params.XRT_IPU_NFS_LOC : "/proj/xbuilds/XRT-IPU/"
 
 //Parameters for Jenkins Job
 //properties([
@@ -52,6 +53,7 @@ env.FILEPATHNFS = params.DEV ? "/proj/xbuilds/XRT-IPU-DEV/" : "/proj/xbuilds/XRT
 //    string(defaultValue: 'kbhardwa@xilinx.com; abalasa@xilinx.com; jliang@xilinx.com', name: 'EMAIL_RECIPIENTS', description: 'Email Receipients'),
 //    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
 //    string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
+//    string(defaultValue: '/proj/xbuilds/XRT-IPU/', name: 'XRT_IPU_NFS_LOC', description: 'NFS Location for XRT'),
 //  ])
 //])
 
