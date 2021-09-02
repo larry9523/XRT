@@ -34,7 +34,7 @@ apply plugin: "com.jfrog.artifactory"
 
 
 ext {
-    release = project.hasProperty('release') ? project.release.toString() : System.getenv().getOrDefault("RELEASE", "2021.2.0")
+    release = project.hasProperty('release') ? project.release.toString() : System.getenv().getOrDefault("RELEASE", "2022.1.0")
     trimmedRelease = release.endsWith('.0') ? release.substring(0, release.length()-2) : release
     buildNumber = System.getenv().getOrDefault("BUILD_NUMBER", "0")
     startTime = new Date().format('yyyyMMdd_HHmmss')
@@ -44,7 +44,7 @@ ext {
     }
     logger.info("wsRootDir is set as ${wsRootDir}")
 
-    branch = project.hasProperty('branch') ? project.branch.toString() : System.getenv().getOrDefault("BRANCH", "2021.2")
+    branch = project.hasProperty('branch') ? project.branch.toString() : System.getenv().getOrDefault("BRANCH", "2022.1")
     if (!branch) {
         throw new GradleException("could not deutermine branch, either pass it as -Pbranch or by setting branch value in branch.json; -Pbranch takes precedence")
     }
