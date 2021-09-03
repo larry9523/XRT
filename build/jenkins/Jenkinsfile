@@ -240,7 +240,7 @@ Stages:
 3. Publish Packages
 */
 
-node('AIEIPUPOOL') {
+node('xcoIPULinPool') {
 
   try {
 
@@ -316,7 +316,7 @@ node('AIEIPUPOOL') {
 
        stage("Build on Windows") {
         try {
-         node("AIE-IPU-WINDOWS") {
+         node("xcoIPUWinPool") {
              bat buildPackageWinVM()
           }
           if (params.BUILD_XLNX && !prBuild) {
