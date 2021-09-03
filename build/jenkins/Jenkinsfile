@@ -34,6 +34,7 @@ Jenkins job parameters needed:
 
 //Check if a PR Build or Not
 boolean prBuild = env.ghprbPullLink != null;
+runWindowsBuild = params.RUN_WIN_BUILD!=null?params.RUN_WIN_BUILD:true
 env.AUTH_TOKEN = params.AUTH_TOKEN
 env.DEBREPOKEY = params.DEBREPOKEY != null ? params.DEBREPOKEY : 'xrt-ipu-deb-prod-local'
 env.RPMREPOKEY = params.RPMREPOKEY != null ? params.RPMREPOKEY : 'xrt-ipu-rpm-prod-local'
@@ -313,7 +314,7 @@ node('AIEIPUPOOL') {
 
        stage("Build on Windows") {
         try {
-         node("xcoengvm229045") {
+         node("AIE-IPU-WINDOWS") {
              bat buildPackageWinVM()
           }
           if (params.BUILD_XLNX && !prBuild) {
