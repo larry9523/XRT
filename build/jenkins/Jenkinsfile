@@ -128,7 +128,6 @@ def extractTarFiles(releaseDir, os){
   return '''
      fileList=`ls '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'/build/'+"${releaseDir}"+'''/*.tar.gz`
      fileName="$(basename "$fileList")"
-     folderName=$(echo $fileName | awk -F_ '{print $2}')
      release="'''+params.RELEASE+'''"
      releaseSplit=(` echo $release | tr '.' ' '`)
      size="${#releaseSplit[@]}"
@@ -136,6 +135,7 @@ def extractTarFiles(releaseDir, os){
        then
           release="${release}.0"
      fi
+     folderName=${release}.'''+"${BUILD_NUMBER}"+'''
      tarFilesPath="'''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/'''+"${releaseDir}"+'''"
      cp '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/settings.sh '''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}"
      extractedFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/x86_64/'''+os+'''-default
@@ -155,7 +155,6 @@ def copyTarFiles(releaseDir) {
   return '''
      fileList=`ls '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'/build/'+"${releaseDir}"+'''/*.tar.gz`
      fileName="$(basename "$fileList")"
-     folderName=$(echo $fileName | awk -F_ '{print $2}')
      release="'''+params.RELEASE+'''"
      releaseSplit=(` echo $release | tr '.' ' '`)
      size="${#releaseSplit[@]}"
@@ -163,6 +162,7 @@ def copyTarFiles(releaseDir) {
        then
           release="${release}.0"
      fi
+     folderName=${release}.'''+"${BUILD_NUMBER}"+'''
      fullXRTFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/'''+releaseDir+'''
      mkdir -p ${fullXRTFolderPath}
      cp '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/'''+"${releaseDir}"+'''/*.tar.gz ${fullXRTFolderPath}
@@ -213,9 +213,6 @@ def copyWinFiles(releaseDir){
      fileList=(`find  '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/WRelease/_CPack_Packages/win64 -type f -name "*.exe" | sort -r`)
      fileName="${fileList[0]}"
      dirName=$(echo ${fileName} | awk '{n=split($1,A,"/"); print A[n-4]}')
-     folderName=$(echo $dirName | awk -F_ '{print $2}')
-     folderName=$(echo $folderName | sed 's/\\.[^\\.]*$//')
-     folderName=$(echo ${folderName}.'''+"${BUILD_NUMBER}"+''')
      release="'''+params.RELEASE+'''"
      releaseSplit=(` echo $release | tr '.' ' '`)
      size="${#releaseSplit[@]}"
@@ -223,6 +220,7 @@ def copyWinFiles(releaseDir){
        then
           release="${release}.0"
      fi
+     folderName=$(echo ${release}.'''+"${BUILD_NUMBER}"+''')
      winRelFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/'''+releaseDir+'''
      mkdir -p ${winRelFolderPath}
      find '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/WRelease/_CPack_Packages/win64/ZIP  -type f -name '*.exe' -exec cp '{}' ${winRelFolderPath} \\;
