@@ -223,7 +223,7 @@ def copyWinFiles(releaseDir){
      folderName=$(echo ${release}.'''+"${BUILD_NUMBER}"+''')
      winRelFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/'''+releaseDir+'''
      mkdir -p ${winRelFolderPath}
-     find '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/WRelease/_CPack_Packages/win64/ZIP  -type f \\( -name "*.exe" -o -name "*.msi" \\) -exec cp '{}' ${winRelFolderPath} \\;
+     find '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/WRelease/_CPack_Packages/win64/WIX  -type f \\( -name "*.exe" -o -name "*.msi" \\) -exec cp '{}' ${winRelFolderPath} \\;
      cp '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/WRelease/XRT_*-amd64.zip ${winRelFolderPath}
          '''
 
