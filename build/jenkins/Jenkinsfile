@@ -200,7 +200,7 @@ def buildPackageWinVM(){
       }
   };
   windowsPath = windowsPath + "\\\"${BUILD_NUMBER}\""+ "\\\"build\""
-  return drive + " & cd "+ windowsPath +" & C:\\\"Program Files (x86)\"\\\"Microsoft Visual Studio\"\\2017\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat & build.bat -release"
+  return drive + " & cd "+ windowsPath +" & C:\\\"Program Files (x86)\"\\\"Microsoft Visual Studio\"\\2017\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat & build.bat -release -package"
 }
 
 /*
