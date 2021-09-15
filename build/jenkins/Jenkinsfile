@@ -57,7 +57,7 @@ env.NFSWORKSPACE = params.DEV ? '/proj/rdi-xco/buildsD/xbb/xrt-ipu' : '/proj/rdi
 //    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
 //    string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
 //    string(defaultValue: '/proj/xbuilds/XRT-IPU/', name: 'XRT_IPU_NFS_LOC', description: 'NFS Location for XRT'),
-//    string(defaultValue: 'http://172.25.178.99:5000/sign/G:', name: 'SIGNING_SERVICE_URL', description: 'Windows signing service endpoint.')
+//    string(defaultValue: '', name: 'SIGNING_SERVICE_URL', description: 'Windows signing service endpoint.')
 //  ])
 //])
 
