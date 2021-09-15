@@ -240,7 +240,7 @@ def signWinPackages(signing_service_url, path) {
   List<String> list_files = files_tobe_signed.trim().tokenize('\n')
   List<String> path_split = path.tokenize('/')
   path_split.removeAt(0)
-  if (path_split[0].equalsIgnoreCase('rdi')) {
+  if (path_split[0].equalsIgnoreCase('rdi') || path_split[0].equalsIgnoreCase('rdi-xco')) {
     path_split.removeAt(0)
   }
   String path_joined = path_split.join('/')
