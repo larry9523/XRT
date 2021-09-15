@@ -354,6 +354,7 @@ node('xcoIPULinPool') {
               signWinPackages(params.SIGNING_SERVICE_URL, "${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+"/build/WRelease/_CPack_Packages/win64/")
             }
           }
+        }
 
     stage('Test') {
       timeout(time: 1, unit: 'HOURS') {
