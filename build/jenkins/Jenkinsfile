@@ -30,6 +30,7 @@ Jenkins job parameters needed:
 9. RPMREPOKEY(String) - RPM repo key in artifactory
 10. DEBREPOKEY(String) - Deb repo key in artifactory
 11. XRT_IPU_NFS_LOC(String) - NFS Location for XRT
+12. SIGNING_SERVICE_URL(String) - SIGNING_SERVICE_URL endpoint
 */
 
 //Check if a PR Build or Not
@@ -56,6 +57,7 @@ env.NFSWORKSPACE = params.DEV ? '/proj/rdi-xco/buildsD/xbb/xrt-ipu' : '/proj/rdi
 //    string(defaultValue: 'master', name: 'GITBRANCH', description: 'Git Branch e.g master'),
 //    string(defaultValue: 'https://gitenterprise.xilinx.com/XRT/XRT-IPU.git', name: 'GITPROJECTURL', description: 'XRT Git roject URL'),
 //    string(defaultValue: '/proj/xbuilds/XRT-IPU/', name: 'XRT_IPU_NFS_LOC', description: 'NFS Location for XRT'),
+//    string(defaultValue: 'http://172.25.178.99:5000/sign/G:', name: 'SIGNING_SERVICE_URL', description: 'Windows signing service endpoint.')
 //  ])
 //])
 
@@ -229,6 +231,24 @@ def copyWinFiles(releaseDir){
 
 }
 
+
+/**
+ * Sign windows packages
+ */
+def signWinPackages(signing_service_url, path) {
+  def files_tobe_signed = sh(script: """ cd ${path}; find * -type f -name "*.exe" -o -name "*.cat" -o -name "*.msi" -o -name "*.sys" | grep -v "/test/" """, returnStdout: true)
+  List<String> list_files = files_tobe_signed.trim().tokenize('\n')
+  List<String> path_split = path.tokenize('/')
+  path_split.removeAt(0)
+  if (path_split[0].equalsIgnoreCase('rdi')) {
+    path_split.removeAt(0)
+  }
+  String path_joined = path_split.join('/')
+  list_files.each { executable ->
+    sh """curl -v --fail --max-time 120 -o /dev/null --silent --head --write-out '%{http_code}\n'  ${signing_service_url}/${path_joined}/${executable}"""
+  }
+} 
+
 /*
 
 Stages: 
@@ -325,6 +345,15 @@ node('xcoIPULinPool') {
             }
        }
     }
+
+
+        if (!prBuild && params.BUILD_XLNX) {
+          // Sign artifacts if SIGNING_SERVICE_URL is defined
+          if (params.SIGNING_SERVICE_URL) {
+            stage("Sign artifacts") {
+              signWinPackages(params.SIGNING_SERVICE_URL, "${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+"/build/WRelease/_CPack_Packages/win64/")
+            }
+          }
 
     stage('Test') {
       timeout(time: 1, unit: 'HOURS') {
