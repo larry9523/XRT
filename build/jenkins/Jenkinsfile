@@ -335,7 +335,9 @@ node('xcoIPULinPool') {
        stage("Build on Windows") {
         try {
          node("xcoIPUWinPool") {
+           withEnv(["XRT_VERSION_PATCH=${BUILD_NUMBER}", "MSVC_PARALLEL_JOBS=6"]){
              bat buildPackageWinVM()
+            }
           }
           if (params.BUILD_XLNX && !prBuild) {
               sh copyWinFiles("WRelease")
