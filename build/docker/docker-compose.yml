@@ -97,6 +97,7 @@ services:
       - AUTH_TOKEN
       - USER
       - RPMREPOKEY
+      - WINREPOKEY
       - ARTIFACTORYSERVER
       - RDI_ROOT=/opt/xrt-ipu/buildcentos76
       - GRADLE_USER_HOME=/tmp/gradlecentos76
