@@ -59,7 +59,8 @@ services:
       - NFSPATH=${PWD}  
       - AUTH_TOKEN      
       - USER    
-      - DEBREPOKEY      
+      - DEBREPOKEY
+      - WINREPOKEY  
       - ARTIFACTORYSERVER       
       - RDI_ROOT=/opt/xrt-ipu/buildubuntu1804   
       - GRADLE_USER_HOME=/tmp/gradleubuntu1804  
