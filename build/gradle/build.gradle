@@ -17,15 +17,6 @@
 import groovy.io.FileType
 import groovy.json.JsonSlurper
 
-buildscript {
-  repositories {
-    mavenCentral()
-  }
-  dependencies {
-    classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4.10.0"
-  }
-}
-
 plugins {
     id "maven-publish"
     id "base"
