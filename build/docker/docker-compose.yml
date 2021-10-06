@@ -87,6 +87,7 @@ services:
       dockerfile: Dockerfile-centos7.6
     image: "xrt-ipu-centos76:latest"
     volumes:
+      - /proj:/proj:shared
       # We mount the current project to /app
       - ../../:/opt/xrt-ipu:rshared
     user: ${XDOCK_USER}

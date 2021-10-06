@@ -16,6 +16,7 @@
  
 import groovy.io.FileType
 import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
 
 plugins {
     id "maven-publish"
@@ -39,7 +40,8 @@ ext {
         throw new GradleException("could not deutermine branch, either pass it as -Pbranch or by setting branch value in branch.json; -Pbranch takes precedence")
     }
     logger.info("branch is set as ${branch}")
-
+    
+    gitHash = "git rev-parse HEAD".execute().text.trim()
     artifactoryServer = System.getenv().getOrDefault("ARTIFACTORYSERVER", "https://xcoartifactory/artifactory")
     artifactoryUser = System.getenv().getOrDefault("USER", 'xbuild')
     artifactoryAuthToken = System.getenv("AUTH_TOKEN")
