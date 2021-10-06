@@ -183,9 +183,9 @@ def publishRpm(docker_container_name) {
  */
 def publishWin(BUILD_XLNX, docker_container_name) {
     if (BUILD_XLNX) {
-        return "docker-compose run --rm ${docker_container_name} \"cd gradle && ./gradlew artifactoryPublish --project-cache-dir=/tmp/${docker_container_name}_win -Djavax.net.ssl.trustStore=/proj/xbuilds/certs/cacerts\""
+        return "docker-compose run --rm ${docker_container_name} \"cd build/gradle && ./gradlew artifactoryPublish --project-cache-dir=/tmp/${docker_container_name}_win -Djavax.net.ssl.trustStore=/proj/xbuilds/certs/cacerts\""
     } else {
-        return "docker-compose run --rm ${docker_container_name} \"cd gradle && ./gradlew artifactoryPublish --project-cache-dir=/tmp/${docker_container_name}_win\""
+        return "docker-compose run --rm ${docker_container_name} \"cd build/gradle && ./gradlew artifactoryPublish --project-cache-dir=/tmp/${docker_container_name}_win\""
     }
 }
 
