@@ -297,10 +297,9 @@ node('xcoIPULinPool') {
                 sh runBuild("xrt-ipu-centos76")
                 if (params.BUILD_XLNX && !prBuild) {
                   sh copyTarFiles("Release_centos76")
-                }
-                if (!prBuild){
                   sh extractTarFiles("Release_centos76", "centos")
                 }
+               
               } catch (all) {
                 throw (all)
               }
@@ -314,9 +313,6 @@ node('xcoIPULinPool') {
                 sh runBuild("xrt-ipu-ubuntu1804")
                 if (params.BUILD_XLNX && !prBuild) {
                   sh copyTarFiles("Release_ubuntu1804")
-
-                }
-                if (!prBuild){
                   sh extractTarFiles("Release_ubuntu1804", "ubuntu")
                 }
               } catch (all) {
