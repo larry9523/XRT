@@ -372,7 +372,7 @@ node('xcoIPULinPool') {
       publishStages["Publish Centos76"] = {
         stage("Publish Centos76") {
           if (prBuild || params.DEV) {
-            echo "Skipping the Adding artifacts to Artifactory Step"
+            echo "Skipping Publish of artifacts to Artifactory Step"
           } else {
             dir("${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}" + "/build/docker") {
               try {
@@ -392,7 +392,7 @@ node('xcoIPULinPool') {
       publishStages["Publish Ubuntu1804"] = {
         stage("Publish Ubuntu1804") {
           if (prBuild || params.DEV) {
-            echo "Skipping the Adding artifacts to Artifactory Step"
+            echo "Skipping Publish of artifacts to Artifactory Step"
           } else {
             dir("${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}" + "/build/docker") {
               try {
@@ -412,7 +412,7 @@ node('xcoIPULinPool') {
       publishStages["Publish_Windows"] = {
         stage("Publish_Win10") {
           if (prBuild) {
-            echo "Skipping the Adding artifacts to Artifactory Step"
+            echo "Skipping Publish of artifacts to Artifactory Step"
           } else {
             dir("${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}" + "/build/docker") {
               try {
