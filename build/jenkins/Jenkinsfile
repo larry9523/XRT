@@ -32,6 +32,7 @@ Jenkins job parameters needed:
 11. DEBREPOKEY(String) - Deb repo key in artifactory
 12. XRT_IPU_NFS_LOC(String) - NFS Location for XRT
 13. SIGNING_SERVICE_URL(String) - SIGNING_SERVICE_URL endpoint
+14. WS_NETWORK_DRIVE (string) - Mount server and share. Ex: \\\\server\\share
 */
 
 //Check if a PR Build or Not
@@ -44,9 +45,10 @@ env.WINREPOKEY = params.WINREPOKEY != null ? params.WINREPOKEY : 'xrt-ipu-win-pr
 env.ARTIFACTORYSERVER = params.ARTIFACTORYSERVER != null ? params.ARTIFACTORYSERVER : 'https://xcoartifactory/artifactory'
 env.FILEPATHNFS = params.XRT_IPU_NFS_LOC != null ? params.XRT_IPU_NFS_LOC : "/proj/xbuilds/XRT-IPU/"
 env.NFSWORKSPACE = params.DEV ? '/proj/rdi-xco/buildsD/xbb/xrt-ipu' : '/proj/rdi-xco/builds/xbb/xrt-ipu'
+env.DRIVE = "R:"
 
 // When Build is in XLNX and DEV is true
-if (BUILD_XLNX && params.DEV) {
+if (params.BUILD_XLNX && params.DEV) {
   FILEPATHNFS = "/proj/xbuilds/Dev/XRT-IPU/"
   env.DEBREPOKEY = 'xrt-ipu-deb-dev-local'
   env.RPMREPOKEY = 'xrt-ipu-rpm-dev-local'
@@ -195,15 +197,14 @@ def publishWin(BUILD_XLNX, docker_container_name) {
 
 def buildPackageWinVM(){
   splitPath = env.NFSWORKSPACE.tokenize('/')
-  drive = "R:"
-  windowsPath = drive
+  windowsPath = env.DRIVE
   splitPath.eachWithIndex { dir, i ->
       if(i>1){
         windowsPath = windowsPath + "\\\""+"${dir}"+"\""
       }
   };
   windowsPath = windowsPath + "\\\"${BUILD_NUMBER}\""+ "\\\"build\""
-  return drive + " & cd "+ windowsPath +" & C:\\\\msvsn2017\\VC\\Auxiliary\\Build\\vcvars64.bat & build.bat -release -package"
+  return env.DRIVE + " & cd "+ windowsPath +" & C:\\\\msvsn2017\\VC\\Auxiliary\\Build\\vcvars64.bat & build.bat -release -package"
 }
 
 /**
@@ -262,6 +263,9 @@ Stages:
 node('xcoIPULinPool') {
 
   try {
+
+    // BUILD_XLNX will define whether pipeline is run in Xilinx Env or not
+    boolean BUILD_XLNX = params.BUILD_XLNX != null ? params.BUILD_XLNX.toBoolean() : true
 
     stage('Sync Workspace') {
       syncWS(prBuild)
@@ -322,21 +326,29 @@ node('xcoIPULinPool') {
         }
       }
 
-      if (params.BUILD_XLNX && runWindowsBuild) {
+      if (runWindowsBuild) {
         buildStages["Build Windows"] = {
           stage("Build on Windows") {
             try {
               node("xcoIPUWinPool") {
                 withEnv(["XRT_VERSION_PATCH=${BUILD_NUMBER}", "MSVC_PARALLEL_JOBS=6"]){
+                  if (!BUILD_XLNX && params.WS_NETWORK_DRIVE) {
+                    bat """
+                      subst /D ${env.DRIVE}
+                      subst ${env.DRIVE} ${params.WS_NETWORK_DRIVE}
+                    """ 
+                  }
                   bat buildPackageWinVM()
                 }
               }
-              if (params.BUILD_XLNX && !prBuild) {
-                sh copyWinFiles("WRelease")
+              if (!prBuild) {
                 if (params.SIGNING_SERVICE_URL) {
                   stage("Sign artifacts") {
                     signWinPackages(params.SIGNING_SERVICE_URL, "${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+"/build/WRelease/_CPack_Packages/win64/")
                   }
+                }
+                if (BUILD_XLNX) {
+                  sh copyWinFiles("WRelease")
                 }
               }
             } catch(all) {

@@ -53,7 +53,8 @@ services:
       - ../../:/opt/xrt-ipu:rshared     
     user: ${XDOCK_USER:-xbuild} 
     working_dir: /opt/xrt-ipu   
-    environment:        
+    environment:
+      - BUILD_XLNX      
       - BUILD_NUMBER    
       - XRT_VERSION_PATCH=${BUILD_NUMBER}       
       - NFSPATH=${PWD}  
@@ -93,6 +94,7 @@ services:
     user: ${XDOCK_USER}
     working_dir: /opt/xrt-ipu
     environment:
+      - BUILD_XLNX
       - BUILD_NUMBER
       - XRT_VERSION_PATCH=${BUILD_NUMBER}
       - NFSPATH=${PWD}
