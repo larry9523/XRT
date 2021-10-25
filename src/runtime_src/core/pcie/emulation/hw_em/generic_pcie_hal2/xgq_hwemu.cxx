@@ -114,11 +114,11 @@ namespace hwemu {
     auto devp = reinterpret_cast<uint64_t>(device);
 
 #ifdef IPU_LX6
-    uint64_t ring_base = prepSRAMAddr(mngInfo.f.os_to_ipu_ch.buffer_ptr);
+    uint64_t ring_base = prepAddr(mngInfo.f.os_to_ipu_ch.buffer_ptr);
     ring_len = mngInfo.f.os_to_ipu_ch.buffer_size;
     slot_size = 256;
-    xgq_sub_base = prepSRAMAddr(mngInfo.f.ipu_to_os_ch.buffer_ptr);
-    xgq_com_base = prepSRAMAddr(mngInfo.f.ipu_to_os_ch.buffer_ptr + 8);
+    xgq_sub_base = prepAddr(mngInfo.f.ipu_to_os_ch.buffer_ptr);
+    xgq_com_base = prepAddr(mngInfo.f.ipu_to_os_ch.buffer_ptr + 8);
 
     xgq_alloc(&queue, false, devp, ring_base, &ring_len, slot_size, xgq_sub_base, xgq_com_base);
 #else

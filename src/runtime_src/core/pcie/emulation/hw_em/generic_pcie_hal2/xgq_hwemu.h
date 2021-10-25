@@ -73,14 +73,19 @@ typedef union os_ipu_mnmg_u_ {
   uint32_t      d[sizeof(os_ipu_mnmg_t)/4];
 } os_ipu_mnmg_u;
 
-static const uint32_t ALIVE_PTR = 0x1F700000;
+#define X2I_SMN_MMIO_ADDR(X) (( X & IPU_SMN_MMIO_MASK ) | IPU_SMN_MMIO_BASE_ADDR)
+
+// static const uint32_t ALIVE_PTR = 0x1F700000;
 
 //
 // IPU SMN Base Addresses from the Phoenix SMN memory map (scf_smn_map.json)
 //
-static const uint64_t IPU_SMN_MMIO_BASE_ADDR = 0x1F600000;
+static const uint64_t IPU_SMN_MMIO_BASE_ADDR = 0x1F600000ull;
+static const uint64_t mmMPIPU_SRAM_I2X_MAILBOX_15 = 0x30BF000;
 static const uint64_t IPU_SMN_SRAM_BASE_ADDR = 0x1F700000;
-static const uint64_t IPU_SMN_MMIO_MASK      = 0x000FFFFF;
+static const uint64_t IPU_SMN_MMIO_MASK      = 0x000FFFFFull;
+
+static const uint32_t ALIVE_PTR = X2I_SMN_MMIO_ADDR(mmMPIPU_SRAM_I2X_MAILBOX_15);
 
 #endif
 
