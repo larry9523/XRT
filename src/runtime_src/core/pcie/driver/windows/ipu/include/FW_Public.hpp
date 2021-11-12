@@ -24,6 +24,12 @@ DEFINE_GUID (GUID_DEVINTERFACE_KIPUDRV,
 // Define a file device
 #define FILE_DEVICE_KIPUDRV 0x40011
 
+//IPC does not test more than 256 bytes of data
+#define IPC_DATA_SIZE 256
+
+// Number of message stitching tests to return results for
+#define MESSAGE_STITCH_TEST_COUNT 7
+
 // IOCTL code
 // Define an IOCTL code so that the test apps can use this for ioctl calls
 #define IOCTL_KIPUDRV_HELLO_WORLD \
@@ -49,6 +55,9 @@ DEFINE_GUID (GUID_DEVINTERFACE_KIPUDRV,
 
 #define IOCTL_KIPUDRV_OSAL_FILE_CLOSE \
     CTL_CODE(FILE_DEVICE_KIPUDRV, 0x913, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_MESSAGE_STITCH_TEST \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x914, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_KIPUDRV_IPC_INIT \
     CTL_CODE(FILE_DEVICE_KIPUDRV, 0xA00, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -140,20 +149,20 @@ typedef struct PmSetLevelOutput
 typedef struct OsalFileCreateInput
 {
     uint32_t filePathSize;
-    char* filePath;
+    char*    filePath;
 } OsalFileCreateInput_t;
 
 typedef struct OsalFileCreateOutput
 {
-    HANDLE fileOpHandler;
+    HANDLE        fileOpHandler;
     DRIVER_STATUS status;
 } OsalFileCreateOutput_t;
 
 typedef struct OsalFileWriteInput
 {
-    HANDLE fileOpHandler;
+    HANDLE   fileOpHandler;
     uint32_t inputDataSize;
-    char* data;
+    char*    data;
 } OsalFileWriteInput_t;
 
 typedef struct OsalFileWriteOutput
@@ -163,16 +172,16 @@ typedef struct OsalFileWriteOutput
 
 typedef struct OsalFileReadInput
 {
-    HANDLE fileOpHandler;
+    HANDLE   fileOpHandler;
     uint32_t dataSize;
-    char* data;
+    char*    data;
 } OsalFileReadInput_t;
 
 typedef struct OsalFileReadOutput
 {
     DRIVER_STATUS status;
-    uint32_t dataSize;
-    char* data;
+    uint32_t      dataSize;
+    char*         data;
 } OsalFileReadOutput_t;
 
 typedef struct OsalFileCloseInput
@@ -185,36 +194,43 @@ typedef struct OsalFileCloseOutput
     DRIVER_STATUS status;
 } OsalFileCloseOutput_t;
 
+typedef struct MessageStitchTestOutput
+{
+    DRIVER_STATUS status[MESSAGE_STITCH_TEST_COUNT];
+} MessageStitchTestOutput_t;
+
 typedef struct IpcInitOutput
 {
     DRIVER_STATUS status;
-    HANDLE ipcHandler;
+    HANDLE        ipcHandler;
 } IpcInitOutput_t;
 
 typedef struct IpcSendInput
 {
-    HANDLE ipcHandler;
+    HANDLE   ipcHandler;
+    uint32_t opCode;
+    char     data[IPC_DATA_SIZE];
     uint32_t dataSize;
-    char* data;
 } IpcSendInput_t;
 
 typedef struct IpcSendOutput
 {
     DRIVER_STATUS status;
+    uint32_t      messageId;
 } IpcSendOutput_t;
 
 typedef struct IpcRecvInput
 {
-    HANDLE ipcHandler;
+    HANDLE   ipcHandler;
     uint32_t dataSize;
-    char* data;
+    uint32_t messageId;
 } IpcRecvInput_t;
 
 typedef struct IpcRecvOutput
 {
     DRIVER_STATUS status;
-    uint32_t dataSize;
-    char* data;
+    char          data[IPC_DATA_SIZE];
+    uint32_t      dataSize;
 } IpcRecvOutput_t;
 
 typedef struct IpcDeinitInput

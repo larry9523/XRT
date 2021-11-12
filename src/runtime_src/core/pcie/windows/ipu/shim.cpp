@@ -629,7 +629,7 @@ done:
     buffSize = (DWORD) buffer->m_header.m_length;
 
     xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_XOCL_READ_AXLF... ");
+      send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_READ_AXLF... ");
 
     succeeded = SendIoctlReadAxlf((PUCHAR)buffer, buffSize);
 
@@ -647,7 +647,7 @@ done:
     // Second test...
     //
     xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_XOCL_STAT (XoclStatMemTopology)... ");
+      send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv StatMemTopology)... ");
 
 
     if (succeeded) {
@@ -712,7 +712,7 @@ done:
         nullptr);
 
     if (!status || bytes != sizeof(xcl_board_info))
-      throw std::runtime_error("DeviceIoControl IOCTL_XOCL_BOARD_INFO (get_board_info) failed");
+      throw std::runtime_error("DeviceIoControl IOCTL_KIPUDRV_BOARD_INFO (get_board_info) failed");
   }
 
   void
