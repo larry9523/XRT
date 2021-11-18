@@ -164,7 +164,7 @@ namespace xclemulation{
       inline void enableMemLogs (bool memLogs)                  { mMemLogs          = memLogs;       }
       inline void setDontRun( bool dontRun)                     { mDontRun          = dontRun;       }
       inline void setNewMbscheduler(bool mbscheduler)           { mNewMbscheduler   = mbscheduler;   }
-      inline void setXgqMode(bool xgqMode)                      { mXgqMode          = xgqMode;       }
+      inline void setIpuRBMode(bool ipurbMode)                  { mIpuRBMode        = ipurbMode;     }
       inline void setPacketSize( unsigned int packetSize)       { mPacketSize       = packetSize;    }
       inline void setMaxTraceCount( unsigned int maxTraceCount) { mMaxTraceCount    = maxTraceCount; }
       inline void setPaddingFactor( unsigned int paddingFactor) { mPaddingFactor    = paddingFactor; }
@@ -192,7 +192,7 @@ namespace xclemulation{
       inline bool isMemLogsEnabled()            const { return mMemLogs;        }
       inline bool isDontRun()                   const { return mDontRun;        }
       inline bool isNewMbscheduler()            const { return mNewMbscheduler; }
-      inline bool isXgqMode()                   const { return mXgqMode;        }
+      inline bool isIpuRBMode()                 const { return mIpuRBMode;      }
       inline unsigned int getPacketSize()       const { return mPacketSize;     }
       inline unsigned int getMaxTraceCount()    const { return mMaxTraceCount;  }
       inline unsigned int getPaddingFactor()    const { if(!mOOBChecks) return 0; return mPaddingFactor;  }
@@ -231,7 +231,7 @@ namespace xclemulation{
       bool mMemLogs;
       bool mDontRun;
       bool mNewMbscheduler;
-      bool mXgqMode;
+      bool mIpuRBMode;
       debug_mode mLaunchWaveform;
       std::string mSimDir;
       std::string mUserPreSimScript;

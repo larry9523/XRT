@@ -414,10 +414,10 @@ namespace xclhwemhal2 {
     }
     if(xclemulation::config::getInstance()->isNewMbscheduler()) {
         m_scheduler = new hwemu::xocl_scheduler(this);
-    } else if (xclemulation::config::getInstance()->isXgqMode()) {
-        m_xgq = new hwemu::xocl_xgq(this);
-        if (m_xgq && pdi && pdiSize > 0) {
-            returnValue = m_xgq->load_xclbin(pdi, pdiSize);
+    } else if (xclemulation::config::getInstance()->isIpuRBMode()) {
+        m_ipurb = new hwemu::xocl_ipurb(this);
+        if (m_ipurb && pdi && pdiSize > 0) {
+            returnValue = m_ipurb->load_xclbin(pdi, pdiSize, top->m_header.uuid);
         }
     } else {
         mCore = new exec_core;
@@ -1784,10 +1784,10 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
           delete m_scheduler;
           m_scheduler = nullptr;
       }
-      if(m_xgq)
+      if(m_ipurb)
       {
-          delete m_xgq;
-          m_xgq = nullptr;
+          delete m_ipurb;
+          m_ipurb = nullptr;
       }
       PRINTENDFUNC;
       if (mLogStream.is_open()) {
@@ -1860,10 +1860,10 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
           delete m_scheduler;
           m_scheduler = nullptr;
       }
-      if(m_xgq)
+      if(m_ipurb)
       {
-          delete m_xgq;
-          m_xgq = nullptr;
+          delete m_ipurb;
+          m_ipurb = nullptr;
       }
       return 0;
     }
@@ -1971,10 +1971,10 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
         delete m_scheduler;
         m_scheduler = nullptr;
     }
-    if(m_xgq)
+    if(m_ipurb)
     {
-        delete m_xgq;
-        m_xgq = nullptr;
+        delete m_ipurb;
+        m_ipurb = nullptr;
     }
 
     return 0;
@@ -2024,10 +2024,10 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
         delete m_scheduler;
         m_scheduler = nullptr;
     }
-    if(m_xgq)
+    if(m_ipurb)
     {
-        delete m_xgq;
-        m_xgq = nullptr;
+        delete m_ipurb;
+        m_ipurb = nullptr;
     }
     if(mDataSpace)
     {
@@ -2193,7 +2193,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     mCore = nullptr;
     mMBSch = nullptr;
     m_scheduler = nullptr;
-    m_xgq = nullptr;
+    m_ipurb = nullptr;
     mIsDebugIpLayoutRead = false;
     mIsDeviceProfiling = false;
     mMemoryProfilingNumberSlots = 0;
@@ -2699,6 +2699,14 @@ uint64_t HwEmShim::xoclCreateBo(xclemulation::xocl_create_bo* info)
 
 unsigned int HwEmShim::xclAllocBO(size_t size, int unused, unsigned flags)
 {
+  if (xclemulation::config::getInstance()->isIpuRBMode()) {
+    // Call IPU Ring Buffer to allocate a shadow buffer for SRAM
+    if (!(flags & XCL_BO_FLAGS_HOST_ONLY) && !(flags & XCL_BO_FLAGS_EXECBUF) && m_ipurb) {
+      if (m_ipurb->alloc_bo(size))
+        return mNullBO;
+    }
+  }
+
   std::lock_guard<std::mutex> lk(mApiMtx);
   if (mLogStream.is_open())
   {
@@ -2997,7 +3005,7 @@ int HwEmShim::xclUnmapBO(unsigned int boHandle, void* addr)
 /******************************** xclSyncBO *******************************************/
 int HwEmShim::xclSyncBO(unsigned int boHandle, xclBOSyncDirection dir, size_t size, size_t offset)
 {
-  std::lock_guard<std::mutex> lk(mApiMtx);
+  std::unique_lock<std::mutex> lk(mApiMtx);
   if (mLogStream.is_open())
   {
     mLogStream << __func__ << ", " << std::this_thread::get_id() << ", " << std::hex << boHandle << " , " << std::endl;
@@ -3014,9 +3022,21 @@ int HwEmShim::xclSyncBO(unsigned int boHandle, xclBOSyncDirection dir, size_t si
     void* buffer = bo->userptr ? bo->userptr : bo->buf;
     if (dir == XCL_BO_SYNC_BO_TO_DEVICE)
     {
-      if (xclCopyBufferHost2Device(bo->base, buffer, size, offset, bo->topology) != size)
+      if (xclemulation::config::getInstance()->isIpuRBMode())
       {
-        returnVal = EIO;
+        if (!(bo->flags & XCL_BO_FLAGS_EXECBUF) && !(bo->flags & XCL_BO_FLAGS_HOST_ONLY) && m_ipurb)
+        {
+          lk.unlock();
+          returnVal = m_ipurb->sync_bo(bo->base, buffer, size, offset);
+          lk.lock();
+        }
+        else
+        {
+          if (xclCopyBufferHost2Device(bo->base, buffer, size, offset, bo->topology) != size)
+          {
+            returnVal = EIO;
+          }
+        }
       }
     }
     else
@@ -3138,13 +3158,13 @@ int HwEmShim::xclExecBuf(unsigned int cmdBO)
       ret = m_scheduler->add_exec_buffer(bo);
       PRINTENDFUNC;
       return ret;
-  } else if (xclemulation::config::getInstance()->isXgqMode()) {
-      if (!m_xgq || !bo)
+  } else if (xclemulation::config::getInstance()->isIpuRBMode()) {
+      if (!m_ipurb || !bo)
       {
           PRINTENDFUNC;
           return ret;
       }
-      ret = m_xgq->add_exec_buffer(bo);
+      ret = m_ipurb->add_exec_buffer(bo);
       PRINTENDFUNC;
       return ret;
   } else {
@@ -3233,6 +3253,30 @@ int HwEmShim::xclExecWait(int timeoutMilliSec)
   sleep(tSec);
   //PRINTENDFUNC;
   return 1;
+}
+
+int HwEmShim::xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared)
+{
+  int ret = -1;
+  if (xclemulation::config::getInstance()->isIpuRBMode()) {
+    ret = m_ipurb->open_context(xclbinId, ipIndex);
+  } else
+    ret = 0;
+
+  PRINTENDFUNC;
+  return ret;
+}
+
+int HwEmShim::xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex)
+{
+  int ret = -1;
+  if (xclemulation::config::getInstance()->isIpuRBMode()) {
+    ret = m_ipurb->close_context(xclbinId, ipIndex);
+  } else
+    ret = 0;
+
+  PRINTENDFUNC;
+  return ret;
 }
 
 ssize_t HwEmShim::xclUnmgdPwrite(unsigned flags, const void *buf, size_t count, uint64_t offset)

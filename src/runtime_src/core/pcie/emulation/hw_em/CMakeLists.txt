@@ -8,6 +8,9 @@ set(COMMON_PCIE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../common")
 
 include_directories(
   ${EM_SRC_DIR}
+  "${EM_SRC_DIR}/xrt_model/hostenv"
+  "${EM_SRC_DIR}/xrt_model/xrt"
+  "${EM_SRC_DIR}/xrt_model/ringb/include"
   ${COMMON_EM_SRC_DIR}
   ${COMMON_EM_GEN_DIR}
   ${BOOST_FILESYSTEM_INCLUDE_DIRS}
@@ -18,6 +21,11 @@ include_directories(
 file(GLOB EM_SRC_FILES
   "${EM_SRC_DIR}/*.h"
   "${EM_SRC_DIR}/*.cxx"
+  "${EM_SRC_DIR}/xrt_model/hostenv/*.cpp"
+  "${EM_SRC_DIR}/xrt_model/hostenv/*.h"
+  "${EM_SRC_DIR}/xrt_model/xrt/*.cpp"
+  "${EM_SRC_DIR}/xrt_model/xrt/*.h"
+  "${EM_SRC_DIR}/xrt_model/ringb/*.cpp"
   "${COMMON_PCIE_SRC_DIR}/system_pcie.cpp"
   "${COMMON_PCIE_SRC_DIR}/device_pcie.cpp"
   )

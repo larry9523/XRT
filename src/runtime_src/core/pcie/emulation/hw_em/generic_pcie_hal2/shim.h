@@ -37,7 +37,7 @@
 #include "mem_model.h"
 #include "mbscheduler.h"
 #include "mbscheduler_hwemu.h"
-#include "xgq_hwemu.h"
+#include "ipurb_hwemu.h"
 #endif
 
 #include <sys/param.h>
@@ -129,6 +129,8 @@ using addr_type = uint64_t;
       //MB scheduler related API's
       int xclExecBuf( unsigned int cmdBO);
       int xclExecBuf(unsigned int cmdBO, size_t num_bo_in_wait_list, unsigned int *bo_wait_list);
+      int xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared);
+      int xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex);
 
       int xclRegisterEventNotify( unsigned int userInterrupt, int fd);
       int xclExecWait( int timeoutMilliSec);
@@ -351,7 +353,7 @@ using addr_type = uint64_t;
       exec_core* mCore;
       MBScheduler* mMBSch;
       hwemu::xocl_scheduler* m_scheduler;
-      hwemu::xocl_xgq* m_xgq;
+      hwemu::xocl_ipurb* m_ipurb;
 
       // Information extracted from platform linker (for profile/debug)
       bool mIsDebugIpLayoutRead = false;

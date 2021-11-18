@@ -157,12 +157,18 @@ int xclExecBufWithWaitList(xclDeviceHandle handle, unsigned int cmdBO, size_t nu
 int xclOpenContext(xclDeviceHandle handle, const uuid_t xclbinId, unsigned int ipIndex, bool shared)
 
 {
-  return 0;
+  xclhwemhal2::HwEmShim *drv = xclhwemhal2::HwEmShim::handleCheck(handle);
+  if (!drv)
+    return -1;
+  return drv->xclOpenContext(xclbinId, ipIndex, shared);
 }
 
 int xclCloseContext(xclDeviceHandle handle, const uuid_t xclbinId, unsigned ipIndex)
 {
-  return 0;
+  xclhwemhal2::HwEmShim *drv = xclhwemhal2::HwEmShim::handleCheck(handle);
+  if (!drv)
+    return -1;
+  return drv->xclCloseContext(xclbinId, ipIndex);
 }
 
 int xclRegisterEventNotify(xclDeviceHandle handle, unsigned int userInterrupt, int fd)

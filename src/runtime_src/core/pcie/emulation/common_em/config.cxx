@@ -60,7 +60,7 @@ namespace xclemulation{
     mLaunchWaveform = debug_mode::off;
     mDontRun = false;
     mNewMbscheduler = true;
-    mXgqMode = false;
+    mIpuRBMode = false;
     mSimDir = "";
     mUserPreSimScript = "";
     mPacketSize = 0x800000;
@@ -159,9 +159,9 @@ namespace xclemulation{
       {
         setNewMbscheduler(getBoolValue(value,false));
       }
-      else if(name == "xgq_mode")
+      else if(name == "ipurb_mode")
       {
-        setXgqMode(getBoolValue(value,false));
+        setIpuRBMode(getBoolValue(value,false));
       }
       else if (name == "user_pre_sim_script") {
         std::string absolutePath = getAbsolutePath(value, getExecutablePath());
