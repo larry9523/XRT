@@ -54,13 +54,13 @@ struct shim
   bool m_locked = false;
   HANDLE m_dev;
   std::shared_ptr<xrt_core::device> m_core_device;
-  PSP_DEVICE_INTERFACE_DETAIL_DATA pDeviceInterfaceDetail; //TODO: First need to find device path
+
   // create shim object, open the device, store the device handle
   shim(unsigned int devidx)
     : m_devidx(devidx)
   {
     // open device associated with devidx
-    m_dev = CreateFile(pDeviceInterfaceDetail->DevicePath,
+    m_dev = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_DEVICE_NAMESPACE,
                         GENERIC_READ | GENERIC_WRITE,
                         0,
                         0,
@@ -75,6 +75,7 @@ struct shim
       throw std::runtime_error("CreateFile failed with error " + std::to_string(error));
     }
 
+    m_core_device = xrt_core::get_userpf_device(this, devidx);
   }
 
   // destruct shim object, close the device
@@ -92,7 +93,7 @@ struct shim
     XRT_CREATE_BO_ARGS createBOArgs;
     DWORD bytesWritten;
 
-    bufferHandle = CreateFile(pDeviceInterfaceDetail->DevicePath,
+    bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
                               GENERIC_READ | GENERIC_WRITE,
                               0,
                               0,
@@ -115,9 +116,23 @@ struct shim
 
     //'size' needs to be multiple of 4K
     createBOArgs.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    createBOArgs.BankNumber = flags & 0xFFFFFFLL;
-    createBOArgs.BufferType = XRT_BUFFER_TYPE_NORMAL;
+    //createBOArgs.BankNumber = flags & 0xFFFFFFLL;
+   
 
+    if (flags & XCL_BO_FLAGS_HOST_ONLY) {
+        createBOArgs.BankNumber = 0;
+        createBOArgs.BufferType = XRT_BUFFER_TYPE_HOST_ONLY;
+    }
+    else if (flags & XCL_BO_FLAGS_EXECBUF) {
+        createBOArgs.BankNumber = 0;
+        createBOArgs.BufferType = XRT_BUFFER_TYPE_EXECBUF;
+    }
+    else {
+        createBOArgs.BankNumber = 1;
+        createBOArgs.BufferType = XRT_BUFFER_TYPE_NORMAL;
+    }
+
+ 
     if (!DeviceIoControl(bufferHandle,
                          IOCTL_KIPUDRV_CREATE_BO,
                          &createBOArgs,
@@ -161,7 +176,7 @@ done:
     XRT_USERPTR_BO_ARGS userPtrBO;
     DWORD bytesWritten;
 
-    bufferHandle = CreateFile(pDeviceInterfaceDetail->DevicePath,
+    bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
                                GENERIC_READ | GENERIC_WRITE,
                                0,
                                0,
@@ -496,23 +511,23 @@ done:
     HANDLE deviceHandle = m_dev;
     DWORD error = 0;
     DWORD bytesWritten;
-    size_t off = 0;
+    //size_t off = 0;
     size_t ksize = 0;
     PXRT_READ_AXLF_ARGS axlf_obj = nullptr;
 
-    auto top = reinterpret_cast<const axlf*>(ImageBuffer);
-
+    //auto top = reinterpret_cast<const axlf*>(ImageBuffer);
+#if 0
     auto kernels = xrt_core::xclbin::get_kernels(top);
     /* Calculate size of kernels */
     for (auto& kernel : kernels) {
         ksize += sizeof(kernel_info) + sizeof(argument_info) * kernel.args.size() -1;
     }
-
+#endif
     /* create buffer of total size to be sent via ioctl*/
     std::vector<char> axlf_binary(ksize + sizeof (XRT_READ_AXLF_ARGS));
     axlf_obj = reinterpret_cast<XRT_READ_AXLF_ARGS*>(axlf_binary.data());
-    axlf_obj->ksize = ksize;
-
+    axlf_obj->ksize = 0;// ksize;
+    
     /* To enhance CU subdevice and KDS/ERT, driver needs all details about kernels
      * while loading xclbin.
      *
@@ -544,6 +559,7 @@ done:
      * |   ...                 |
      * +-----------------------+
      */
+#if 0
     for (auto& kernel : kernels) {
         auto krnl = reinterpret_cast<kernel_info *>(&axlf_obj->kernels[0] + off);
 
@@ -575,15 +591,16 @@ done:
         }
         off += sizeof(kernel_info) + sizeof(argument_info) * kernel.args.size();
     }
+#endif
 
     /* To make download xclbin and configure KDS/ERT as an atomic operation. */
-    axlf_obj->kds_cfg.ert = xrt_core::config::get_ert();
-    axlf_obj->kds_cfg.polling = xrt_core::config::get_ert_polling();
-    axlf_obj->kds_cfg.cu_dma = xrt_core::config::get_ert_cudma();
-    axlf_obj->kds_cfg.cu_isr = xrt_core::config::get_ert_cuisr() && xrt_core::xclbin::get_cuisr(top);
-    axlf_obj->kds_cfg.cq_int = xrt_core::config::get_ert_cqint();
-    axlf_obj->kds_cfg.dataflow = xrt_core::config::get_feature_toggle("Runtime.dataflow") || xrt_core::xclbin::get_dataflow(top);
-    axlf_obj->kds_cfg.rw_shared = xrt_core::config::get_rw_shared();
+    axlf_obj->kds_cfg.ert = 0;// xrt_core::config::get_ert();
+    axlf_obj->kds_cfg.polling = 0;// xrt_core::config::get_ert_polling();
+    axlf_obj->kds_cfg.cu_dma = 0;// xrt_core::config::get_ert_cudma();
+    axlf_obj->kds_cfg.cu_isr = 0;// xrt_core::config::get_ert_cuisr() && xrt_core::xclbin::get_cuisr(top);
+    axlf_obj->kds_cfg.cq_int = 0;// xrt_core::config::get_ert_cqint();
+    axlf_obj->kds_cfg.dataflow = 0;// xrt_core::config::get_feature_toggle("Runtime.dataflow") || xrt_core::xclbin::get_dataflow(top);
+    axlf_obj->kds_cfg.rw_shared = 0;// xrt_core::config::get_rw_shared();
 
     /* TODO: In scheduler.cpp init() function, it use get_ert_slots(void) to get slot size.
      * But we cannot do this here, since the xclbin is not registered.
@@ -591,12 +608,14 @@ done:
      * We will consider how to better determine slot size in new kds.
      */
     //axlf_obj.kds_cfg.slot_size = mCoreDevice->get_ert_slots().second;
+#if 0
     auto xml_hdr = xrt_core::xclbin::get_axlf_section(top, EMBEDDED_METADATA);
     if (!xml_hdr)
         throw std::runtime_error("No xml metadata in xclbin");
     auto xml_size = xml_hdr->m_sectionSize;
     auto xml_data = reinterpret_cast<const char*>(reinterpret_cast<const char*>(top) + xml_hdr->m_sectionOffset);
     axlf_obj->kds_cfg.slot_size = (uint32_t)m_core_device->get_ert_slots(xml_data, xml_size).second;
+#endif
 
     if (!DeviceIoControl(deviceHandle,
                          IOCTL_KIPUDRV_DOWNLOAD_XCLBIN,

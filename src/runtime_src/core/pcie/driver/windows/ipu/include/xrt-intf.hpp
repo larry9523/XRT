@@ -23,6 +23,13 @@
 
 #define FILE_DEVICE_XRT_USER   ((ULONG)0x8879)   // "XO"
 
+//
+// Constant string for the symbolic link associated with the device
+//
+#define XRT_CORE_SYMBOLIC_LINK_NAME L"\\Global??\\XRT-USER-0"
+
+#define XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE L"\\Buffer"
+#define XRT_USER_DEVICE_DEVICE_NAMESPACE        L"\\Device"
 
 typedef enum _XRT_BUFFER_SYNC_DIRECTION {
 
