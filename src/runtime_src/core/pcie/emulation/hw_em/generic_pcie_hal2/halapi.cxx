@@ -331,7 +331,7 @@ int xclLoadXclBin(xclDeviceHandle handle, const xclBin *buffer)
     auto device = xrt_core::get_userpf_device(drv);
     device->register_axlf(buffer);
 #ifndef DISABLE_DOWNLOAD_XCLBIN
-    ret = xrt_core::scheduler::init(handle, buffer);
+    // ret = xrt_core::scheduler::init(handle, buffer);
 #endif
   }
   return ret;
