@@ -327,10 +327,13 @@ kds_interrupt_store(struct device *dev, struct device_attribute *da,
 	if (kds->cu_intr == cu_intr)
 		goto done;
 
-	if (cu_intr)
+	if (cu_intr) {
 		xocl_ert_user_disable(xdev);
-	else
+		xocl_kds_cus_enable(xdev);
+	} else {
+		xocl_kds_cus_disable(xdev);
 		xocl_ert_user_enable(xdev);
+	}
 
 	kds->cu_intr = cu_intr;
 	kds_cfg_update(&XDEV(xdev)->kds);
@@ -341,6 +344,30 @@ done:
 	return count;
 }
 static DEVICE_ATTR(kds_interrupt, 0644, kds_interrupt_show, kds_interrupt_store);
+
+static ssize_t
+kds_interval_store(struct device *dev, struct device_attribute *da,
+	       const char *buf, size_t count)
+{
+	struct xocl_dev *xdev = dev_get_drvdata(dev);
+	u32 interval;
+
+	if (kstrtou32(buf, 10, &interval) == -EINVAL)
+		return -EINVAL;
+
+	XDEV(xdev)->kds.interval = interval;
+
+	return count;
+}
+
+static ssize_t
+kds_interval_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct xocl_dev *xdev = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%d\n", XDEV(xdev)->kds.interval);
+}
+static DEVICE_ATTR(kds_interval, 0644, kds_interval_show, kds_interval_store);
 
 static ssize_t
 ert_disable_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -447,6 +474,28 @@ static ssize_t shutdown_store(struct device *dev,
 	return count;
 }
 static DEVICE_ATTR(shutdown, 0644, shutdown_show, shutdown_store);
+
+static ssize_t dev_hotplug_done_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct xocl_dev *xdev = dev_get_drvdata(dev);
+	
+	return sprintf(buf, "%d\n", atomic_read(&xdev->dev_hotplug_done));
+}
+
+static ssize_t dev_hotplug_done_store(struct device *dev,
+	struct device_attribute *da, const char *buf, size_t count)
+{
+	struct xocl_dev *xdev = dev_get_drvdata(dev);
+	u32 val;
+	
+	if (kstrtou32(buf, 10, &val) == -EINVAL)
+		return -EINVAL;
+	
+	atomic_set(&xdev->dev_hotplug_done, val);
+	return count;
+}
+static DEVICE_ATTR(dev_hotplug_done, 0644, dev_hotplug_done_show, dev_hotplug_done_store);
 
 static ssize_t mig_calibration_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -681,6 +730,19 @@ static ssize_t nodma_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(nodma);
 
+static ssize_t host_mem_size_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct xocl_dev *xdev = dev_get_drvdata(dev);
+	uint64_t val = 0;
+
+	if (xdev->cma_bank)
+		val = xdev->cma_bank->entry_sz * xdev->cma_bank->entry_num;
+
+	return sprintf(buf, "%lld\n", val);
+}
+static DEVICE_ATTR_RO(host_mem_size);
+
 /* - End attributes-- */
 static struct attribute *xocl_attrs[] = {
 	&dev_attr_xclbinuuid.attr,
@@ -697,6 +759,7 @@ static struct attribute *xocl_attrs[] = {
 	&dev_attr_kds_custat_raw.attr,
 	&dev_attr_kds_scustat_raw.attr,
 	&dev_attr_kds_interrupt.attr,
+	&dev_attr_kds_interval.attr,
 	&dev_attr_ert_disable.attr,
 	&dev_attr_dev_offline.attr,
 	&dev_attr_mig_calibration.attr,
@@ -714,6 +777,7 @@ static struct attribute *xocl_attrs[] = {
 	&dev_attr_ulp_uuids.attr,
 	&dev_attr_mig_cache_update.attr,
 	&dev_attr_nodma.attr,
+	&dev_attr_host_mem_size.attr,
 	NULL,
 };
 
@@ -724,6 +788,7 @@ static struct attribute *xocl_attrs[] = {
  */
 static struct attribute *xocl_persist_attrs[] = {
 	&dev_attr_shutdown.attr,
+	&dev_attr_dev_hotplug_done.attr,
 	&dev_attr_user_pf.attr,
 	NULL,
 };

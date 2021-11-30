@@ -83,6 +83,15 @@ class xclbin_impl;
 class xclbin : public detail::pimpl<xclbin_impl>
 {
 public:
+  /**
+   * @enum taget_type - type of xclbin
+   *
+   * @details
+   * See `xclbin.h`
+   */
+  enum class target_type { hw, sw_emu, hw_emu };
+
+public:
   /*!
    * @class mem
    *
@@ -278,6 +287,16 @@ public:
     XCL_DRIVER_DLLESPEC
     std::string
     get_host_type() const;
+
+    /**
+     * get_index() - Get the index of this argument
+     *
+     * @return
+     *   Argument index
+     */
+    XCL_DRIVER_DLLESPEC
+    size_t
+    get_index() const;
   };
 
   /*!
@@ -293,6 +312,15 @@ public:
   class ip_impl;
   class ip : public detail::pimpl<ip_impl>
   {
+  public:
+    /**
+     * @enum control_type - 
+     *
+     * @details
+     * See `xclbin.h`
+     */
+    enum class control_type : uint8_t { hs = 0, chain = 1, none = 2, fa = 5 };
+
   public:
     ip() = default;
 
@@ -310,6 +338,16 @@ public:
     XCL_DRIVER_DLLESPEC
     std::string
     get_name() const;
+
+    /**
+     * get_control_type() - Get the IP control protocol
+     *
+     * @return
+     *  Control type
+     */
+    XCL_DRIVER_DLLESPEC
+    control_type
+    get_control_type() const;
 
     /**
      * get_num_args() - Number of arguments
@@ -354,6 +392,22 @@ public:
     XCL_DRIVER_DLLESPEC
     uint64_t
     get_base_address() const;
+
+    /**
+     * get_size() - Get the address range size of this IP.
+     *
+     * @return
+     *  The size of this IP
+     *
+     * The address range is a property of the kernel and 
+     * as such only valid for for kernel compute units.
+     *
+     * For IPs that are not associated with a kernel, the
+     * size return is 0.
+     */
+    XCL_DRIVER_DLLESPEC
+    size_t
+    get_size() const;
   };
 
   /*!
@@ -399,6 +453,22 @@ public:
     XCL_DRIVER_DLLESPEC
     std::vector<ip>
     get_cus() const;
+
+    /**
+     * get_cus() - Get list of compute units that matches name
+     *
+     * @param name
+     *  Name to match against, prefixed with kernel name
+     * @return
+     *  A list of xrt::xclbin::ip objects that are compute units
+     *  of this kernel object and matches the specified name.
+     *
+     * The kernel name can optionally specify which kernel instance(s) to
+     * match "kernel:{cu1,cu2,...} syntax.
+     */
+    XCL_DRIVER_DLLESPEC
+    std::vector<ip>
+    get_cus(const std::string& kname) const;
 
     /**
      * get_cu() - Get compute unit by name
@@ -598,6 +668,17 @@ public:
   get_uuid() const;
 
   /**
+   * get_target_type() - Get the type of this xclbin
+   *
+   * @return
+   *  Target type, which can be hw, sw_emu, or hw_emu
+   */
+  XCL_DRIVER_DLLESPEC
+  target_type
+  get_target_type() const;
+
+  /// @cond
+  /**
    * get_axlf() - Get the axlf data of the xclbin
    *
    * @return
@@ -609,6 +690,33 @@ public:
   const axlf*
   get_axlf() const;
 
+  /**
+   * get_axlf_section() - Retrieve specified xclbin section
+   *
+   * @param section
+   *  The section to retrieve
+   * @return
+   *  The specified section if available cast to specified type.
+   *  Note, that this is an unsafe cast, behavior is undefined if the
+   *  specified SectionType is invalid.
+   *
+   * The SectionType template parameter is an axlf type from xclbin.h
+   * and it much match the type of the section data retrieved.
+   *
+   * Throws if requested section does not exist in the xclbin.
+   */
+  template <typename SectionType>
+  SectionType
+  get_axlf_section(axlf_section_kind section) const
+  {
+    return reinterpret_cast<SectionType>(get_axlf_section(section).first);
+  }
+  /// @endcond
+
+private:
+  XCL_DRIVER_DLLESPEC
+  std::pair<const char*, size_t>
+  get_axlf_section(axlf_section_kind section) const;
 };
 } // namespace xrt
 

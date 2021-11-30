@@ -16,6 +16,7 @@ include(CMake/unitTestSupport.cmake)
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/runtime_src
   ${CMAKE_CURRENT_SOURCE_DIR}/runtime_src/core/include
+  ${CMAKE_BINARY_DIR}/gen
   )
 
 set(CMAKE_CXX_STANDARD 14)
@@ -48,6 +49,15 @@ if (${XRT_NATIVE_BUILD} STREQUAL "no")
   set (CMAKE_INSTALL_PREFIX "/usr")
 endif()
 
+# Enable AIE even on x86.  This is POC, once
+# complete we will remove the need for these
+# macros and defines.
+if (${XRT_NATIVE_BUILD} STREQUAL "yes")
+  set(XRT_AIE_BUILD "yes")
+  set(XRT_ENABLE_AIE "yes")
+  add_definitions (-DXRT_ENABLE_AIE -DXRT_AIE_BUILD)
+endif()
+
 # Default component name for any install() command without the COMPONENT argument
 # The default component is the xrt run-time component, if XRT_DEV_COMPONENT is
 # set to something different then a development component will be created with
@@ -63,9 +73,9 @@ set (XRT_DEV_COMPONENT "xrt")
 set (XRT_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Version adjusted to 2.11 after u30 branch creation
-set(XRT_VERSION_RELEASE 202120)
+set(XRT_VERSION_RELEASE 202210)
 SET(XRT_VERSION_MAJOR 2)
-SET(XRT_VERSION_MINOR 12)
+SET(XRT_VERSION_MINOR 13)
 
 if (DEFINED ENV{XRT_VERSION_PATCH})
   SET(XRT_VERSION_PATCH $ENV{XRT_VERSION_PATCH})

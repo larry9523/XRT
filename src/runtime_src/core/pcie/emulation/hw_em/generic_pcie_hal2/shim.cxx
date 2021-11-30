@@ -79,6 +79,8 @@ namespace xclhwemhal2 {
     };
 
   namespace pt = boost::property_tree;
+  namespace fs = boost::filesystem;
+
   std::map<unsigned int, HwEmShim*> devices;
   std::map<std::string, std::string> HwEmShim::mEnvironmentNameValueMap(xclemulation::getEnvironmentByReadingIni());
   std::map<int, std::tuple<std::string,int,void*, unsigned int> > HwEmShim::mFdToFileNameMap;
@@ -645,6 +647,8 @@ namespace xclhwemhal2 {
 
       std::string kernelName = xml_kernel.second.get<std::string>("<xmlattr>.name");
       kernels.push_back(kernelName);
+      int address_range = 0;
+      std::string instanceName;
 
       if (mLogStream.is_open())
          mLogStream << __func__ << " Filling kernel " << kernelName << " info from xclbin.xml" << std::endl;
@@ -668,9 +672,18 @@ namespace xclhwemhal2 {
             mLogStream << __func__ << " Filling kernel Args name: " << name << " id: " << id << " port: " << port << " info from xclbin.xml" << std::endl;
         }
 
+        if (xml_kernel_info.first == "port") {
+          std::string mode = xml_kernel_info.second.get<std::string>("<xmlattr>.mode");
+          if (mode == "slave") {
+            address_range = convert(xml_kernel_info.second.get<std::string>("<xmlattr>.range"));
+            if (mLogStream.is_open())
+              mLogStream << __func__ << " Getting the Address Range of mode : " << mode << " info from xclbin.xml" << std::endl;
+          }
+        }
+
         if (xml_kernel_info.first == "instance")
         {
-          std::string instanceName = xml_kernel_info.second.get<std::string>("<xmlattr>.name");
+          instanceName = xml_kernel_info.second.get<std::string>("<xmlattr>.name");
           for (auto& xml_remap : xml_kernel_info.second)
           {
             if (xml_remap.first != "addrRemap")
@@ -698,6 +711,11 @@ namespace xclhwemhal2 {
             }
             break;
           }
+        }
+
+        if (address_range != 0 && !kernelName.empty() && !instanceName.empty() ) {
+          std::string kernelInstanceStr = kernelName + ":" + instanceName;
+          mCURangeMap[kernelInstanceStr] = address_range;
         }
       }
     }
@@ -990,46 +1008,49 @@ namespace xclhwemhal2 {
         }
 
         if (args.m_emuData) {
+
+          extractEmuData(sim_path, binaryCounter, args);
+          
           //Assuming that we will have only one AIE Kernel, need to
           //update this logic when we have suport for multiple AIE Kernels
 
-          if (boost::filesystem::exists(binaryDirectory + "/emulation_data/libsdf/cfg/aie.sim.config.txt")) {
-            launcherArgs += " -emuData " + binaryDirectory + "/emulation_data/libsdf/cfg/aie.sim.config.txt";
-            launcherArgs += " -aie-sim-config " + binaryDirectory + "/emulation_data/libsdf/cfg/aie.sim.config.txt";
+          if (fs::exists(sim_path + "/emulation_data/libsdf/cfg/aie.sim.config.txt")) {
+            launcherArgs += " -emuData " + sim_path + "/emulation_data/libsdf/cfg/aie.sim.config.txt";
+            launcherArgs += " -aie-sim-config " + sim_path + "/emulation_data/libsdf/cfg/aie.sim.config.txt";
           }
-          else if (boost::filesystem::exists(binaryDirectory + "/emulation_data/libadf/cfg/aie.sim.config.txt")) {
-            launcherArgs += " -emuData " + binaryDirectory + "/emulation_data/libadf/cfg/aie.sim.config.txt";
-            launcherArgs += " -aie-sim-config " + binaryDirectory + "/emulation_data/libadf/cfg/aie.sim.config.txt";
+          else if (fs::exists(sim_path + "/emulation_data/libadf/cfg/aie.sim.config.txt")) {
+            launcherArgs += " -emuData " + sim_path + "/emulation_data/libadf/cfg/aie.sim.config.txt";
+            launcherArgs += " -aie-sim-config " + sim_path + "/emulation_data/libadf/cfg/aie.sim.config.txt";
           } else {
-            launcherArgs += " -emuData " + binaryDirectory + "/emulation_data/cfg/aie.sim.config.txt";
-            launcherArgs += " -aie-sim-config " + binaryDirectory + "/emulation_data/cfg/aie.sim.config.txt";
+            launcherArgs += " -emuData " + sim_path + "/emulation_data/cfg/aie.sim.config.txt";
+            launcherArgs += " -aie-sim-config " + sim_path + "/emulation_data/cfg/aie.sim.config.txt";
           }
 
-          if (boost::filesystem::exists(binaryDirectory + "/emulation_data/BOOT_bh.bin")) {
-            launcherArgs += " -boot-bh " + binaryDirectory + "/emulation_data/BOOT_bh.bin";
+          if (fs::exists(sim_path + "/emulation_data/BOOT_bh.bin")) {
+            launcherArgs += " -boot-bh " + sim_path + "/emulation_data/BOOT_bh.bin";
           }
 
-          if (boost::filesystem::exists(binaryDirectory + "/emulation_data/qemu_ospi.bin")) {
-            launcherArgs += " -ospi-image " + binaryDirectory + "/emulation_data/qemu_ospi.bin";
+          if (fs::exists(sim_path + "/emulation_data/qemu_ospi.bin")) {
+            launcherArgs += " -ospi-image " + sim_path + "/emulation_data/qemu_ospi.bin";
           }
 
-          if (boost::filesystem::exists(binaryDirectory + "/emulation_data/qemu_qspi_low.bin")) {
-            launcherArgs += " -qspi-low-image " + binaryDirectory + "/emulation_data/qemu_qspi_low.bin";
+          if (fs::exists(sim_path + "/emulation_data/qemu_qspi_low.bin")) {
+            launcherArgs += " -qspi-low-image " + sim_path + "/emulation_data/qemu_qspi_low.bin";
           }
 
-          if (boost::filesystem::exists(binaryDirectory + "/emulation_data/qemu_qspi_high.bin")) {
-            launcherArgs += " -qspi-high-image " + binaryDirectory + "/emulation_data/qemu_qspi_high.bin";
+          if (fs::exists(sim_path + "/emulation_data/qemu_qspi_high.bin")) {
+            launcherArgs += " -qspi-high-image " + sim_path + "/emulation_data/qemu_qspi_high.bin";
           }
 
-          if (boost::filesystem::exists(binaryDirectory + "/emulation_data/qemu_args.txt")) {
-            launcherArgs += " -qemu-args-file " + binaryDirectory + "/emulation_data/qemu_args.txt";
+          if (fs::exists(sim_path + "/emulation_data/qemu_args.txt")) {
+            launcherArgs += " -qemu-args-file " + sim_path + "/emulation_data/qemu_args.txt";
           }
 
-          if (boost::filesystem::exists(binaryDirectory + "/emulation_data/pmc_args.txt")) {
-            launcherArgs += " -pmc-args-file " + binaryDirectory + "/emulation_data/pmc_args.txt";
+          if (fs::exists(sim_path + "/emulation_data/pmc_args.txt")) {
+            launcherArgs += " -pmc-args-file " + sim_path + "/emulation_data/pmc_args.txt";
           }
-          else if (boost::filesystem::exists(binaryDirectory + "/emulation_data/pmu_args.txt")) {
-            launcherArgs += " -pmc-args-file " + binaryDirectory + "/emulation_data/pmu_args.txt";
+          else if (fs::exists(sim_path + "/emulation_data/pmu_args.txt")) {
+            launcherArgs += " -pmc-args-file " + sim_path + "/emulation_data/pmu_args.txt";
           }
           else {
             std::cout << "ERROR: [HW-EMU] Unable to find either PMU/PMC args which are required to launch the emulation." << std::endl;
@@ -2150,6 +2171,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     binaryCounter = 0;
     host_sptag_idx = -1;
     sock = nullptr;
+    mCURangeMap.clear();
 
     deviceName = "device"+std::to_string(deviceIndex);
     deviceDirectory = xclemulation::getRunDirectory() +"/" + std::to_string(getpid())+"/hw_em/"+deviceName;
@@ -2922,6 +2944,24 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
     }
     if (!ack)
       return -1;
+  } 
+  else if (sBO->fd >= 0) {
+    // CR-1112934 Copy data from exported fd to temp buffer using read API
+    unsigned char temp_buffer[size];
+    int bytes_read = read(sBO->fd, temp_buffer, size);
+
+    if (bytes_read) {
+      if (mLogStream.is_open())
+      {
+        mLogStream << __func__ << ", data read successfully from the src fd to local buffer." << std::endl;
+      }
+    }
+
+    // copy data from temp buffer to destination buffer
+    if (xclCopyBufferHost2Device(dBO->base, (void*)temp_buffer, size, dst_offset, dBO->topology) != size) {
+      std::cerr << "ERROR: copy buffer from host to device failed " << std::endl;
+      return -1;
+    }
   }
   else{
      std::cerr << "ERROR: Copy buffer from source to destination failed" << std::endl;
@@ -3762,7 +3802,19 @@ int HwEmShim::xclRegRW(bool rd, uint32_t cu_index, uint32_t offset, uint32_t *da
     logMessage(strMsg);
     return -EINVAL;
   }
-  if (offset >= mCuMapSize || (offset & (sizeof(uint32_t) - 1)) != 0) {
+
+  uint64_t cuAddRange = 64 * 1024;
+  for (auto cuInfo : mCURangeMap) {
+    std::string instName = cuInfo.first;
+    int cuIdx = static_cast<int>(cu_index);
+    int tmpCuIdx = xclIPName2Index(instName.c_str());
+
+    if (tmpCuIdx == cuIdx) {
+      cuAddRange = cuInfo.second;
+    }
+  }
+
+  if (offset >= cuAddRange || (offset & (sizeof(uint32_t) - 1)) != 0) {
     std::string strMsg = "ERROR: [HW-EMU 21] xclRegRW - invalid CU offset: " + std::to_string(offset);
     logMessage(strMsg);
     return -EINVAL;

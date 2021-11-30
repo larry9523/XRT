@@ -26,6 +26,7 @@ file(GLOB EM_SRC_FILES
   "${EM_SRC_DIR}/xrt_model/xrt/*.cpp"
   "${EM_SRC_DIR}/xrt_model/xrt/*.h"
   "${EM_SRC_DIR}/xrt_model/ringb/*.cpp"
+  "${COMMON_PCIE_SRC_DIR}/aie_stubs.cpp"
   "${COMMON_PCIE_SRC_DIR}/system_pcie.cpp"
   "${COMMON_PCIE_SRC_DIR}/device_pcie.cpp"
   )

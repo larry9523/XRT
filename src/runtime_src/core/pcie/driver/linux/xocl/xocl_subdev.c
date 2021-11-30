@@ -1455,6 +1455,8 @@ xocl_subdev_vsec_read32(xdev_handle_t xdev, int bar, u64 offset)
  * |rsvd                        |
  * +----+-----------------------|
  *  ... next entry ...
+ *
+ * TODO: refactor this code to use struct bit field and memcpy_fromio
  */
 int
 xocl_subdev_vsec(xdev_handle_t xdev, u32 type,
@@ -1655,7 +1657,7 @@ int xocl_subdev_create_vsec_devs(xdev_handle_t xdev)
 			if (ret)
 				return ret;
 			break;
-		case XOCL_VSEC_FLASH_TYPE_VERSAL:
+		case XOCL_VSEC_FLASH_TYPE_XFER_VERSAL:
 			xocl_xdev_dbg(xdev,
 			    "VSEC VERSAL FLASH RES Start 0x%llx, bar %d",
 			    offset, bar);
@@ -1680,6 +1682,49 @@ int xocl_subdev_create_vsec_devs(xdev_handle_t xdev)
 		}
 	}
 
+	ret = xocl_subdev_vsec(xdev, XOCL_VSEC_XGQ, &bar, &offset, NULL);
+	if (!ret) {
+		int bar_payload = 0; 
+		u64 offset_payload = 0;
+		struct xocl_subdev_info subdev_info = XOCL_DEVINFO_XGQ_VSEC;
+
+		ret = xocl_subdev_vsec(xdev, XOCL_VSEC_XGQ_PAYLOAD,
+			&bar_payload, &offset_payload, NULL);
+		if (ret) {
+			xocl_xdev_err(xdev, "Found XGQ, but missed XGQ_PAYLOAD");
+			goto done;
+		}
+
+		subdev_info.bar_idx[0] = bar;
+		subdev_info.bar_idx[1] = bar_payload;
+
+		/*
+		 * TODO: update the payload actual size from device later.
+		 * all end_points from VSEC should just have 0x1000(4k) size.
+		 * For now, just hardcode the size which will be reported by
+		 * the device.
+		 */
+		subdev_info.res[0].start = offset;
+		subdev_info.res[0].end = offset + 0xfff;
+		subdev_info.res[0].name = NODE_XGQ_SQ_BASE;
+
+		subdev_info.res[1].start = offset_payload;
+		subdev_info.res[1].end = offset_payload + 0x7ffffff;
+		subdev_info.res[1].name = NODE_XGQ_RING_BASE;
+
+		xocl_xdev_dbg(xdev,
+		    "VSEC XGQ Start 0x%llx, bar %d. XGQ Payload 0x%llx, bar %d",
+		    offset, bar, offset_payload, bar_payload);
+
+		ret = xocl_subdev_create(xdev, &subdev_info);
+		if (ret) {
+			xocl_xdev_err(xdev, "Create XGQ subdev failed. %d", ret);
+			goto done;
+		}
+
+		xocl_xdev_dbg(xdev, "VSEC XGQ created.");
+	}
+
 	ret = xocl_subdev_vsec(xdev, XOCL_VSEC_MAILBOX, &bar, &offset, NULL);
 	if (!ret) {
 		struct xocl_subdev_info subdev_info = XOCL_DEVINFO_MAILBOX_VSEC;
@@ -1694,6 +1739,7 @@ int xocl_subdev_create_vsec_devs(xdev_handle_t xdev)
 			return ret;
 	}
 
+done:
 	return 0;
 }
 
@@ -2045,4 +2091,46 @@ int xocl_wait_pci_status(struct pci_dev *pdev, u16 mask, u16 val, int timeout)
 		return -ETIME;
 
 	return 0;
+}
+
+/*
+ * A wait_for_completion() hang inside request_firmware() was shown with multiple cards
+ * test. It is due to race condition when multiple threads call request_firmware() at
+ * the same firmware file. Thus, adding a wrapper function to resolve the race.
+ * Loading firmware is not in a critical path, just use a global lock to protect.
+ */
+static DEFINE_MUTEX(firmware_lock);
+int xocl_request_firmware(struct device *dev, const char *fw_name, char **buf, size_t *len)
+{
+	const struct firmware *fw = NULL;
+	int ret;
+
+	*buf = NULL;
+	mutex_lock(&firmware_lock);
+	ret = request_firmware(&fw, fw_name, dev);
+	if (ret)
+		goto failed;
+
+	*buf = vmalloc(fw->size);
+	if (!*buf) {
+		ret = -ENOMEM;
+		goto failed;
+	}
+	memcpy(*buf, fw->data, fw->size);
+	if (len)
+		*len = fw->size;
+	release_firmware(fw);
+	mutex_unlock(&firmware_lock);
+
+	return 0;
+
+failed:
+	if (fw)
+		release_firmware(fw);
+	mutex_unlock(&firmware_lock);
+
+	vfree(*buf);
+	*buf = NULL;
+
+	return ret;
 }

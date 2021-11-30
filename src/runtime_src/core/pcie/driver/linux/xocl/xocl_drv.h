@@ -337,11 +337,13 @@ static inline void xocl_memcpy_toio(void *iomem, void *buf, u32 size)
 #define XOCL_VSEC_FLASH_CONTROLER   0x51
 #define XOCL_VSEC_PLATFORM_INFO     0x52
 #define XOCL_VSEC_MAILBOX           0x53
+#define XOCL_VSEC_XGQ               0x54
+#define XOCL_VSEC_XGQ_PAYLOAD       0x55
 
-#define XOCL_VSEC_FLASH_TYPE_SPI_IP	0x0
-#define XOCL_VSEC_FLASH_TYPE_SPI_REG	0x1
-#define XOCL_VSEC_FLASH_TYPE_QSPI	0x2
-#define XOCL_VSEC_FLASH_TYPE_VERSAL	0x3
+#define XOCL_VSEC_FLASH_TYPE_SPI_IP		0x0
+#define XOCL_VSEC_FLASH_TYPE_SPI_REG		0x1
+#define XOCL_VSEC_FLASH_TYPE_QSPI		0x2
+#define XOCL_VSEC_FLASH_TYPE_XFER_VERSAL	0x3
 
 #define XOCL_VSEC_PLAT_RECOVERY     0x0
 #define XOCL_VSEC_PLAT_1RP          0x1
@@ -915,6 +917,7 @@ enum {
 	XOCL_AF_PROP_DETECTED_STATUS,
 	XOCL_AF_PROP_DETECTED_LEVEL,
 	XOCL_AF_PROP_DETECTED_TIME,
+	XOCL_AF_PROP_DETECTED_LEVEL_NAME,
 };
 struct xocl_firewall_funcs {
 	struct xocl_subdev_funcs common_funcs;
@@ -1426,7 +1429,7 @@ static inline int xocl_clock_w_ops_level(xdev_handle_t xdev)
 	int __idx = xocl_clock_w_ops_level(xdev);			\
 	(CLOCK_W_CB(xdev, __idx, get_data) ?				\
 	CLOCK_W_OPS(xdev, __idx)->get_data(CLOCK_W_DEV(xdev, __idx),	\
-		kind) : 0); 						\
+		kind) : -ENODEV); 						\
 })
 
 /* Not a real SC version to indicate that SC image does not exist. */
@@ -1436,7 +1439,7 @@ struct xocl_icap_funcs {
 	void (*reset_axi_gate)(struct platform_device *pdev);
 	int (*reset_bitstream)(struct platform_device *pdev);
 	int (*download_bitstream_axlf)(struct platform_device *pdev,
-		const void __user *arg);
+		const void __user *arg, bool force_download);
 	int (*download_boot_firmware)(struct platform_device *pdev);
 	int (*download_rp)(struct platform_device *pdev, int level, int flag);
 	int (*post_download_rp)(struct platform_device *pdev);
@@ -1481,9 +1484,9 @@ enum {
 	(ICAP_CB(xdev, reset_bitstream) ?				\
 	ICAP_OPS(xdev)->reset_bitstream(ICAP_DEV(xdev)) :		\
 	-ENODEV)
-#define	xocl_icap_download_axlf(xdev, xclbin)				\
+#define	xocl_icap_download_axlf(xdev, xclbin, force_download)		\
 	(ICAP_CB(xdev, download_bitstream_axlf) ?			\
-	ICAP_OPS(xdev)->download_bitstream_axlf(ICAP_DEV(xdev), xclbin) : \
+	ICAP_OPS(xdev)->download_bitstream_axlf(ICAP_DEV(xdev), xclbin, force_download) : \
 	-ENODEV)
 #define	xocl_icap_download_boot_firmware(xdev)				\
 	(ICAP_CB(xdev, download_boot_firmware) ?			\
@@ -1845,6 +1848,20 @@ struct xocl_cu_funcs {
 #define CU_CB(xdev, idx, cb) \
 	(CU_DEV(xdev, idx) && CU_OPS(xdev, idx) && CU_OPS(xdev, idx)->cb)
 
+/* SCU callback */
+struct xocl_scu_funcs {
+	struct xocl_subdev_funcs common_funcs;
+	int (*submit)(struct platform_device *pdev, struct kds_command *xcmd);
+};
+#define SCU_DEV(xdev, idx) \
+	(SUBDEV_MULTI(xdev, XOCL_SUBDEV_SCU, idx) ?		\
+	SUBDEV_MULTI(xdev, XOCL_SUBDEV_SCU, idx)->pldev : NULL)
+#define SCU_OPS(xdev, idx) \
+	(SUBDEV_MULTI(xdev, XOCL_SUBDEV_SCU, idx) ?		\
+	(struct xocl_scu_funcs *)SUBDEV_MULTI(xdev, XOCL_SUBDEV_SCU, idx)->ops : NULL)
+#define SCU_CB(xdev, idx, cb) \
+	(SCU_DEV(xdev, idx) && SCU_OPS(xdev, idx) && SCU_OPS(xdev, idx)->cb)
+
 /* INTC call back */
 enum intc_mode {
 	ERT_INTR,
@@ -1974,6 +1991,7 @@ enum ert_gpio_cfg {
 	MB_WAKEUP,
 	MB_SLEEP,
 	MB_STATUS,
+	MB_WAKEUP_CLR,
 };
 
 struct xocl_config_gpio_funcs {
@@ -2089,6 +2107,7 @@ struct xocl_xfer_versal_funcs {
 	XFER_VERSAL_OPS(xdev)->download_axlf(XFER_VERSAL_DEV(xdev), xclbin) : -ENODEV)
 
 struct xocl_pmc_funcs {
+	struct xocl_subdev_funcs common_funcs;
 	int (*enable_reset)(struct platform_device *pdev);
 };
 #define	PMC_DEV(xdev)	\
@@ -2100,6 +2119,46 @@ struct xocl_pmc_funcs {
 #define	PMC_CB(xdev)	(PMC_DEV(xdev) && PMC_OPS(xdev))
 #define	xocl_pmc_enable_reset(xdev) \
 	(PMC_CB(xdev) ? PMC_OPS(xdev)->enable_reset(PMC_DEV(xdev)) : -ENODEV)
+
+struct xocl_xgq_funcs {
+	struct xocl_subdev_funcs common_funcs;
+	int (*xgq_load_xclbin)(struct platform_device *pdev,
+		const void __user *arg);
+	int (*xgq_check_firewall)(struct platform_device *pdev);
+	int (*xgq_freq_scaling)(struct platform_device *pdev,
+		unsigned short *freqs, int num_freqs, int verify);
+	int (*xgq_freq_scaling_by_topo)(struct platform_device *pdev,
+		struct clock_freq_topology *top, int verify);
+	uint64_t (*xgq_get_data)(struct platform_device *pdev,
+		enum data_kind kind);
+	int (*xgq_download_apu_firmware)(struct platform_device *pdev);
+};
+#define	XGQ_DEV(xdev)						\
+	(SUBDEV(xdev, XOCL_SUBDEV_XGQ) ? 			\
+	SUBDEV(xdev, XOCL_SUBDEV_XGQ)->pldev : NULL)
+#define	XGQ_OPS(xdev)						\
+	(SUBDEV(xdev, XOCL_SUBDEV_XGQ) ? 			\
+	(struct xocl_xgq_funcs *)SUBDEV(xdev, XOCL_SUBDEV_XGQ)->ops : NULL)
+#define	XGQ_CB(xdev, cb)					\
+	(XGQ_DEV(xdev) && XGQ_OPS(xdev) && XGQ_OPS(xdev)->cb)
+#define	xocl_xgq_download_axlf(xdev, xclbin)			\
+	(XGQ_CB(xdev, xgq_load_xclbin) ?			\
+	XGQ_OPS(xdev)->xgq_load_xclbin(XGQ_DEV(xdev), xclbin) : -ENODEV)
+#define	xocl_xgq_check_firewall(xdev)				\
+	(XGQ_CB(xdev, xgq_check_firewall) ?			\
+	XGQ_OPS(xdev)->xgq_check_firewall(XGQ_DEV(xdev)) : 0)
+#define	xocl_xgq_freq_scaling(xdev, freqs, num_freqs, verify) 	\
+	(XGQ_CB(xdev, xgq_freq_scaling) ?			\
+	XGQ_OPS(xdev)->xgq_freq_scaling(XGQ_DEV(xdev), freqs, num_freqs, verify) : -ENODEV)
+#define	xocl_xgq_freq_scaling_by_topo(xdev, topo, verify) 	\
+	(XGQ_CB(xdev, xgq_freq_scaling_by_topo) ?		\
+	XGQ_OPS(xdev)->xgq_freq_scaling_by_topo(XGQ_DEV(xdev), topo, verify) : -ENODEV)
+#define	xocl_xgq_clock_get_data(xdev, kind) 			\
+	(XGQ_CB(xdev, xgq_get_data) ?				\
+	XGQ_OPS(xdev)->xgq_get_data(XGQ_DEV(xdev), kind) : -ENODEV)
+#define	xocl_download_apu_firmware(xdev) 			\
+	(XGQ_CB(xdev, xgq_download_apu_firmware) ?		\
+	XGQ_OPS(xdev)->xgq_download_apu_firmware(XGQ_DEV(xdev)) : -ENODEV)
 
 /* subdev mbx messages */
 #define XOCL_MSG_SUBDEV_VER	1
@@ -2191,8 +2250,8 @@ struct xocl_m2m_funcs {
 	int (*copy_bo)(struct platform_device *pdev, uint64_t src_paddr,
 		uint64_t dst_paddr, uint32_t src_handle, uint32_t dst_handle,
 		uint32_t size);
-	int (*get_host_bank)(struct platform_device *pdev, u64 *addr,
-		u64 *size);
+	void (*get_host_bank)(struct platform_device *pdev, u64 *addr,
+		u64 *size, u8 *used);
 };
 #define	M2M_DEV(xdev)	\
 	(SUBDEV(xdev, XOCL_SUBDEV_M2M) ? \
@@ -2204,9 +2263,9 @@ struct xocl_m2m_funcs {
 #define	xocl_m2m_copy_bo(xdev, src_paddr, dst_paddr, src_handle, dst_handle, size) \
 	(M2M_CB(xdev) ? M2M_OPS(xdev)->copy_bo(M2M_DEV(xdev), src_paddr, dst_paddr, \
 	src_handle, dst_handle, size) : -ENODEV)
-#define xocl_m2m_host_bank(xdev, addr, size)				\
+#define xocl_m2m_host_bank(xdev, addr, size, used)				\
 	(M2M_CB(xdev) ? M2M_OPS(xdev)->get_host_bank(M2M_DEV(xdev),	\
-	addr, size) : -ENODEV)
+	addr, size, used) : -ENODEV)
 
 struct xocl_pcie_firewall_funcs {
 	struct xocl_subdev_funcs common_funcs;
@@ -2287,6 +2346,7 @@ void __iomem *xocl_devm_ioremap_res_byname(struct platform_device *pdev,
 int xocl_ioaddr_to_baroff(xdev_handle_t xdev_hdl, resource_size_t io_addr,
 	int *bar_idx, resource_size_t *bar_off);
 int xocl_wait_pci_status(struct pci_dev *pdev, u16 mask, u16 val, int timeout);
+int xocl_request_firmware(struct device *dev, const char *fw_name, char **buf, size_t *len);
 
 static inline void xocl_lock_xdev(xdev_handle_t xdev)
 {
@@ -2325,6 +2385,16 @@ static inline int xocl_kds_add_cu(xdev_handle_t xdev, struct xrt_cu *xcu)
 static inline int xocl_kds_del_cu(xdev_handle_t xdev, struct xrt_cu *xcu)
 {
 	return kds_del_cu(&XDEV(xdev)->kds, xcu);
+}
+
+static inline int xocl_kds_add_scu(xdev_handle_t xdev, struct xrt_cu *xcu)
+{
+	return kds_add_scu(&XDEV(xdev)->kds, xcu);
+}
+
+static inline int xocl_kds_del_scu(xdev_handle_t xdev, struct xrt_cu *xcu)
+{
+	return kds_del_scu(&XDEV(xdev)->kds, xcu);
 }
 
 static inline int xocl_kds_init_ert(xdev_handle_t xdev, struct kds_ert *ert)
@@ -2544,6 +2614,9 @@ void xocl_fini_kds(void);
 int __init xocl_init_cu(void);
 void xocl_fini_cu(void);
 
+int __init xocl_init_scu(void);
+void xocl_fini_scu(void);
+
 int __init xocl_init_addr_translator(void);
 void xocl_fini_addr_translator(void);
 
@@ -2586,4 +2659,6 @@ void xocl_fini_command_queue(void);
 int __init xocl_init_config_gpio(void);
 void xocl_fini_config_gpio(void);
 
+int __init xocl_init_xgq(void);
+void xocl_fini_xgq(void);
 #endif

@@ -39,6 +39,8 @@ void  main_(int argc, char** argv,
             const std::string & _description,
             const SubCmdsCollection &_subCmds) 
 {
+  bool isUserDomain = boost::iequals(_executable, "xbutil"); 
+
   // Global options
   bool bVerbose = false;
   bool bTrace = false;
@@ -47,6 +49,7 @@ void  main_(int argc, char** argv,
   bool bShowHidden = false;
   bool bForce = false;
   bool bVersion = false;
+  std::string sDevice;
 
   // Build Options
   po::options_description globalSubCmdOptions("Global Command Options");
@@ -66,6 +69,7 @@ void  main_(int argc, char** argv,
   // Hidden Options
   po::options_description hiddenOptions("Hidden Options");
   hiddenOptions.add_options()
+    ("device,d",    boost::program_options::value<decltype(sDevice)>(&sDevice)->default_value("")->implicit_value("default"), "If specified with no BDF value and there is only 1 device, that device will be automatically selected.\n")
     ("trace",       boost::program_options::bool_switch(&bTrace), "Enables code flow tracing")
     ("show-hidden", boost::program_options::bool_switch(&bShowHidden), "Shows hidden options and commands")
     ("subCmd",      po::value<std::string>(), "Command to execute")
@@ -144,6 +148,52 @@ void  main_(int argc, char** argv,
 
   if (bHelp == true) 
     opts.push_back("--help");
+
+  #ifdef ENABLE_DEFAULT_ONE_DEVICE_OPTION
+  // If the user has NOT specified a device AND the command to be executed
+  // is not the examine command, then automatically add the device.
+  // Note: "examine" produces different reports depending if the user has
+  //       specified the --device option or not.
+  if ( sDevice.empty() &&
+       (subCommand->getName() != "examine")) {
+    sDevice = "default";
+  }
+  #endif
+
+
+  // Was default device requested?
+  if (boost::iequals(sDevice, "default")) {
+    sDevice.clear();
+    boost::property_tree::ptree available_devices = XBU::get_available_devices(isUserDomain);
+
+    // DRC: Are there any devices
+    if (available_devices.empty()) 
+      throw std::runtime_error("No devices found.");
+
+    // DRC: Are there multiple devices, if so then no default device can be found.
+    if (available_devices.size() > 1) {
+      std::cerr << "\nERROR: Multiple devices found. Please specify a single device using the --device option\n\n";
+      std::cerr << "List of available devices:" << std::endl;
+      for (auto &kd : available_devices) {
+        boost::property_tree::ptree& dev = kd.second;
+        std::cerr << boost::format("  [%s] : %s\n") % dev.get<std::string>("bdf") % dev.get<std::string>("vbnv");
+      }
+
+      std::cout << std::endl;
+      throw xrt_core::error(std::errc::operation_canceled);
+    }
+
+    // We have only 1 item in the array, get it
+    for (const auto &kd : available_devices) 
+      sDevice = kd.second.get<std::string>("bdf"); // Exit after the first item
+
+  }
+
+  // If there is a device value, pass it to the sub commands.
+  if (!sDevice.empty()) {
+    opts.push_back("-d");
+    opts.push_back(sDevice);
+  }
 
   subCommand->setGlobalOptions(globalSubCmdOptions);
 
