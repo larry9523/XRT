@@ -14,6 +14,62 @@
 #include "kds_client.h"
 #include "xrt_cu.h"
 
+inline void xrt_cu_circ_produce(struct xrt_cu *xcu, u32 stage, uintptr_t cmd)
+{
+	unsigned long head = xcu->crc_buf.head;
+	unsigned long tail = xcu->crc_buf.tail;
+	struct xrt_cu_log *item;
+
+	if (!xcu->debug)
+		return;
+
+	/* Will overwrite oldest data if buffer is full */
+	item = (struct xrt_cu_log *)&xcu->crc_buf.buf[head];
+	item->stage = stage;
+	item->cmd_id = cmd;
+	item->ts = ktime_to_ns(ktime_get());
+
+	if (CIRC_SPACE(head, tail, CIRC_BUF_SIZE) < sizeof(struct xrt_cu_log)) {
+		tail += sizeof(struct xrt_cu_log);
+		if (tail >= CIRC_BUF_SIZE)
+			tail = 0;
+	}
+
+	head += sizeof(struct xrt_cu_log);
+	if (head >= CIRC_BUF_SIZE)
+		head = 0;
+
+	xcu->crc_buf.head = head;
+	xcu->crc_buf.tail = tail;
+}
+
+ssize_t xrt_cu_circ_consume_all(struct xrt_cu *xcu, char *buf, size_t size)
+{
+	unsigned long head = xcu->crc_buf.head;
+	unsigned long tail = xcu->crc_buf.tail;
+	size_t cnt = CIRC_CNT(head, tail, CIRC_BUF_SIZE);
+	/* return min(count to the end of buffer, CIRC_CNT()) */
+	size_t cnt_to_end = CIRC_CNT_TO_END(head, tail, CIRC_BUF_SIZE);
+	size_t nread = 0;
+
+	if (size < cnt)
+		nread = size;
+	else
+		nread = cnt;
+
+	if (nread <= cnt_to_end) {
+		memcpy(buf, xcu->crc_buf.buf + tail, nread);
+		xcu->crc_buf.tail += nread;
+	} else {
+		/* Needs two times of copy */
+		memcpy(buf, xcu->crc_buf.buf + tail, cnt_to_end);
+		memcpy(buf + cnt_to_end, xcu->crc_buf.buf, nread - cnt_to_end);
+		xcu->crc_buf.tail = nread - cnt_to_end;
+	}
+
+	return nread;
+}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
 static void cu_timer(unsigned long data)
 {
@@ -99,6 +155,7 @@ static inline void process_cq(struct xrt_cu *xcu)
 	while (xcu->num_cq) {
 		xcmd = list_first_entry(&xcu->cq, struct kds_command, list);
 		set_xcmd_timestamp(xcmd, xcmd->status);
+		xrt_cu_circ_produce(xcu, CU_LOG_STAGE_CQ, (uintptr_t)xcmd);
 		xcmd->cb.notify_host(xcmd, xcmd->status);
 		list_del(&xcmd->list);
 		xcmd->cb.free(xcmd);
@@ -155,6 +212,7 @@ static inline void __process_sq(struct xrt_cu *xcu)
 			/* Done command has priority */
 			xcmd->status = KDS_COMPLETED;
 			--xcu->done_cnt;
+			xrt_cu_circ_produce(xcu, CU_LOG_STAGE_SQ, (uintptr_t)xcmd);
 		} else if (unlikely(ev_client)) {
 			/* Client event happens rarely */
 			if (xcmd->client != ev_client)
@@ -241,6 +299,7 @@ static inline int process_rq(struct xrt_cu *xcu)
 	xrt_cu_config(xcu, (u32 *)xcmd->info, xcmd->isize, xcmd->payload_type);
 	xrt_cu_start(xcu);
 	set_xcmd_timestamp(xcmd, KDS_RUNNING);
+	xrt_cu_circ_produce(xcu, CU_LOG_STAGE_RQ, (uintptr_t)xcmd);
 
 	dst_q = &xcu->sq;
 	dst_len = &xcu->num_sq;
@@ -381,90 +440,35 @@ done:
 	complete(&xcu->comp);
 }
 
-int xrt_cu_polling_thread(void *data)
+int xrt_cu_process_queues(struct xrt_cu *xcu)
 {
-	struct xrt_cu *xcu = (struct xrt_cu *)data;
-	int ret = 0;
-	int loop_cnt = 0;
+	/* Move pending commands to running queue */
+	process_pq(xcu);
 
-	xcu_info(xcu, "CU[%d] start", xcu->info.cu_idx);
-	mod_timer(&xcu->timer, jiffies + CU_TIMER);
-	while (!xcu->stop) {
-		/* Make sure to submit as many commands as possible.
-		 * This is why we call continue here. This is important to make
-		 * CU busy, especially CU has hardware queue.
-		 */
-		if (process_rq(xcu))
-			continue;
-		/* process completed queue before submitted queue, for
-		 * two reasons:
-		 * - The last submitted command may be still running
-		 * - while handling completed queue, running command might done
-		 * - process_sq will check CU status, which is thru slow bus
-		 */
-		process_cq(xcu);
-		process_sq(xcu);
+	/* Make sure to submit as many commands as possible */
+	while (process_rq(xcu));
 
-		/* process rare commands with very high priority. For example
-		 * abort command.
-		 * If this kind of command don't not exist, this would be a very
-		 * low overhead and should not impact performance.
-		 * But if this kind of command exist, this would be a slow path.
-		 */
-		process_hpq(xcu);
+	/* process completed queue before submitted queue, for
+	 * two reasons:
+	 * - The last submitted command may be still running
+	 * - while handling completed queue, running command might done
+	 * - process_sq will check CU status, which is thru slow bus
+	 */
+	process_cq(xcu);
+	process_sq(xcu);
 
-		/* The idea is when CU's credit is less than busy threshold,
-		 * sleep a while to wait for CU completion.
-		 * The interval is configurable and it should be determin by
-		 * kernel execution.
-		 * If threshold is -1, then this is a busy loop to check CU
-		 * status.
-		 */
-		if (xrt_cu_peek_credit(xcu) <= xcu->busy_threshold)
-			usleep_range(xcu->interval_min, xcu->interval_max);
+	/* process rare commands with very high priority. For example
+	 * abort command.
+	 * If this kind of command don't not exist, this would be a very
+	 * low overhead and should not impact performance.
+	 * But if this kind of command exist, this would be a slow path.
+	 */
+	process_hpq(xcu);
 
-		/* TODO: Without schedule(), we see unexpected stuck when a host
-		 * application is killed or randomly call exit. This can be
-		 * reproduced with a slow kernel, which take more than 1 second
-		 * to execute one command. Phenomenon observed so far:
-		 * 1. Let host code random exit when commands are still running.
-		 * 2. strace shows exit_group systemcall on the screen
-		 * 3. stuck for a while
-		 * 4. dmesg shows drm_release is called
-		 *
-		 * Need more efforts to re-compile linux kernel to debug.
-		 * Will check this later.
-		 */
-		/* Avoid large num_rq leads to more 120 sec blocking */
-		if (++loop_cnt == 8) {
-			loop_cnt = 0;
-			schedule();
-		}
+	if (xcu->num_rq || xcu->num_sq || xcu->num_cq)
+		return XCU_BUSY;
 
-		/* Continue until run queue empty */
-		if (xcu->num_rq)
-			continue;
-
-		if (!xcu->num_sq && !xcu->num_cq) {
-			loop_cnt = 0;
-			xcu->sleep_cnt++;
-			/* Record CU status before sleep */
-			if (!xcu->num_pq)
-				xrt_cu_check_force(xcu);
-			if (down_interruptible(&xcu->sem))
-				ret = -ERESTARTSYS;
-		}
-
-		process_pq(xcu);
-	}
-	del_timer_sync(&xcu->timer);
-
-	if (xcu->bad_state)
-		ret = -EBUSY;
-
-	xcu_info(xcu, "CU[%d] thread end, bad state %d\n",
-		 xcu->info.cu_idx, xcu->bad_state);
-	return ret;
+	return XCU_IDLE;
 }
 
 int xrt_cu_intr_thread(void *data)
@@ -630,33 +634,39 @@ done:
 
 int xrt_cu_cfg_update(struct xrt_cu *xcu, int intr)
 {
-	int (* cu_thread)(void *data);
 	int err = 0;
 
 	/* Check if CU support interrupt in hardware */
 	if (!xcu->info.intr_enable)
 		return -ENOSYS;
 
-	if (intr)
-		cu_thread = xrt_cu_intr_thread;
-	else
-		cu_thread = xrt_cu_polling_thread;
+	if (xrt_cu_get_protocol(xcu) == CTRL_NONE) {
+		xcu_err(xcu, "Interrupt enabled value should be false for ap_ctrl_none cu\n");
+		return -ENOSYS;
+	}
 
-	/* Stop old thread */
-	xcu->stop = 1;
-	up(&xcu->sem_cu);
-	up(&xcu->sem);
-	if (!IS_ERR(xcu->thread))
-		(void) kthread_stop(xcu->thread);
+	if (xcu->thread) {
+		/* Stop old thread */
+		xcu->stop = 1;
+		up(&xcu->sem_cu);
+		up(&xcu->sem);
+		if (!IS_ERR(xcu->thread))
+			(void) kthread_stop(xcu->thread);
+		xcu->thread = NULL;
+	}
+
+	if (!intr)
+		return 0;
 
 	/* launch new thread */
 	xcu->stop = 0;
 	sema_init(&xcu->sem, 0);
 	sema_init(&xcu->sem_cu, 0);
 	atomic_set(&xcu->tick, 0);
-	xcu->thread = kthread_run(cu_thread, xcu, xcu->info.iname);
+	xcu->thread = kthread_run(xrt_cu_intr_thread, xcu, xcu->info.iname);
 	if (IS_ERR(xcu->thread)) {
 		err = IS_ERR(xcu->thread);
+		xcu->thread = NULL;
 		xcu_err(xcu, "Create CU thread failed, err %d\n", err);
 	}
 
@@ -787,6 +797,10 @@ int xrt_cu_init(struct xrt_cu *xcu)
 	spin_lock_init(&xcu->hpq_lock);
 	init_completion(&xcu->comp);
 
+	xcu->crc_buf.head = 0;
+	xcu->crc_buf.tail = 0;
+	xcu->crc_buf.buf = xcu->log_buf;
+
 	memset(&xcu->cu_stat, 0, sizeof(struct per_custat));
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
 	setup_timer(&xcu->timer, cu_timer, (unsigned long)xcu);
@@ -794,12 +808,7 @@ int xrt_cu_init(struct xrt_cu *xcu)
 	timer_setup(&xcu->timer, cu_timer, 0);
 #endif
 	atomic_set(&xcu->tick, 0);
-	/* A CU maybe doesn't support interrupt, polling */
-	xcu->thread = kthread_run(xrt_cu_polling_thread, xcu, name);
-	if (IS_ERR(xcu->thread)) {
-		err = IS_ERR(xcu->thread);
-		xcu_err(xcu, "Create CU thread failed, err %d\n", err);
-	}
+	xcu->thread = NULL;
 
 	return err;
 }
@@ -813,7 +822,7 @@ void xrt_cu_fini(struct xrt_cu *xcu)
 	xcu->stop = 1;
 	up(&xcu->sem_cu);
 	up(&xcu->sem);
-	if (!IS_ERR(xcu->thread))
+	if (xcu->thread && !IS_ERR(xcu->thread))
 		(void) kthread_stop(xcu->thread);
 
 	return;

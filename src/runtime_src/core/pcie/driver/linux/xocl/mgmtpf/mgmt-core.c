@@ -504,6 +504,13 @@ static void check_pcie_link_toggle(struct xclmgmt_dev *lro, int clear)
 }
 
 
+static int xocl_check_firewall(struct xclmgmt_dev *lro, int *level)
+{
+	return (AF_CB(lro, check_firewall)) ?
+		xocl_af_check(lro, level) :
+		xocl_xgq_check_firewall(lro);
+}
+
 static int health_check_cb(void *data)
 {
 	struct xclmgmt_dev *lro = (struct xclmgmt_dev *)data;
@@ -538,7 +545,7 @@ static int health_check_cb(void *data)
 	 * it possibly still has chance to read clock and
 	 * sensor information etc.
 	 */
-	tripped = xocl_af_check(lro, NULL);
+	tripped = xocl_check_firewall(lro, NULL);
 
 reset:
 	if (latched || tripped) {
@@ -622,9 +629,21 @@ static int xclmgmt_icap_get_data_impl(struct xclmgmt_dev *lro, void *buf)
 static void xclmgmt_clock_get_data_impl(struct xclmgmt_dev *lro, void *buf)
 {
 	struct xcl_pr_region *hwicap = NULL;
+	int ret = 0;
 
 	hwicap = (struct xcl_pr_region *)buf;
-	hwicap->freq_0 = xocl_clock_get_data(lro, CLOCK_FREQ_0);
+	ret = xocl_clock_get_data(lro, CLOCK_FREQ_0);
+	if (ret == -ENODEV) {
+		hwicap->freq_0 = xocl_xgq_clock_get_data(lro, CLOCK_FREQ_0);
+		hwicap->freq_1 = xocl_xgq_clock_get_data(lro, CLOCK_FREQ_1);
+		hwicap->freq_2 = xocl_xgq_clock_get_data(lro, CLOCK_FREQ_2);
+		hwicap->freq_cntr_0 = xocl_xgq_clock_get_data(lro, FREQ_COUNTER_0);
+		hwicap->freq_cntr_1 = xocl_xgq_clock_get_data(lro, FREQ_COUNTER_1);
+		hwicap->freq_cntr_2 = xocl_xgq_clock_get_data(lro, FREQ_COUNTER_2);
+		return;
+	}
+
+	hwicap->freq_0 = ret;
 	hwicap->freq_1 = xocl_clock_get_data(lro, CLOCK_FREQ_1);
 	hwicap->freq_2 = xocl_clock_get_data(lro, CLOCK_FREQ_2);
 	hwicap->freq_cntr_0 = xocl_clock_get_data(lro, FREQ_COUNTER_0);
@@ -888,6 +907,7 @@ void xclmgmt_mailbox_srv(void *arg, void *data, size_t len,
 	case XCL_MAILBOX_REQ_LOAD_XCLBIN: {
 		uint64_t xclbin_len = 0;
 		struct axlf *xclbin = (struct axlf *)req->data;
+		bool fetch = (atomic_read(&lro->config_xclbin_change) == 1);
 
 		if (payload_len < sizeof(*xclbin)) {
 			mgmt_err(lro, "peer request dropped, wrong size\n");
@@ -898,7 +918,20 @@ void xclmgmt_mailbox_srv(void *arg, void *data, size_t len,
 			mgmt_err(lro, "peer request dropped, wrong size\n");
 			break;
 		}
-		ret = xocl_xclbin_download(lro, xclbin);
+
+		/*
+		 * User may transfer a fake xclbin which doesn't have bitstream
+		 * In this case, 'config_xclbin_change' has to be set, and we
+		 * will go to fetch the real xclbin.
+		 * Note:
+		 * 1. it is up to the admin to put authentificated xclbins at
+		 *    predefined location
+		 */
+		if (fetch)
+			ret = xclmgmt_xclbin_fetch_and_download(lro, xclbin);
+		else
+			ret = xocl_xclbin_download(lro, xclbin);
+
 		(void) xocl_peer_response(lro, req->req, msgid, &ret,
 			sizeof(ret));
 		break;
@@ -911,10 +944,17 @@ void xclmgmt_mailbox_srv(void *arg, void *data, size_t len,
 			break;
 		}
 
+		/*
+		 * On versal, there is no icap mgmt;
+		 * On VMR system, there is no icap mgmt and clock subdev;
+		 */
 		ret = xocl_icap_ocl_update_clock_freq_topology(lro, clk);
 		if (ret == -ENODEV)
 			ret = xocl_clock_freq_scaling_by_request(lro,
-			    clk->ocl_target_freq, ARRAY_SIZE(clk->ocl_target_freq), 1);
+				clk->ocl_target_freq, ARRAY_SIZE(clk->ocl_target_freq), 1);
+		if (ret == -ENODEV)
+			ret = xocl_xgq_freq_scaling(lro,
+				clk->ocl_target_freq, ARRAY_SIZE(clk->ocl_target_freq), 1);
 
 		(void) xocl_peer_response(lro, req->req, msgid, &ret,
 			sizeof(ret));
@@ -1321,6 +1361,7 @@ static int xclmgmt_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	if ((dev_info->flags & XOCL_DSAFLAG_MFG) != 0) {
 		(void) xocl_subdev_create_all(lro);
+		xocl_drvinst_set_offline(lro, false);
 		return 0;
 	}
 
@@ -1341,7 +1382,8 @@ static int xclmgmt_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	(void) xocl_subdev_create_by_level(lro, XOCL_SUBDEV_LEVEL_BLD);
 	(void) xocl_subdev_create_vsec_devs(lro);
 
-	xocl_pmc_enable_reset(lro);
+	(void) xocl_pmc_enable_reset(lro);
+	(void) xocl_download_apu_firmware(lro);
 
 	/*
 	 * For u30 whose reset relies on SC, and the cmc is running on ps, we
@@ -1505,6 +1547,7 @@ static int (*drv_reg_funcs[])(void) __initdata = {
 	xocl_init_pmc,
 	xocl_init_icap_controller,
 	xocl_init_pcie_firewall,
+	xocl_init_xgq,
 };
 
 static void (*drv_unreg_funcs[])(void) = {
@@ -1539,6 +1582,7 @@ static void (*drv_unreg_funcs[])(void) = {
 	xocl_fini_pmc,
 	xocl_fini_icap_controller,
 	xocl_fini_pcie_firewall,
+	xocl_fini_xgq,
 };
 
 static int __init xclmgmt_init(void)

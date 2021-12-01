@@ -273,7 +273,7 @@ zocl_open_ucu(struct drm_zocl_dev *zdev, struct kds_client *client,
 	      struct drm_zocl_ctx *args)
 {
 	struct kds_sched  *kds;
-	int cu_idx = args->cu_index;
+	u32 cu_idx = args->cu_index;
 
 	kds = &zdev->kds;
 	return kds_open_ucu(kds, client, cu_idx);
@@ -414,7 +414,7 @@ int zocl_command_ioctl(struct drm_zocl_dev *zdev, void *data,
 		start_krnl_ecmd2xcmd(to_start_krnl_pkg(ecmd), xcmd);
 		break;
 	case ERT_EXEC_WRITE:
-		DRM_WARN("ERT_EXEC_WRITE is obsoleted, use ERT_START_KEY_VAL\n");
+		DRM_WARN_ONCE("ERT_EXEC_WRITE is obsoleted, use ERT_START_KEY_VAL\n");
 #if KERNEL_VERSION(5, 4, 0) > LINUX_VERSION_CODE
 		__attribute__ ((fallthrough));
 #else
@@ -634,6 +634,11 @@ int zocl_kds_update(struct drm_zocl_dev *zdev, struct drm_zocl_kds *cfg)
 	else
 		zdev->kds.cu_intr = 1;
 
-
 	return kds_cfg_update(&zdev->kds);
+}
+
+int zocl_kds_reset(struct drm_zocl_dev *zdev)
+{
+	kds_reset(&zdev->kds);
+	return 0;
 }

@@ -20,6 +20,7 @@
 #define XCL_DRIVER_DLL_EXPORT  // exporting xrt_ip.h
 #define XRT_CORE_COMMON_SOURCE // in same dll as core_common
 #include "core/include/experimental/xrt_ip.h"
+#include "core/common/api/native_profile.h"
 
 #include "core/common/device.h"
 #include "core/common/config_reader.h"
@@ -252,7 +253,7 @@ public:
     if (has_reg_read_write())
       device->reg_read(idx, offset, &value);
     else
-      device->xread(ipctx.get_address() + offset, &value, 4);
+      device->xread(XCL_ADDR_KERNEL_CTRL, ipctx.get_address() + offset, &value, 4);
     return value;
   }
 
@@ -263,7 +264,7 @@ public:
     if (has_reg_read_write())
       device->reg_write(idx, offset, data);
     else
-      device->xwrite(ipctx.get_address() + offset, &data, 4);
+      device->xwrite(XCL_ADDR_KERNEL_CTRL, ipctx.get_address() + offset, &data, 4);
   }
 
   std::shared_ptr<ip::interrupt_impl>
@@ -303,14 +304,18 @@ void
 ip::
 write_register(uint32_t offset, uint32_t data)
 {
-  handle->write_register(offset, data);
+  xdp::native::profiling_wrapper("xrt::ip::write_register",[this, offset, data]{
+    handle->write_register(offset, data);
+  }) ;
 }
 
 uint32_t
 ip::
 read_register(uint32_t offset) const
 {
-  return handle->read_register(offset);
+  return xdp::native::profiling_wrapper("xrt::ip::read_register", [this, offset] {
+    return handle->read_register(offset);
+  }) ;
 }
 
 xrt::ip::interrupt

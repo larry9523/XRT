@@ -302,6 +302,9 @@ Section::readJSONSectionImage(const boost::property_tree::ptree& _ptSection)
   std::ostringstream buffer;
   marshalFromJSON(_ptSection, buffer);
 
+  // Release the buffer memory and reset the size to zero
+  purgeBuffers();
+
   // -- Read contents into memory buffer --
   m_bufferSize = (unsigned int) buffer.tellp();
 
@@ -652,7 +655,7 @@ Section::getSubPayload(char* _pDataSection,
 }
 
 void
-Section::readSubPayload(std::fstream& _istream, 
+Section::readSubPayload(std::istream& _istream, 
                         const std::string & _sSubSection, 
                         enum Section::FormatType _eFormatType)
 {
@@ -686,7 +689,7 @@ Section::readSubPayload(std::fstream& _istream,
 void 
 Section::readSubPayload(const char* _pOrigDataSection, 
                         unsigned int _origSectionSize,  
-                        std::fstream& _istream, 
+                        std::istream& _istream, 
                         const std::string & _sSubSection, 
                         enum Section::FormatType _eFormatType, 
                         std::ostringstream &_buffer) const

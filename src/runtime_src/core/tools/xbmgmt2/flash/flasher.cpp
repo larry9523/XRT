@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2020 Xilinx, Inc
+ * Copyright (C) 2019-2021 Xilinx, Inc
  *
  * This is a wrapper class that does the prep work required to program a flash
  * device. Flasher will create a specific flash object determined by the program
@@ -59,6 +59,9 @@ Flasher::E_FlasherType Flasher::typeStr_to_E_FlasherType(const std::string& type
     else if (typeStr.compare("qspi_versal") == 0) {
         type = E_FlasherType::QSPIVERSAL;
     }
+    else if (typeStr.compare("ospi_xgq") == 0) {
+        type = E_FlasherType::OSPI_XGQ;
+    }
     return type;
 }
 
@@ -116,7 +119,15 @@ int Flasher::upgradeFirmware(const std::string& flasherType,
         {
             retVal = xspi.xclUpgradeFirmware2(*primary, *secondary);
         }
-        break;
+
+        // program icap controller for webstar flow. Required only for U.2
+        try {
+            uint32_t enable = 1;
+            xrt_core::device_update<xrt_core::query::ic_enable>(m_device.get(), enable);
+            std::cout << "Successfully enabled icap controller ip for wbstar flow" << std::endl;
+        } catch (...) {}
+
+	break;
     }
     case BPI:
     {
@@ -177,6 +188,17 @@ int Flasher::upgradeFirmware(const std::string& flasherType,
         {
             retVal = xqspi_versal.xclUpgradeFirmware(*primary);
         }
+        break;
+    }
+    case OSPI_XGQ:
+    {
+        XGQ_Flasher xgq_flasher(m_device);
+        if (primary == nullptr)
+            std::cout << "ERROR: OSPI XGQ mode does not support reverting to MFG." << std::endl;
+        else if(secondary != nullptr)
+            std::cout << "ERROR: OSPI XGQ mode does not support two mcs files." << std::endl;
+        else
+            retVal = xgq_flasher.xclUpgradeFirmware(*primary);
         break;
     }
     default:

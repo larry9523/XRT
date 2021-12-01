@@ -487,7 +487,6 @@ static int load_firmware_from_disk(struct platform_device *pdev, char **fw_buf,
 	u64 timestamp = rom->header.TimeSinceEpoch;
 	int err = 0;
 	char fw_name[256];
-	const struct firmware *fw;
 	char vendor_fw_dir[16];
 
 	if (funcid != 0) {
@@ -502,7 +501,7 @@ static int load_firmware_from_disk(struct platform_device *pdev, char **fw_buf,
 	}
 
 	err = get_vendor_firmware_dir(vendor, vendor_fw_dir, sizeof(vendor_fw_dir));
-    // Failure returns -E2BIG
+	// Failure returns -E2BIG
 	if (err < 0)
 		return err;
 
@@ -517,26 +516,15 @@ static int load_firmware_from_disk(struct platform_device *pdev, char **fw_buf,
 	}
 
 	xocl_dbg(&pdev->dev, "try loading fw: %s", fw_name);
-	err = request_firmware(&fw, fw_name, &pcidev->dev);
+	err = xocl_request_firmware(&pcidev->dev, fw_name, fw_buf, fw_len);
 	if (err && !is_multi_rp(rom)) {
 		snprintf(fw_name, sizeof(fw_name),
 			"%s/%04x-%04x-%04x-%016llx.%s",
 			vendor_fw_dir, vendor, (deviceid + 1), subdevice, timestamp, suffix);
 		xocl_dbg(&pdev->dev, "try loading fw: %s", fw_name);
-		err = request_firmware(&fw, fw_name, &pcidev->dev);
-	}
-	if (err)
-		return err;
-
-	*fw_buf = vmalloc(fw->size);
-	if (*fw_buf != NULL) {
-		memcpy(*fw_buf, fw->data, fw->size);
-		*fw_len = fw->size;
-	} else {
-		err = -ENOMEM;
+		err = xocl_request_firmware(&pcidev->dev, fw_name, fw_buf, fw_len);
 	}
 
-	release_firmware(fw);
 	return err;
 }
 
@@ -726,7 +714,10 @@ static int get_header_from_iomem(struct feature_rom *rom)
 	if (val != MAGIC_NUM) {
 		vendor = XOCL_PL_TO_PCI_DEV(pdev)->vendor;
 		did = XOCL_PL_TO_PCI_DEV(pdev)->device;
-		if (vendor == 0x1d0f && (did == 0x1042 || did == 0xf010)) { // MAGIC, we should define elsewhere
+		if (vendor == 0x1d0f && (did == 0x1042 || did == 0xf010 || did == 0xf011)) { // MAGIC, we should define elsewhere
+#define AWS_F1_XDMA_SHELL_NAME "xilinx_aws-vu9p-f1_shell-v04261818_201920_3"
+#define AWS_F1_NODMA_SHELL_NAME "xilinx_aws-vu9p-f1_nodma-shell-v09142114_202120_1"
+#define AWS_F1_DYNAMIC_SHELL_NAME "xilinx_aws-vu9p-f1_dynamic-shell"
 			xocl_dbg(&pdev->dev,
 				"Found AWS VU9P Device without featureROM");
 			/*
@@ -741,8 +732,15 @@ static int get_header_from_iomem(struct feature_rom *rom)
 			strncpy(rom->header.FPGAPartName, "AWS VU9P", 8);
 			memset(rom->header.VBNVName, 0,
 				sizeof(rom->header.VBNVName));
-			strncpy(rom->header.VBNVName,
-				"xilinx_aws-vu9p-f1_shell-v04261818_201920_2", 43);
+			if (did == 0xf010)
+				strncpy(rom->header.VBNVName,
+					AWS_F1_XDMA_SHELL_NAME, strlen(AWS_F1_XDMA_SHELL_NAME));
+			else if (did == 0xf011)
+				strncpy(rom->header.VBNVName,
+					AWS_F1_NODMA_SHELL_NAME, strlen(AWS_F1_NODMA_SHELL_NAME));
+			else
+				strncpy(rom->header.VBNVName,
+					AWS_F1_DYNAMIC_SHELL_NAME, strlen(AWS_F1_DYNAMIC_SHELL_NAME));
 			rom->header.MajorVersion = 4;
 			rom->header.MinorVersion = 0;
 			rom->header.VivadoBuildID = 0xabcd;

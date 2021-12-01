@@ -782,7 +782,7 @@ static struct xocl_subdev_map subdev_map[] = {
 		.flags = 0,
 		.build_priv_data = NULL,
 		.devinfo_cb = NULL,
-		.max_level = XOCL_SUBDEV_LEVEL_PRP,
+		.max_level = XOCL_SUBDEV_LEVEL_URP,
 	},
 	{
 		.id = XOCL_SUBDEV_P2P,
@@ -801,7 +801,20 @@ static struct xocl_subdev_map subdev_map[] = {
 		.id = XOCL_SUBDEV_UARTLITE,
 		.dev_name = XOCL_UARTLITE,
 		.res_array = (struct xocl_subdev_res[]) {
-			{.res_name = NODE_ERT_UARTLITE},
+			{.res_name = NODE_ERT_UARTLITE_00},
+			{NULL},
+		},
+		.required_ip = 1,
+		.flags = 0,
+		.build_priv_data = NULL,
+		.devinfo_cb = NULL,
+		.max_level = XOCL_SUBDEV_LEVEL_PRP,
+	},
+	{
+		.id = XOCL_SUBDEV_UARTLITE_01,
+		.dev_name = XOCL_UARTLITE,
+		.res_array = (struct xocl_subdev_res[]) {
+			{.res_name = NODE_ERT_UARTLITE_01},
 			{NULL},
 		},
 		.required_ip = 1,
@@ -821,7 +834,7 @@ static struct xocl_subdev_map subdev_map[] = {
 		.flags = 0,
 		.build_priv_data = NULL,
 		.devinfo_cb = NULL,
-		.max_level = XOCL_SUBDEV_LEVEL_PRP,
+		.max_level = XOCL_SUBDEV_LEVEL_URP,
 	},
 	{
 		.id = XOCL_SUBDEV_PCIE_FIREWALL,
@@ -1425,7 +1438,6 @@ static void xocl_pack_subdev(xdev_handle_t xdev_hdl, struct xocl_subdev *subdev)
 
 	BUG_ON(!subdev || !subdev->res || !subdev->res_name || !subdev->bar_idx);
 
-		xocl_xdev_info(xdev_hdl, "####res num %d", subdev->info.num_res);
 	res = kzalloc(sizeof (struct resource)
 		* subdev->info.num_res, GFP_KERNEL);
 	res_name = kzalloc(XOCL_SUBDEV_RES_NAME_LEN
@@ -1621,25 +1633,43 @@ int xocl_fdt_check_uuids(xdev_handle_t xdev_hdl, const void *blob,
 	// comment this out for debugging xclbin download only
 	//return 0;
 
-	if (!blob || !subset_blob) {
-		xocl_xdev_err(xdev_hdl, "blob is NULL");
+	/*
+	 * There is case where xclbin is built with raptor flow, but shell
+	 * isn't. So in this case, blob is null, subset_blob is not, and
+	 * we don't expect to see interface_uuid in xclbin partition
+	 * metadata
+	 */
+	if (!subset_blob || fdt_check_header(subset_blob)) {
+		xocl_xdev_err(xdev_hdl, "invalid subset blob");
 		return -EINVAL;
 	}
 
-	if (fdt_check_header(blob) || fdt_check_header(subset_blob)) {
-		xocl_xdev_err(xdev_hdl, "Invalid fdt blob");
-		return -EINVAL;
-	}
-
+	/*
+	 * If there is no interface_uuid in partition metadata, we don't
+	 * check blp/plp and compare. This is valid case.
+	 */
 	subset_offset = fdt_path_offset(subset_blob, INTERFACES_PATH);
-	if (subset_offset < 0) {
-		xocl_xdev_err(xdev_hdl, "Invalid subset_offset %d",
-			       	subset_offset);
+	if (subset_offset < 0)
+		return 0;
+
+	subset_offset = fdt_first_subnode(subset_blob, subset_offset);
+	if (subset_offset < 0)
+		return 0;
+
+	subset_int_uuid = fdt_getprop(subset_blob, subset_offset,
+		"interface_uuid", NULL);
+	if (!subset_int_uuid)
+		return 0;
+
+	/*
+	 * there is interface uuid in xclbin. we need to check blp/plp
+	 */
+	if (!blob || fdt_check_header(blob)) {
+		xocl_xdev_err(xdev_hdl, "invalid blob");
 		return -EINVAL;
 	}
 
-	for (subset_offset = fdt_first_subnode(subset_blob, subset_offset);
-		subset_offset >= 0;
+	for (; subset_offset >= 0;
 		subset_offset = fdt_next_subnode(subset_blob, subset_offset)) {
 		subset_int_uuid = fdt_getprop(subset_blob, subset_offset,
 				"interface_uuid", NULL);
@@ -2058,14 +2088,8 @@ const char *xocl_fdt_get_ert_fw_ver(xdev_handle_t xdev_hdl, void *blob)
 			break;
 		}
 	}
-	if (fw_ver) {
+	if (fw_ver)
 		xocl_xdev_dbg(xdev_hdl, "Load embedded scheduler firmware %s", fw_ver);
-		/* if firmware_branch_name is "legacy", XRT loads the sched.bin */
-		if (!strcmp(fw_ver, "legacy")) {
-			xocl_xdev_dbg(xdev_hdl, "Firmware branch name is legacy. Loading default sched.bin");
-			return NULL;
-		}
-	}
 
 	return fw_ver;
 }
