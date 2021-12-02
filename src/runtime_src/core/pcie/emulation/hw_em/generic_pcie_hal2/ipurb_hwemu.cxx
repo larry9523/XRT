@@ -123,6 +123,7 @@ namespace hwemu {
   {
     this->ert_pkt = (struct ert_packet *)bo->buf;
 
+    bool passed = true;
     switch (opcode()) {
       case ERT_CONFIGURE:
         break;
@@ -140,7 +141,7 @@ namespace hwemu {
           auto ert_start_cu = reinterpret_cast<ert_start_kernel_cmd *>(ert_pkt);
           memcpy(req.data, ert_start_cu->data, payload_size() - 4);
 
-          bool passed = RINGB_Command(req, &resp, queuep->usr_buff, 0xFA5EFADE, IPU_MSG_EXECUTE_BUFFER,
+          passed = RINGB_Command(req, &resp, queuep->usr_buff, 0xFA5EFADE, IPU_MSG_EXECUTE_BUFFER,
 		"IPU_MSG_EXECUTE_BUFFER", __FUNCTION__);
           printf("passed is %d\n", passed);
 
@@ -155,7 +156,11 @@ namespace hwemu {
         return -EINVAL;
     }
 
-    set_state(ERT_CMD_STATE_COMPLETED);
+    if (passed)
+      set_state(ERT_CMD_STATE_COMPLETED);
+    else
+      set_state(ERT_CMD_STATE_TIMEOUT);
+
     return 0;
   }
 
@@ -186,6 +191,8 @@ namespace hwemu {
     bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_LOAD_XCL_BIN,
 		"IPU_MSG_LOAD_XCL_BIN", __FUNCTION__);
     printf("LOAD_XCLBIN passed is %d\n", passed);
+    if (!passed)
+      return -ETIME;
 
     return 0;
   }
@@ -209,7 +216,7 @@ namespace hwemu {
 
     if (!passed) {
       printf("IPURB: create context fail.\n");
-      return -EIO;
+      return -ETIME;
     }
 
     ipu_command_queue_pair_t *qPair = &resp.command_queue_pair[0];
@@ -237,6 +244,8 @@ namespace hwemu {
     bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_DELETE_CONTEXT,
 		"IPU_MSG_DELETE_CONTEXT", __FUNCTION__);
     printf("DELETE_CONTEXT passed is %d\n", passed);
+    if (!passed)
+      return -ETIME;
 
     delete queuep->usr_buff;
     queuep->usr_buff = nullptr;
@@ -271,6 +280,8 @@ namespace hwemu {
     bool passed = RINGB_Command(mreq, &mresp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_MAP_HOST_BUFFER,
 		"IPU_MSG_MAP_HOST_BUFFER", __FUNCTION__);
     printf("MAP_HOST_BUFFER passed is %d\n", passed);
+    if (!passed)
+      return -ETIME;
 
     // Set up ADMA
     sync_bo_req_t sreq;
@@ -281,8 +292,10 @@ namespace hwemu {
     sreq.size = size;
 
     passed = RINGB_Command(sreq, &sresp, queuep->usr_buff, 0xFA5EFADE, IPU_MSG_SYNC_BO,
-		"IPU_MSG_MAP_SYNC_BO", __FUNCTION__);
+		"IPU_MSG_SYNC_BO", __FUNCTION__);
     printf("SYNC_BO passed is %d\n", passed);
+    if (!passed)
+      return -ETIME;
 
     return 0;
   }

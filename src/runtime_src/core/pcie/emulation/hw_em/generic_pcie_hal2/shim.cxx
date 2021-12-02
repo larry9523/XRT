@@ -660,7 +660,7 @@ namespace xclhwemhal2 {
         {
           std::string name = xml_kernel_info.second.get<std::string>("<xmlattr>.name");
           std::string id = xml_kernel_info.second.get<std::string>("<xmlattr>.id");
-          std::string port = xml_kernel_info.second.get<std::string>("<xmlattr>.port");
+          // std::string port = xml_kernel_info.second.get<std::string>("<xmlattr>.port");
           uint64_t offset = convert(xml_kernel_info.second.get<std::string>("<xmlattr>.offset"));
           uint64_t size = convert(xml_kernel_info.second.get<std::string>("<xmlattr>.size"));
           KernelArg kArg;
@@ -669,7 +669,8 @@ namespace xclhwemhal2 {
           kernelArgInfo[offset] = kArg;
 
           if (mLogStream.is_open())
-            mLogStream << __func__ << " Filling kernel Args name: " << name << " id: " << id << " port: " << port << " info from xclbin.xml" << std::endl;
+            // mLogStream << __func__ << " Filling kernel Args name: " << name << " id: " << id << " port: " << port << " info from xclbin.xml" << std::endl;
+            mLogStream << __func__ << " Filling kernel Args name: " << name << " id: " << id << " info from xclbin.xml" << std::endl;
         }
 
         if (xml_kernel_info.first == "port") {
@@ -2744,6 +2745,14 @@ unsigned int HwEmShim::xclAllocBO(size_t size, int unused, unsigned flags)
 /******************************** xclAllocUserPtrBO ************************************/
 unsigned int HwEmShim::xclAllocUserPtrBO(void *userptr, size_t size, unsigned flags)
 {
+  if (xclemulation::config::getInstance()->isIpuRBMode()) {
+    // Call IPU Ring Buffer to allocate a shadow buffer for SRAM
+    if (!(flags & XCL_BO_FLAGS_HOST_ONLY) && !(flags & XCL_BO_FLAGS_EXECBUF) && m_ipurb) {
+      if (m_ipurb->alloc_bo(size))
+        return mNullBO;
+    }
+  }
+
   std::lock_guard<std::mutex> lk(mApiMtx);
   if (mLogStream.is_open())
   {
@@ -3060,6 +3069,7 @@ int HwEmShim::xclSyncBO(unsigned int boHandle, xclBOSyncDirection dir, size_t si
   int returnVal = 0;
   if (!isHostOnlyBuffer(bo)) { // bypassed the xclCopyBufferDevice2Host/Host2Device RPC calls for Slave Bridge (host only buffer scenario)
     void* buffer = bo->userptr ? bo->userptr : bo->buf;
+
     if (dir == XCL_BO_SYNC_BO_TO_DEVICE)
     {
       if (xclemulation::config::getInstance()->isIpuRBMode())
@@ -3297,6 +3307,10 @@ int HwEmShim::xclExecWait(int timeoutMilliSec)
 
 int HwEmShim::xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared)
 {
+  // If not PS Kernel domain, don't create context
+  if (ipIndex == 0xFFFFFFFF || !(ipIndex & 0xFFFF0000))
+    return 0;
+
   int ret = -1;
   if (xclemulation::config::getInstance()->isIpuRBMode()) {
     ret = m_ipurb->open_context(xclbinId, ipIndex);
@@ -3309,6 +3323,10 @@ int HwEmShim::xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool s
 
 int HwEmShim::xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex)
 {
+  // If not PS Kernel domain, don't delete context
+  if (ipIndex == 0xFFFFFFFF || !(ipIndex & 0xFFFF0000))
+    return 0;
+
   int ret = -1;
   if (xclemulation::config::getInstance()->isIpuRBMode()) {
     ret = m_ipurb->close_context(xclbinId, ipIndex);
