@@ -1,6 +1,9 @@
-/*
-* Copyright(C) 2021 Advanced Micro Devices, Inc. All rights reserved.
-*/
+/******************************************************************************
+*
+*  Copyright (C) 2021 Advanced Micro Devices, Inc. All rights reserved.
+*
+******************************************************************************/
+
 #ifndef APP_MSG_H_
 #define APP_MSG_H_
 
@@ -9,8 +12,8 @@
 #pragma pack(push, 1)
 
 typedef struct execute_buffer_req_ {
-//    uint64_t buffer_address;
-//    uint64_t buffer_size;
+    // uint64_t buffer_address;
+    // uint64_t buffer_size;
     uint32_t data[20];
 } execute_buffer_req_t;
 
@@ -30,6 +33,15 @@ typedef struct sync_bo_req_ {
 typedef struct sync_bo_resp_ {
     ipu_status_e status;
 } sync_bo_resp_t;
+
+typedef struct dpu_self_test_req_ {
+	    uint32_t cu_index;
+	        uint32_t data[3];
+} dpu_self_test_req_t;
+
+typedef struct dpu_self_test_resp_ {
+	    ipu_status_e status;
+} dpu_self_test_resp_t;
 
 #pragma pack(pop)
 

@@ -176,17 +176,16 @@ namespace hwemu {
     req.XclBinAddress = static_cast<uint64_t>(xbo.address());
     req.XclBinSize = size;
 
-    // TODO use higher 64 bits uuid for now
     auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(uuid));
-    uint64_t uid64 = *uid64p;
-    req.part_info.uuid = uid64;
+    uint64_t uid64 = *uid64p++;
+    req.part_info.uuid.uuid_low = uid64;
+    uid64 = *uid64p;
+    req.part_info.uuid.uuid_high = uid64;
 
     // Hard code for now
     req.part_info.startColumn = 0;
     req.part_info.totalColumn = 5;
     req.part_info.aieType = IPU_AIE2;
-
-    printf("uuid is %lx\n", req.part_info.uuid);
 
     bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_LOAD_XCL_BIN,
 		"IPU_MSG_LOAD_XCL_BIN", __FUNCTION__);
@@ -202,10 +201,11 @@ namespace hwemu {
     create_context_req_t req = { 0 };
     create_context_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    // TODO use higher 64 bits uuid for now
     auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(uuid));
-    uint64_t uid64 = *uid64p;
-    req.uuid = uid64;
+    uint64_t uid64 = *uid64p++;
+    req.uuid.uuid_low = uid64;
+    uid64 = *uid64p;
+    req.uuid.uuid_high = uid64;
 
     req.pasid = 0xFFFF;
     req.num_command_queue_pairs_requested = 0x1;
@@ -236,8 +236,10 @@ namespace hwemu {
 
     // TODO use higher 64 bits uuid for now
     auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(uuid));
-    uint64_t uid64 = *uid64p;
-    req.uuid = uid64;
+    uint64_t uid64 = *uid64p++;
+    req.uuid.uuid_low = uid64;
+    uid64 = *uid64p;
+    req.uuid.uuid_high = uid64;
 
     req.pasid = 0xFFFF;
 
@@ -270,10 +272,12 @@ namespace hwemu {
     map_host_buffer_req_t mreq = { 0 };
     map_host_buffer_resp_t mresp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    // TODO use higher 64 bits uuid for now
-    auto uid64p = reinterpret_cast<const uint64_t *>(queuep->m_uuid);
-    uint64_t uid64 = *uid64p;
-    mreq.uuid = uid64;
+    auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(queuep->m_uuid));
+    uint64_t uid64 = *uid64p++;
+    mreq.uuid.uuid_low = uid64;
+    uid64 = *uid64p;
+    mreq.uuid.uuid_high = uid64;
+
     mreq.buffer_address = src;
     mreq.buffer_size = size;
 

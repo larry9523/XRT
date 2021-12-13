@@ -388,7 +388,8 @@ void TEST_DPUUserSelfTest(IpuHenvRing *pMngBuff)
     create_context_req_t create_context_req = { 0 };
     create_context_resp_t create_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    create_context_req.uuid = 0x1234567800ABCDEF;
+    create_context_req.uuid.uuid_low = 0x1234567800ABCDEF;
+    create_context_req.uuid.uuid_high = 0xFEDCBA9876543210;
     create_context_req.pasid = 0xFFFF;
     create_context_req.num_command_queue_pairs_requested = 0x1;
 
@@ -437,7 +438,8 @@ void TEST_DPUUserSelfTest(IpuHenvRing *pMngBuff)
 
     for (int i = 0; i < 16; i ++)
         printf("%x: %x\n", 150 * 1024 + i, ((char *)(buffer))[150 * 1024 + i]);
-    map_host_buffer_req.uuid = 0x1234567800ABCDEF;
+    map_host_buffer_req.uuid.uuid_low = 0x1234567800ABCDEF;
+    map_host_buffer_req.uuid.uuid_high = 0xFEDCBA9876543210;
     map_host_buffer_req.buffer_address = TEST_DRAM_BASE_ADDR;
     map_host_buffer_req.buffer_size = size;
 
@@ -493,7 +495,8 @@ void TEST_DPULoadXclBin(IpuHenvRing *pMngBuff)
     xcl_req.XclBinAddress = (uint64_t)TEST_DRAM_BASE_ADDR + 0x4000;
     xcl_req.XclBinSize = size;
 
-    xcl_req.part_info.uuid = 0x1234567800ABCDEF;
+    xcl_req.part_info.uuid.uuid_low = 0x1234567800ABCDEF;
+    xcl_req.part_info.uuid.uuid_high = 0xFEDCBA9876543210;
     xcl_req.part_info.startColumn = 0;
     xcl_req.part_info.totalColumn = 5;
     xcl_req.part_info.aieType = IPU_AIE2;
@@ -520,7 +523,8 @@ void TEST_IpuLoadXclBin(IpuHenvRing *pMngBuff)
     xcl_req.XclBinAddress = (uint64_t)TEST_DRAM_BASE_ADDR + 0x4000;
     xcl_req.XclBinSize = sizeof(xcl_bin_data);
 
-    xcl_req.part_info.uuid = 0x1234567800ABCDEF;
+    xcl_req.part_info.uuid.uuid_low = 0x1234567800ABCDEF;
+    xcl_req.part_info.uuid.uuid_high = 0xFEDCBA9876543210;
     xcl_req.part_info.startColumn = 1;
     xcl_req.part_info.totalColumn = 3;
     xcl_req.part_info.aieType = IPU_AIE2;
@@ -554,7 +558,8 @@ static void TEST_IpuCreateContext(IpuHenvRing *pMngBuff)
     create_context_req_t create_context_req = { 0 };
     create_context_resp_t create_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    create_context_req.uuid = 0x1234567800ABCDEF;
+    create_context_req.uuid.uuid_low = 0x1234567800ABCDEF;
+    create_context_req.uuid.uuid_high = 0xFEDCBA9876543210;
     create_context_req.pasid = 0xFFFF;
     create_context_req.num_command_queue_pairs_requested = 0x1;
 
@@ -604,7 +609,8 @@ void TEST_IpuMapHostBuffer(IpuHenvRing *pMngBuff)
     // Dummy test data for the buffer access test
     WR_SYSHUB(TEST_DRAM_BASE_ADDR + 0x8000, xcl_bin_data, sizeof(xcl_bin_data));
 
-    map_host_buffer_req.uuid = 0x1234567800ABCDEF;
+    map_host_buffer_req.uuid.uuid_low = 0x1234567800ABCDEF;
+    map_host_buffer_req.uuid.uuid_high = 0xFEDCBA9876543210;
     map_host_buffer_req.buffer_address = TEST_DRAM_BASE_ADDR + 0x8000;
     map_host_buffer_req.buffer_size = sizeof(xcl_bin_data);
 
@@ -620,7 +626,8 @@ void TEST_IpuDeleteContextNegative(IpuHenvRing *pMngBuff)
     delete_context_req_t delete_context_req = { 0 };
     delete_context_resp_t delete_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    delete_context_req.uuid = 0xFFFFFFFFFFFFFFFF;
+    delete_context_req.uuid.uuid_low = 0xFFFFFFFFFFFFFFFF;
+    delete_context_req.uuid.uuid_high = 0xFFFFFFFFFFFFFFFF;
     delete_context_req.pasid = 0xFFFF;
 
     bool passed = RINGB_Command(delete_context_req, &delete_context_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_DELETE_CONTEXT
@@ -634,7 +641,8 @@ void TEST_IpuDeleteContext(IpuHenvRing *pMngBuff)
     delete_context_req_t delete_context_req = { 0 };
     delete_context_resp_t delete_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    delete_context_req.uuid = 0x1234567800ABCDEF;
+    delete_context_req.uuid.uuid_low = 0x1234567800ABCDEF;
+    delete_context_req.uuid.uuid_low = 0xFEDCBA9876543210;
     delete_context_req.pasid = 0xFFFF;
 
     bool passed = RINGB_Command(delete_context_req, &delete_context_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_DELETE_CONTEXT

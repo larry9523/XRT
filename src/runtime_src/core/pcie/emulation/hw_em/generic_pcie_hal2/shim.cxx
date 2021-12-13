@@ -3105,7 +3105,7 @@ int HwEmShim::xclSyncBO(unsigned int boHandle, xclBOSyncDirection dir, size_t si
 /******************************** xclFreeBO *******************************************/
 void HwEmShim::xclFreeBO(unsigned int boHandle)
 {
-  std::lock_guard<std::mutex> lk(mApiMtx);
+  std::unique_lock<std::mutex> lk(mApiMtx);
   if (mLogStream.is_open())
   {
     mLogStream << __func__ << ", " << std::this_thread::get_id() << ", " << std::hex << boHandle << std::endl;
@@ -3123,6 +3123,15 @@ void HwEmShim::xclFreeBO(unsigned int boHandle)
     bool bSendToSim = true;
     if(bo->flags & XCL_BO_FLAGS_EXECBUF)
       bSendToSim = false;
+
+    if (xclemulation::config::getInstance()->isIpuRBMode()) {
+      // Call IPU Ring Buffer to allocate a shadow buffer for SRAM
+      if (!(bo->flags & XCL_BO_FLAGS_HOST_ONLY) && !(bo->flags & XCL_BO_FLAGS_EXECBUF) && m_ipurb) {
+        lk.unlock();
+        m_ipurb->free_bo();
+        lk.lock();
+      }
+    }
 
     if(bo->chunks.size())
     {
