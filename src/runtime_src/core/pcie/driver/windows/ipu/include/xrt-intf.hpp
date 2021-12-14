@@ -85,6 +85,7 @@ typedef struct _XRT_CREATE_BO_ARGS {
     ULONG                   BankNumber;     // IN: SRAM offset
     XRT_BUFFER_TYPE         BufferType;     // IN: Which type of Buffer Object is being created
                                             // Must be "NORMAL" or "EXECBUF"
+    ULONG              Flags;               // IN: XOCL  FLAGS
 } XRT_CREATE_BO_ARGS, * PXRT_CREATE_BO_ARGS;
 
 typedef struct _XRT_MAP_BO_RESULT {
@@ -104,13 +105,15 @@ typedef struct _XRT_USERPTR_BO_ARGS {
     ULONG                   BankNumber;     // IN: Zero-based DDR bank number to use
     XRT_BUFFER_TYPE         BufferType;     // IN: Which type of Buffer Object is being created
                                             //     Must be "USERPTR"
+    ULONG                   Flags;          // IN: XOCL  FLAGS
 } XRT_USERPTR_BO_ARGS, * PXRT_USERPTR_BO_ARGS;
 
 
 typedef struct _XRT_INFO_BO_RESULT {
     ULONGLONG           Size;           // OUT: Size in bytes of the buffer
     ULONGLONG           Paddr;          // OUT: Physical address of associated DDR
-    XRT_BUFFER_TYPE    BufferType;     // OUT: Buffer Type
+    XRT_BUFFER_TYPE    BufferType;      // OUT: Buffer Type
+    ULONG              Flags;           // OUT: XOCL FLAGS
 } XRT_INFO_BO_RESULT, * PXRT_INFO_BO_RESULT;
 
 #define ICAP_XCLBIN_V2      "xclbin2"

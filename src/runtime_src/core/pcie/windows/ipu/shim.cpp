@@ -116,23 +116,17 @@ struct shim
 
     //'size' needs to be multiple of 4K
     createBOArgs.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    //createBOArgs.BankNumber = flags & 0xFFFFFFLL;
-   
+    createBOArgs.BankNumber = flags & 0xFFFFFFLL;
+    createBOArgs.Flags = flags;
 
     if (flags & XCL_BO_FLAGS_HOST_ONLY) {
-        createBOArgs.BankNumber = 0;
         createBOArgs.BufferType = XRT_BUFFER_TYPE_HOST_ONLY;
-    }
-    else if (flags & XCL_BO_FLAGS_EXECBUF) {
-        createBOArgs.BankNumber = 0;
+    } else if (flags & XCL_BO_FLAGS_EXECBUF) {
         createBOArgs.BufferType = XRT_BUFFER_TYPE_EXECBUF;
-    }
-    else {
-        createBOArgs.BankNumber = 1;
+    } else {
         createBOArgs.BufferType = XRT_BUFFER_TYPE_NORMAL;
     }
 
- 
     if (!DeviceIoControl(bufferHandle,
                          IOCTL_KIPUDRV_CREATE_BO,
                          &createBOArgs,
@@ -200,8 +194,9 @@ done:
 
     userPtrBO.Address = userptr;
     userPtrBO.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    userPtrBO.BankNumber = 1;// flags & 0xFFFFFFLL;//TODO:
+    userPtrBO.BankNumber = flags & 0xFFFFFFLL;
     userPtrBO.BufferType = XRT_BUFFER_TYPE_USERPTR;
+    userPtrBO.Flags = flags;
 
     if (!DeviceIoControl(bufferHandle,
                          IOCTL_KIPUDRV_USERPTR_BO,
@@ -499,9 +494,9 @@ done:
     }
 
     properties->handle = 0;
-    properties->flags = 0;
-    properties->size = infoBo.Size;
-    properties->paddr = infoBo.Paddr;
+    properties->flags  = infoBo.Flags;
+    properties->size   = infoBo.Size;
+    properties->paddr  = infoBo.Paddr;
 
     return 0;
   }
