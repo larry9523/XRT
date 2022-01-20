@@ -963,6 +963,26 @@ struct mailbox
   }
 }; //end of struct mailbox
 
+struct errors
+{
+  using result_type = boost::any;
+
+  static result_type
+  user(const xrt_core::device* dev,  key_type key)
+  {
+      std::vector<char> buf(sizeof(xcl_errors));
+      userpf::errors(dev->get_user_handle(), buf.data());
+
+      return buf;
+  }
+
+  static result_type
+  mgmt(const xrt_core::device* device, key_type key)
+  {
+    return false;
+  }
+}; //end of struct errors
+
 template <typename QueryRequestType, typename Getter>
 struct function0_getput : QueryRequestType
 {
@@ -1204,6 +1224,7 @@ initialize_query_table()
   emplace_function0_getter<query::memstat_raw,               memstat_raw>();
   emplace_function0_getter<query::memstat,                   memstat>();
   emplace_function0_getter<query::group_topology,            group_topology>();
+  emplace_function0_getter<query::xocl_errors,               errors>();
 }
 
 struct X { X() { initialize_query_table(); }};

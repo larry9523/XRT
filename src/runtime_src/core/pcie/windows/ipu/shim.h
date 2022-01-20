@@ -7,6 +7,7 @@
 
 #include "config.h"
 #include "xrt.h"
+#include "xclerr_int.h"
 #include "core/common/xrt_profiling.h"
 #include "core/pcie/driver/windows/ipu/include/xrt-intf.hpp"
 #include "core/pcie/driver/windows/ipu/include/FW_Public.hpp"
@@ -90,6 +91,9 @@ get_group_mem_topology(xclDeviceHandle hdl, char* buffer, size_t size, size_t* s
 
 void
 get_memstat(xclDeviceHandle hdl, char* buffer, size_t size, size_t* size_ret, bool raw);
+
+void
+errors(xclDeviceHandle hdl, char* buffer);
 } // userpf
 
 

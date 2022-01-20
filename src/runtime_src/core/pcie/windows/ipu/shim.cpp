@@ -751,6 +751,35 @@ done:
                      });
   }
 
+  void
+  errors(char *buffer)
+  {
+    //DWORD bytes = 0;
+    auto err = reinterpret_cast<struct xcl_errors*>(buffer);
+    err->errors[0].pid = 0;
+    err->errors[0].ts = 0x100;
+#if 1 //TODO:For testing
+    err->errors[0].err_code = XRT_ERROR_CODE_BUILD( XRT_ERROR_NUM_AIE_SATURATION,
+        XRT_ERROR_DRIVER_AIE,
+        XRT_ERROR_SEVERITY_CRITICAL,
+        XRT_ERROR_MODULE_AIE_CORE,
+        XRT_ERROR_CLASS_AIE);
+
+    err->num_err = 1;
+#else //TODO:Enable after windows driver implenmented error report.
+    bool status = DeviceIoControl(m_dev,
+        IOCTL_KIPUDRV_ERROR_INFO,
+        nullptr,
+        0,
+        err,
+        sizeof(xcl_errors),
+        &bytes,
+        nullptr);
+
+    if (!status || bytes != sizeof(xcl_errors))
+      throw std::runtime_error("DeviceIoControl IOCTL_KIPUDRV_ERROR_INFO (errors) failed");
+#endif
+  }
 
 }; // struct shim
 
@@ -906,6 +935,14 @@ get_kds_custat(xclDeviceHandle hdl, char* buffer, DWORD size, int* size_ret)
     send(xrt_core::message::severity_level::debug, "XRT", "get_kds_custat()");
   //shim* shim = get_shim_object(hdl);
   //shim->get_kds_custat(buffer, size, size_ret);
+}
+void
+errors(xclDeviceHandle hdl,char* buffer)
+{
+  xrt_core::message::
+    send(xrt_core::message::severity_level::debug, "XRT", "xocl errors()");
+  shim* shim = get_shim_object(hdl);
+  shim->errors(buffer);
 }
 } // namespace userpf
 
