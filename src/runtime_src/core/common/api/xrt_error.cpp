@@ -314,7 +314,6 @@ to_string() const
 int
 xrtErrorGetLast(xrtDeviceHandle dhdl, xrtErrorClass ecl, xrtErrorCode* error, uint64_t* timestamp)
 {
-
   try {
     return xdp::native::profiling_wrapper(__func__,
     [dhdl, ecl, error, timestamp]{

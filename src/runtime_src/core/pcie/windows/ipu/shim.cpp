@@ -752,13 +752,14 @@ done:
   }
 
   void
-  errors(char *buffer)
+  get_errors(char *buffer)
   {
     //DWORD bytes = 0;
     auto err = reinterpret_cast<struct xcl_errors*>(buffer);
+
+#if 1 //TODO:For testing
     err->errors[0].pid = 0;
     err->errors[0].ts = 0x100;
-#if 1 //TODO:For testing
     err->errors[0].err_code = XRT_ERROR_CODE_BUILD( XRT_ERROR_NUM_AIE_SATURATION,
         XRT_ERROR_DRIVER_AIE,
         XRT_ERROR_SEVERITY_CRITICAL,
@@ -937,12 +938,12 @@ get_kds_custat(xclDeviceHandle hdl, char* buffer, DWORD size, int* size_ret)
   //shim->get_kds_custat(buffer, size, size_ret);
 }
 void
-errors(xclDeviceHandle hdl,char* buffer)
+get_errors(xclDeviceHandle hdl,char* buffer)
 {
   xrt_core::message::
     send(xrt_core::message::severity_level::debug, "XRT", "xocl errors()");
   shim* shim = get_shim_object(hdl);
-  shim->errors(buffer);
+  shim->get_errors(buffer);
 }
 } // namespace userpf
 

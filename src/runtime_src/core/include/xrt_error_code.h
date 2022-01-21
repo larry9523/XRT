@@ -46,7 +46,6 @@
 # include <stdint.h>
 #endif
 
-# include <stdint.h>
 /**
  * xrtErrorCode layout
  *

@@ -93,7 +93,7 @@ void
 get_memstat(xclDeviceHandle hdl, char* buffer, size_t size, size_t* size_ret, bool raw);
 
 void
-errors(xclDeviceHandle hdl, char* buffer);
+get_errors(xclDeviceHandle hdl, char* buffer);
 } // userpf
 
 

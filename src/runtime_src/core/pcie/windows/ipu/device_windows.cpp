@@ -971,7 +971,7 @@ struct errors
   user(const xrt_core::device* dev,  key_type key)
   {
       std::vector<char> buf(sizeof(xcl_errors));
-      userpf::errors(dev->get_user_handle(), buf.data());
+      userpf::get_errors(dev->get_user_handle(), buf.data());
 
       return buf;
   }
