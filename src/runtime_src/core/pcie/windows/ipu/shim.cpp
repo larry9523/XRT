@@ -938,7 +938,7 @@ get_kds_custat(xclDeviceHandle hdl, char* buffer, DWORD size, int* size_ret)
   //shim->get_kds_custat(buffer, size, size_ret);
 }
 void
-get_errors(xclDeviceHandle hdl,char* buffer)
+get_errors(xclDeviceHandle hdl, char* buffer)
 {
   xrt_core::message::
     send(xrt_core::message::severity_level::debug, "XRT", "xocl errors()");
