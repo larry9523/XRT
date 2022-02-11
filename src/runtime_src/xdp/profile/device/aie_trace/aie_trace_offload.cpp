@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019 Xilinx, Inc
+ * Copyright (C) 2019-2021 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -16,20 +16,23 @@
 
 #define XDP_SOURCE
 
+#include <iostream>
+
+#include "core/common/message.h"
+
+#include "xdp/profile/database/database.h"
+#include "xdp/profile/database/static_info/aie_constructs.h"
+#include "xdp/profile/device/aie_trace/aie_trace_logger.h"
+#include "xdp/profile/device/aie_trace/aie_trace_offload.h"
 #include "xdp/profile/device/device_intf.h"
 #include "xdp/profile/device/tracedefs.h"
 
-#include "xdp/profile/database/database.h"
-#include "xdp/profile/device/aie_trace/aie_trace_offload.h"
-#include "xdp/profile/device/aie_trace/aie_trace_logger.h"
-
-#include <iostream>
 #ifdef XRT_ENABLE_AIE
 #include <sys/mman.h>
 #include "core/include/xrt.h"
 #include "core/edge/user/shim.h"
 #endif
-#include "core/common/message.h"
+
 
 // Default dma chunk size
 #define CHUNK_SZ (MAX_TRACE_NUMBER_SAMPLES * TRACE_PACKET_SIZE)
@@ -49,13 +52,21 @@ AIETraceOffload::AIETraceOffload(void* handle, uint64_t id,
                  traceLogger(logger),
                  isPLIO(isPlio),
                  totalSz(totalSize),
-                 numStream(numStrm)
+                 numStream(numStrm),
+                 traceContinuous(false),
+                 offloadIntervalms(0),
+                 bufferInitialized(false),
+                 offloadStatus(AIEOffloadThreadStatus::IDLE)
 {
   bufAllocSz = (totalSz / numStream) & 0xfffffffffffff000;
 }
 
 AIETraceOffload::~AIETraceOffload()
 {
+  stopOffload();
+  if (offloadThread.joinable()) {
+    offloadThread.join();
+  }
 }
 
 bool AIETraceOffload::initReadTrace()
@@ -74,7 +85,8 @@ bool AIETraceOffload::initReadTrace()
   for(uint64_t i = 0; i < numStream ; ++i) {
     buffers[i].boHandle = deviceIntf->allocTraceBuf(bufAllocSz, memIndex);
     if(!buffers[i].boHandle) {
-      return false;
+      bufferInitialized = false;
+      return bufferInitialized;
     }
     buffers[i].isFull = false;
     // Data Mover will write input stream to this address
@@ -92,7 +104,8 @@ bool AIETraceOffload::initReadTrace()
 
       ZYNQ::shim *drv = ZYNQ::shim::handleCheck(deviceHandle);
       if(!drv) {
-        return false;
+        bufferInitialized = false;
+        return bufferInitialized;
       }
       zynqaie::Aie* aieObj = drv->getAieArray();
 
@@ -140,7 +153,8 @@ bool AIETraceOffload::initReadTrace()
 #endif
     }
   }
-  return true;
+  bufferInitialized = true;
+  return bufferInitialized;
 }
 
 void AIETraceOffload::endReadTrace()
@@ -178,6 +192,7 @@ void AIETraceOffload::endReadTrace()
     buffers[i].boHandle = 0;
   }
   buffers.clear();
+  bufferInitialized = false;
 }
 
 void AIETraceOffload::readTrace()
@@ -205,14 +220,19 @@ void AIETraceOffload::readTrace()
 
 uint64_t AIETraceOffload::readPartialTrace(uint64_t i)
 {
-  if(buffers[i].offset >= buffers[i].usedSz) {
+  if (buffers[i].offset >= buffers[i].usedSz) {
     return 0;
   }
 
   uint64_t nBytes = CHUNK_SZ;
 
-  if((buffers[i].offset + CHUNK_SZ) > buffers[i].usedSz)
+  if ((buffers[i].offset + CHUNK_SZ) > buffers[i].usedSz) {
     nBytes = buffers[i].usedSz - buffers[i].offset;
+#if 0
+    uint64_t bytesToReadLater = nBytes % 4;
+    nBytes -= bytesToReadLater;
+#endif
+  }
 
   void* hostBuf = deviceIntf->syncTraceBuf(buffers[i].boHandle, buffers[i].offset, nBytes);
 
@@ -240,6 +260,7 @@ bool AIETraceOffload::isTraceBufferFull()
 void AIETraceOffload::configAIETs2mm(uint64_t i /*index*/)
 {
   uint64_t wordCount = deviceIntf->getWordCountAIETs2mm(i);
+  // Ensure complete packets at the end of each offload
   uint64_t incompletePacketWord = wordCount % 4;
   wordCount -= incompletePacketWord;
   uint64_t usedSize  = wordCount * TRACE_PACKET_SIZE;
@@ -250,6 +271,55 @@ void AIETraceOffload::configAIETs2mm(uint64_t i /*index*/)
   }
 }
 
+void AIETraceOffload::startOffload()
+{
+  if (offloadStatus == AIEOffloadThreadStatus::RUNNING)
+    return;
+
+  std::lock_guard<std::mutex> lock(statusLock);
+  offloadStatus = AIEOffloadThreadStatus::RUNNING;
+
+  offloadThread = std::thread(&AIETraceOffload::continuousOffload, this);
+}
+
+void AIETraceOffload::continuousOffload()
+{
+  if (!bufferInitialized && !initReadTrace()) {
+    offloadFinished();
+    return;
+  }
+
+  while (keepOffloading()) {
+    readTrace();
+    std::this_thread::sleep_for(std::chrono::milliseconds(offloadIntervalms));
+  }
+
+  readTrace();
+  endReadTrace();
+  offloadFinished();
+}
+
+bool AIETraceOffload::keepOffloading()
+{
+  std::lock_guard<std::mutex> lock(statusLock);
+  return (AIEOffloadThreadStatus::RUNNING == offloadStatus);
+}
+
+void AIETraceOffload::stopOffload()
+{
+  std::lock_guard<std::mutex> lock(statusLock);
+  if (AIEOffloadThreadStatus::STOPPED == offloadStatus)
+    return;
+  offloadStatus = AIEOffloadThreadStatus::STOPPING;
+}
+
+void AIETraceOffload::offloadFinished()
+{
+  std::lock_guard<std::mutex> lock(statusLock);
+  if (AIEOffloadThreadStatus::STOPPED == offloadStatus)
+    return;
+  offloadStatus = AIEOffloadThreadStatus::STOPPED;
+}
 
 }
 

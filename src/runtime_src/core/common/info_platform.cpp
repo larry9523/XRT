@@ -17,6 +17,7 @@
 #include "info_platform.h"
 #include "query_requests.h"
 #include "utils.h"
+#include "xclbin.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -137,13 +138,24 @@ add_controller_info(const xrt_core::device* device, ptree_type& pt)
     sc.add("version", xrt_core::device_query<xq::xmc_sc_version>(device));
     sc.add("expected_version", xrt_core::device_query<xq::expected_sc_version>(device));
     ptree_type cmc;
-    std::stringstream version;
-    
-    try {
-       version << "0x" << std::hex << std::stoi(xrt_core::device_query<xq::xmc_version>(device));
-    }
-    catch (...) {}
-    cmc.add("version", version.str());
+
+    /*
+     * The card managment controller (CMC) version number is formatted where the bottom three bytes contain
+     * the Major, Minor, and Version values respectively.
+     * Ex:
+     * CMC version = 010203
+     * This implies
+     * 01 -> Major Number
+     * 02 -> Minor Number
+     * 03 -> Version Number
+     * Output = 1.2.3
+     */
+    uint64_t versionValue = std::stoull(xrt_core::device_query<xq::xmc_version>(device), nullptr, 10);
+    std::string version = boost::str(boost::format("%u.%u.%u")
+                          % ((versionValue >> (2 * 8)) & 0xFF) // Major
+                          % ((versionValue >> (1 * 8)) & 0xFF) // Minor
+                          % ((versionValue >> (0 * 8)) & 0xFF)); // Version
+    cmc.add("version", version);
     cmc.add("serial_number", xrt_core::device_query<xq::xmc_serial_num>(device));
     cmc.add("oem_id", xq::oem_id::parse(xrt_core::device_query<xq::oem_id>(device)));
     controller.put_child("satellite_controller", sc);
@@ -153,6 +165,23 @@ add_controller_info(const xrt_core::device* device, ptree_type& pt)
   catch (const xq::exception&) {
     // Ignoring if not available: Edge Case
   }
+}
+
+static std::string
+enum_to_str(CLOCK_TYPE type)
+{
+  switch(type) {
+    case CT_UNUSED:
+      return "Unused";
+    case CT_DATA:
+      return "Data";
+    case CT_KERNEL:
+      return "Kernel";
+    case CT_SYSTEM:
+      return "System";
+    default:
+      throw xrt_core::internal_error("enum value does not exists");
+    }
 }
 
 void
@@ -170,7 +199,7 @@ add_clock_info(const xrt_core::device* device, ptree_type& pt)
     for(int i = 0; i < clock_topology->m_count; i++) {
       ptree_type pt_clock;
       pt_clock.add("id", clock_topology->m_clock_freq[i].m_name);
-      pt_clock.add("description", xq::clock_freq_topology_raw::parse(clock_topology->m_clock_freq[i].m_name));
+      pt_clock.add("description", enum_to_str(static_cast<CLOCK_TYPE>(clock_topology->m_clock_freq[i].m_type)));
       pt_clock.add("freq_mhz", clock_topology->m_clock_freq[i].m_freq_Mhz);
       pt_clock_array.push_back(std::make_pair("", pt_clock));
     }
@@ -215,7 +244,7 @@ add_mac_info(const xrt_core::device* device, ptree_type& pt)
     pt.put_child("macs", pt_mac);
 
   }
-  catch (const xq::no_such_key&) {
+  catch (const xq::exception&) {
     // Ignoring if not available: Edge Case
   }
 }
@@ -259,14 +288,16 @@ pcie_info(const xrt_core::device * device)
     ptree.add("device", xq::pcie_device::to_string(xrt_core::device_query<xq::pcie_device>(device)));
     ptree.add("sub_device", xq::pcie_subsystem_id::to_string(xrt_core::device_query<xq::pcie_subsystem_id>(device)));
     ptree.add("sub_vendor", xq::pcie_subsystem_vendor::to_string(xrt_core::device_query<xq::pcie_subsystem_vendor>(device)));
-    ptree.add("link_speed_gbit_sec", xrt_core::device_query<xq::pcie_link_speed_max>(device));
+    ptree.add("link_speed_gbit_sec", xrt_core::device_query<xq::pcie_link_speed>(device));
+    ptree.add("expected_link_speed_gbit_sec", xrt_core::device_query<xq::pcie_link_speed_max>(device));
     ptree.add("express_lane_width_count", xrt_core::device_query<xq::pcie_express_lane_width>(device));
+    ptree.add("expected_express_lane_width_count", xrt_core::device_query<xq::pcie_express_lane_width_max>(device));
 
     // dma_thread_count might not be present for nodma, but it is safe to ignore.
     try {
       ptree.add("dma_thread_count", xrt_core::device_query<xq::dma_threads_raw>(device).size());
     }
-    catch(const xq::no_such_key&) {
+    catch(const xq::exception&) {
     }
 
     ptree.add("cpu_affinity", xrt_core::device_query<xq::cpu_affinity>(device));
