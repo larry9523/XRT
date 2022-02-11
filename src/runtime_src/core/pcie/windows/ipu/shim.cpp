@@ -328,7 +328,7 @@ done:
     return 0;
   }
 
-  
+
   int
   open_context(const xuid_t xclbin_id, unsigned int ip_idx, bool shared)
   {
@@ -673,7 +673,7 @@ done:
 
     return 0;
   }
-  
+
 
 
 
@@ -1127,6 +1127,14 @@ xclImportBO(xclDeviceHandle handle, xclBufferExportHandle fd, unsigned flags)
 }
 
 int
+xclCloseExportHandle(xclBufferExportHandle)
+{
+  xrt_core::message::
+    send(xrt_core::message::severity_level::debug, "XRT", "xclCloseExportHandle() NOT IMPLEMENTED");
+  return 0;
+}
+
+int
 xclGetBOProperties(xclDeviceHandle handle, xclBufferHandle boHandle,
 		   struct xclBOProperties *properties)
 {
@@ -1362,9 +1370,8 @@ xclUpdateSchedulerStat(xclDeviceHandle handle)
   return 1; // -ENOSYS;
 }
 
-int 
+int
 xclInternalResetDevice(xclDeviceHandle handle, xclResetKind kind)
 {
   return 1; // -ENOSYS;
 }
-
