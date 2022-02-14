@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2016-2021 Xilinx, Inc
+ * Copyright (C) 2016-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -33,6 +33,9 @@ namespace xdp {
     addParameter("device_counters",
                  xrt_core::config::get_device_counters(),
                  "Hardware counters added to summary file");
+    addParameter("host_trace",
+                 xrt_core::config::get_host_trace(),
+                 "Enable the top level of host trace");
     addParameter("native_xrt_trace", xrt_core::config::get_native_xrt_trace(),
                  "Generation of Native XRT API function trace");
     addParameter("xrt_trace", xrt_core::config::get_xrt_trace(),
@@ -83,6 +86,11 @@ namespace xdp {
     addParameter("aie_profile_memory_metrics",
                  xrt_core::config::get_aie_profile_memory_metrics(),
                  "Metric set for AI Engine memory modules");
+    addParameter("aie_status", xrt_core::config::get_aie_status(),
+                 "Generation of AI Engine debug/status");
+    addParameter("aie_status_interval_us",
+                 xrt_core::config::get_aie_status_interval_us(),
+                 "Interval for reading AI Engine debug/status registers (in us)");
     addParameter("vitis_ai_profile", xrt_core::config::get_vitis_ai_profile(),
                  "Generation of Vitis AI summary and trace (Vitis AI designs only)");
   }

@@ -290,7 +290,7 @@ long xclmgmt_hot_reset(struct xclmgmt_dev *lro, bool force)
 		mgmt_err(lro, "Unable to identify device root port for card %d",
 		       lro->instance);
 		err = -ENODEV;
-		goto done;
+		goto failed;
 	}
 
 	ep_name = pdev->bus->name;
@@ -298,11 +298,18 @@ long xclmgmt_hot_reset(struct xclmgmt_dev *lro, bool force)
 		lro->instance, ep_name,
 		PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
 
+	err = xocl_enable_vmr_boot(lro);
+	if (err) {
+		mgmt_err(lro, "enable reset failed");
+		err = -ENODEV;
+		goto failed;
+	}
+
 	if (!force && xrt_reset_syncup) {
 		mgmt_info(lro, "wait for master off for all functions");
 		err = xocl_wait_master_off(lro);
 		if (err)
-			goto done;
+			goto failed;
 	}
 
 	xocl_thread_stop(lro);
@@ -313,7 +320,7 @@ long xclmgmt_hot_reset(struct xclmgmt_dev *lro, bool force)
 	 */
 	if (!XOCL_DSA_PCI_RESET_OFF(lro)) {
 		xocl_subdev_destroy_by_level(lro, XOCL_SUBDEV_LEVEL_URP);
-		(void) xocl_subdev_offline_by_id(lro, XOCL_SUBDEV_XGQ);
+		(void) xocl_subdev_offline_by_id(lro, XOCL_SUBDEV_XGQ_VMR);
 		(void) xocl_subdev_offline_by_id(lro, XOCL_SUBDEV_UARTLITE);
 		(void) xocl_subdev_offline_by_id(lro, XOCL_SUBDEV_FLASH);
 		(void) xocl_subdev_offline_by_id(lro, XOCL_SUBDEV_ICAP);
@@ -339,7 +346,7 @@ long xclmgmt_hot_reset(struct xclmgmt_dev *lro, bool force)
 		(void) xocl_subdev_online_by_id(lro, XOCL_SUBDEV_ICAP);
 		(void) xocl_subdev_online_by_id(lro, XOCL_SUBDEV_FLASH);
 		(void) xocl_subdev_online_by_id(lro, XOCL_SUBDEV_UARTLITE);
-		(void) xocl_subdev_online_by_id(lro, XOCL_SUBDEV_XGQ);
+		(void) xocl_subdev_online_by_id(lro, XOCL_SUBDEV_XGQ_VMR);
 	} else {
 		mgmt_warn(lro, "PCI Hot reset is not supported on this board.");
 	}
@@ -378,9 +385,11 @@ long xclmgmt_hot_reset(struct xclmgmt_dev *lro, bool force)
 	else if (!force)
 		xclmgmt_connect_notify(lro, true);
 
-	(void) xocl_reinit_vmr(lro);
+	(void) xocl_reload_vmr(lro);
 
-done:
+	return 0;
+
+failed:
 	return err;
 }
 

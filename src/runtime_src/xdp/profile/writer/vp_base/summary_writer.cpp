@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2016-2021 Xilinx, Inc
+ * Copyright (C) 2016-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -16,6 +16,9 @@
 
 #define XDP_SOURCE
 
+#include "xdp/profile/database/static_info/device_info.h"
+#include "xdp/profile/database/static_info/pl_constructs.h"
+#include "xdp/profile/database/static_info/xclbin_info.h"
 #include "xdp/profile/writer/vp_base/summary_writer.h"
 #include "xdp/profile/plugin/vp_base/info.h"
 #include "xdp/profile/plugin/vp_base/utility.h"
@@ -235,6 +238,27 @@ namespace xdp {
     NativeAPIs.emplace("xrtXclbinGetUUID");
     NativeAPIs.emplace("xrtXclbinGetData");
     NativeAPIs.emplace("xrtXclbinUUID");
+    NativeAPIs.emplace("xrt::psrun::psrun");
+    NativeAPIs.emplace("xrt::psrun::start");
+    NativeAPIs.emplace("xrt::psrun::wait");
+    NativeAPIs.emplace("xrt::psrun::state");
+    NativeAPIs.emplace("xrt::psrun::set_event");
+    NativeAPIs.emplace("xrt::psrun::get_ert_packet");
+    NativeAPIs.emplace("xrt::pskernel::kernel");
+    NativeAPIs.emplace("xrt::pskernel::offset");
+    NativeAPIs.emplace("xrtPSKernelOpen");
+    NativeAPIs.emplace("xrtPSKernelOpenExclusive");
+    NativeAPIs.emplace("xrtPSKernelClose");
+    NativeAPIs.emplace("xrtPSRunOpen");
+    NativeAPIs.emplace("xrtPSKernelArgGroupId");
+    NativeAPIs.emplace("xrtPSKernelArgOffset");
+    NativeAPIs.emplace("xrtPSKernelRun");
+    NativeAPIs.emplace("xrtPSRunClose");
+    NativeAPIs.emplace("xrtPSRunState");
+    NativeAPIs.emplace("xrtPSRunWait");
+    NativeAPIs.emplace("xrtPSRunWaitFor");
+    NativeAPIs.emplace("xrtPSRunSetCalback");
+    NativeAPIs.emplace("xrtPSRunStart");
 
     HALAPIs.emplace("xclLoadXclbin") ;
     HALAPIs.emplace("xclProbe") ;
@@ -259,6 +283,8 @@ namespace xdp {
     HALAPIs.emplace("xclExecWait") ;
     HALAPIs.emplace("xclCloseContext") ;
     HALAPIs.emplace("xclGetBOProperties") ;
+    HALAPIs.emplace("xclRegWrite") ;
+    HALAPIs.emplace("xclRegRead") ;
   }
 
   void SummaryWriter::writeHeader()
@@ -726,7 +752,7 @@ namespace xdp {
 	  (db->getDynamicInfo()).getCounterResults(deviceId, xclbin->uuid) ;
 
 	// For every compute unit in the xclbin
-	for (auto cuInfo : xclbin->cus)
+	for (auto cuInfo : xclbin->pl.cus)
 	{
 	  uint64_t amSlotID = (uint64_t)((cuInfo.second)->getAccelMon()) ;
 
@@ -740,7 +766,7 @@ namespace xdp {
 	  std::string kernelName = (cuInfo.second)->getKernelName() ;
 	  std::string cuLocalDimensions = (cuInfo.second)->getDim() ;
 	  std::string dataflowEnabled = 
-	    (cuInfo.second)->dataflowEnabled() ? "Yes" : "No" ;
+	    (cuInfo.second)->getDataflowEnabled() ? "Yes" : "No" ;
 	  
 	  // For each compute unit, we can have executions from the host
 	  //  with different global work sizes.  Determine the number of 
@@ -752,7 +778,7 @@ namespace xdp {
 	  {
 	    std::string globalWorkDimensions = cuCall.first ;
 
-	    auto kernelClockMHz = xclbin->clockRateMHz ;
+	    auto kernelClockMHz = xclbin->pl.clockRatePLMHz ;
 	    double deviceCyclesMsec = (double)(kernelClockMHz) * one_thousand ;
 
 	    double cuRunTimeMsec =
@@ -780,7 +806,7 @@ namespace xdp {
 		 << cuMinExecCyclesMsec << "," //<< (minTime / one_million) << ","
 		 << cuRunTimeAvgMsec << "," //<< (averageTime /one_million) << ","
 		 << cuMaxExecCyclesMsec << "," //<< (maxTime / one_million) << "," 
-		 << (xclbin->clockRateMHz) << ","
+		 << (xclbin->pl.clockRatePLMHz) << ","
 		 << std::endl ;
 	  }
 	}
@@ -811,9 +837,9 @@ namespace xdp {
       {
 	xclCounterResults values = (db->getDynamicInfo()).getCounterResults(device->deviceId, xclbin->uuid) ;
 	uint64_t j = 0 ;      
-	for (auto cu : (xclbin->cus))
+	for (auto cu : (xclbin->pl.cus))
 	{
-          double deviceCyclesMsec = (double)(xclbin->clockRateMHz * one_thousand);
+          double deviceCyclesMsec = (double)(xclbin->pl.clockRatePLMHz * one_thousand);
 
 	  fout << (cu.second)->getName()     << "," 
 	       << values.CuExecCount[j]      << ","
@@ -1066,7 +1092,7 @@ namespace xdp {
         xclCounterResults values =
           db->getDynamicInfo().getCounterResults(device->deviceId,
                                                  xclbin->uuid) ;
-        for (auto cu : xclbin->cus) {
+        for (auto cu : xclbin->pl.cus) {
           std::vector<uint32_t>* asmMonitors = (cu.second)->getASMs() ;
           
           for (auto asmMonitorId : (*asmMonitors)) {
@@ -1105,7 +1131,7 @@ namespace xdp {
       for (auto xclbin : device->loadedXclbins)
       {
         xclCounterResults values = (db->getDynamicInfo()).getCounterResults(device->deviceId, xclbin->uuid) ;
-        for (auto cu : xclbin->cus)
+        for (auto cu : xclbin->pl.cus)
         {
           std::vector<uint32_t>* asmMonitors = (cu.second)->getASMs() ;
           
@@ -1139,7 +1165,7 @@ namespace xdp {
               slaveArgs = secondHalf.substr(slashPosition + 1, secondHalf.size()-slashPosition-1) ;
             }
             
-            double transferTime = busyCycles / xclbin->clockRateMHz ;
+            double transferTime = busyCycles / xclbin->pl.clockRatePLMHz ;
             double transferRate = (transferTime == zero) ? 0 : values.StrDataBytes[asmMonitorId] / transferTime ;
             
             double linkStarve = (0 == busyCycles) ? 0 : 
@@ -1204,7 +1230,7 @@ namespace xdp {
       {
       
       uint64_t AIMIndex = 0 ;
-      for (auto monitor : device->currentXclbin()->aimList)
+      for (auto monitor : xclbin->pl.aims)
       {
 	if (monitor->name.find("Host to Device") != std::string::npos)
 	{
@@ -1216,7 +1242,7 @@ namespace xdp {
 	  {
 	    uint64_t totalWriteBusyCycles = values.WriteBusyCycles[AIMIndex] ;
 	    double totalWriteTime =
-	      (double)(totalWriteBusyCycles) / (one_thousand * xclbin->clockRateMHz);
+	      (double)(totalWriteBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz);
 	    double writeTransferRate = (totalWriteTime == zero) ? 0 :
 	      (double)(values.WriteBytes[AIMIndex]) / (one_thousand * totalWriteTime);
 
@@ -1249,14 +1275,14 @@ namespace xdp {
 	    }
 	    else
 	    {
-	      fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.WriteTranx[AIMIndex]) << "," << std::endl ;
+	      fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.WriteTranx[AIMIndex]) << "," << std::endl ;
 	    }
 	  }
 	  if (values.ReadTranx[AIMIndex] > 0)
 	  {
 	    uint64_t totalReadBusyCycles = values.ReadBusyCycles[AIMIndex] ;
 	    double totalReadTime =
-	      (double)(totalReadBusyCycles) / (one_thousand * xclbin->clockRateMHz);
+	      (double)(totalReadBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz);
 	    double readTransferRate = (totalReadTime == zero) ? 0 :
 	      (double)(values.ReadBytes[AIMIndex]) / (one_thousand * totalReadTime);
 
@@ -1289,7 +1315,7 @@ namespace xdp {
 	    }
 	    else
 	    {
-	      fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.ReadTranx[AIMIndex]) << "," << std::endl ;
+	      fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.ReadTranx[AIMIndex]) << "," << std::endl ;
 	    }
 	  }
 	}
@@ -1317,7 +1343,7 @@ namespace xdp {
     for (auto device : infos) {
       for (auto xclbin : device->loadedXclbins) {
         uint64_t AIMIndex = 0 ;
-        for (auto monitor : device->currentXclbin()->aimList) {
+        for (auto monitor : xclbin->pl.aims) {
           if (monitor->name.find("Peer to Peer") != std::string::npos) {
             // This is the monitor we're looking for
             xclCounterResults values =
@@ -1354,7 +1380,7 @@ namespace xdp {
     for (auto device : infos) {
       for (auto xclbin : device->loadedXclbins) {
         uint64_t AIMIndex = 0 ;
-        for (auto monitor : device->currentXclbin()->aimList) {
+        for (auto monitor : xclbin->pl.aims) {
           if (monitor->name.find("Peer to Peer") != std::string::npos) {
             // This is the monitor we are looking for
 	    xclCounterResults values =
@@ -1363,7 +1389,7 @@ namespace xdp {
             if (values.WriteTranx[AIMIndex] > 0) {
               uint64_t totalWriteBusyCycles = values.WriteBusyCycles[AIMIndex] ;
 	      double totalWriteTime =
-	        (double)(totalWriteBusyCycles) / (one_thousand * xclbin->clockRateMHz);
+	        (double)(totalWriteBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz);
 	      double writeTransferRate = (totalWriteTime == zero) ? 0 :
 	        (double)(values.WriteBytes[AIMIndex]) / (one_thousand * totalWriteTime);
 
@@ -1389,13 +1415,13 @@ namespace xdp {
 	        fout << "N/A" << "," << std::endl ;
 	      }
 	      else {
-	        fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.WriteTranx[AIMIndex]) << "," << std::endl ;
+	        fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.WriteTranx[AIMIndex]) << "," << std::endl ;
 	      }
 	    }
 	    if (values.ReadTranx[AIMIndex] > 0) {
  	      uint64_t totalReadBusyCycles = values.ReadBusyCycles[AIMIndex] ;
 	      double totalReadTime =
-	        (double)(totalReadBusyCycles) / (one_thousand * xclbin->clockRateMHz);
+	        (double)(totalReadBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz);
 	      double readTransferRate = (totalReadTime == zero) ? 0 :
 	        (double)(values.ReadBytes[AIMIndex]) / (one_thousand * totalReadTime);
 
@@ -1422,7 +1448,7 @@ namespace xdp {
 	        fout << "N/A" << "," << std::endl ;
 	      }
 	      else {
-	        fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.ReadTranx[AIMIndex]) << "," << std::endl ;
+	        fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.ReadTranx[AIMIndex]) << "," << std::endl ;
 	      }
 	    }
 	  }
@@ -1440,7 +1466,7 @@ namespace xdp {
     bool hasMemoryMonitors = false ;
     for (auto device : infos) {
       for (auto xclbin : device->loadedXclbins) {
-        hasMemoryMonitors |= xclbin->hasMemoryAIM ;
+        hasMemoryMonitors |= xclbin->pl.hasMemoryAIM ;
         if (hasMemoryMonitors) break ;
       }
       if (hasMemoryMonitors) break ;
@@ -1472,7 +1498,7 @@ namespace xdp {
         xclCounterResults values =
           db->getDynamicInfo().getCounterResults(device->deviceId,
                                                  xclbin->uuid) ;
-        for (auto aim : xclbin->aimList) {
+        for (auto aim : xclbin->pl.aims) {
           auto loc = aim->name.find("memory_subsystem") ;
           if (loc != std::string::npos) {
 	    std::string memoryResource = aim->name.substr(loc + 16) ;
@@ -1480,7 +1506,7 @@ namespace xdp {
 	    if (values.ReadTranx[AIMIndex] > 0) {
  	      uint64_t totalReadBusyCycles = values.ReadBusyCycles[AIMIndex] ;
 	      double totalReadTime =
-	        (double)(totalReadBusyCycles) / (one_thousand * xclbin->clockRateMHz);
+	        (double)(totalReadBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz);
 	      double readTransferRate = (totalReadTime == zero) ? 0 :
 	        (double)(values.ReadBytes[AIMIndex]) / (one_thousand * totalReadTime);
 
@@ -1492,12 +1518,12 @@ namespace xdp {
               fout << readTransferRate << "," ;
               fout << ((double)(values.ReadBytes[AIMIndex] / one_million)) << "," ;
               fout << ((double)(values.ReadBytes[AIMIndex]) / (double)(values.ReadTranx[AIMIndex])) / one_thousand << "," ;
-              fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.ReadTranx[AIMIndex]) << ",\n" ;
+              fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.ReadTranx[AIMIndex]) << ",\n" ;
             }
             if (values.WriteTranx[AIMIndex] > 0) {
  	      uint64_t totalWriteBusyCycles = values.WriteBusyCycles[AIMIndex] ;
 	      double totalWriteTime =
-	        (double)(totalWriteBusyCycles) / (one_thousand * xclbin->clockRateMHz);
+	        (double)(totalWriteBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz);
 	      double writeTransferRate = (totalWriteTime == zero) ? 0 :
 	        (double)(values.WriteBytes[AIMIndex]) / (one_thousand * totalWriteTime);
               fout << "ENTRY:" ;
@@ -1508,7 +1534,7 @@ namespace xdp {
               fout << writeTransferRate << "," ;
               fout << ((double)(values.WriteBytes[AIMIndex] / one_million)) << "," ;
               fout << ((double)(values.WriteBytes[AIMIndex]) / (double)(values.WriteTranx[AIMIndex])) / one_thousand << "," ;
-              fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.WriteTranx[AIMIndex]) << ",\n" ;
+              fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.WriteTranx[AIMIndex]) << ",\n" ;
             }
           }
           ++AIMIndex ;
@@ -1527,7 +1553,7 @@ namespace xdp {
     for (auto device : infos) {
       for (auto xclbin : device->loadedXclbins) {
         uint64_t AIMIndex = 0 ;
-        for (auto monitor : xclbin->aimList) {
+        for (auto monitor : xclbin->pl.aims) {
           if (monitor->name.find("Memory to Memory") != std::string::npos) {
             xclCounterResults values =
 	      (db->getDynamicInfo()).getCounterResults(device->deviceId,
@@ -1564,7 +1590,7 @@ namespace xdp {
     for (auto device : infos) {
       for (auto xclbin : device->loadedXclbins) {
         uint64_t AIMIndex = 0 ;
-        for (auto monitor : xclbin->aimList) {
+        for (auto monitor : xclbin->pl.aims) {
 	  if (monitor->name.find("Memory to Memory") != std::string::npos) {
             // This is the monitor we are looking for
 	    xclCounterResults values =
@@ -1573,7 +1599,7 @@ namespace xdp {
             if (values.WriteTranx[AIMIndex] > 0) {
 	      uint64_t totalWriteBusyCycles = values.WriteBusyCycles[AIMIndex] ;
 	      double totalWriteTime =
-	        (double)(totalWriteBusyCycles) / (one_thousand*xclbin->clockRateMHz);
+	        (double)(totalWriteBusyCycles) / (one_thousand*xclbin->pl.clockRatePLMHz);
               double writeTransferRate = (totalWriteTime == zero) ? 0 :
 	        (double)(values.WriteBytes[AIMIndex]) / (one_thousand*totalWriteTime);
 
@@ -1597,13 +1623,13 @@ namespace xdp {
 	        fout << "N/A" << "," << std::endl ;
 	      }
 	      else {
-	        fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.WriteTranx[AIMIndex]) << "," << std::endl ;
+	        fout << ((one_thousand * values.WriteLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.WriteTranx[AIMIndex]) << "," << std::endl ;
 	      }
 	    }
 	    if (values.ReadTranx[AIMIndex] > 0) {
   	      uint64_t totalReadBusyCycles = values.ReadBusyCycles[AIMIndex] ;
 	      double totalReadTime =
-	        (double)(totalReadBusyCycles) / (one_thousand * xclbin->clockRateMHz);
+	        (double)(totalReadBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz);
 	      double readTransferRate = (totalReadTime == zero) ? 0 :
 	        (double)(values.ReadBytes[AIMIndex]) / (one_thousand * totalReadTime);
 
@@ -1630,7 +1656,7 @@ namespace xdp {
 	        fout << "N/A" << "," << std::endl ;
 	      }
 	      else {
-	        fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->clockRateMHz) / (values.ReadTranx[AIMIndex]) << "," << std::endl ;
+	        fout << ((one_thousand * values.ReadLatency[AIMIndex]) / xclbin->pl.clockRatePLMHz) / (values.ReadTranx[AIMIndex]) << "," << std::endl ;
 	      }
 	    }
 	  }
@@ -1649,7 +1675,7 @@ namespace xdp {
     bool monitorsExist = false ;
     for (auto device : infos) {
       for (auto xclbin : device->getLoadedXclbins()) {
-        for (auto aim : xclbin->aimList) {
+        for (auto aim : xclbin->pl.aims) {
           if (aim->cuIndex != -1) {
             monitorsExist = true ;
             break ;
@@ -1688,7 +1714,7 @@ namespace xdp {
 	// Counter results don't use the slotID.  Instead, they are filled
 	//  in the struct in the order in which we found them.
 	uint64_t monitorId = 0 ;
-	for (auto monitor : xclbin->aimList) {
+	for (auto monitor : xclbin->pl.aims) {
 	  if (monitor->cuIndex == -1) {
 	    // This AIM is either a shell or floating 
 	    ++monitorId ;
@@ -1702,9 +1728,9 @@ namespace xdp {
 	  uint64_t totalWriteBusyCycles = values.WriteBusyCycles[monitorId] ;
 
 	  double totalReadTime = 
-	    (double)(totalReadBusyCycles) / (one_thousand * xclbin->clockRateMHz) ;
+	    (double)(totalReadBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz) ;
 	  double totalWriteTime =
-	    (double)(totalWriteBusyCycles) / (one_thousand * xclbin->clockRateMHz) ;
+	    (double)(totalWriteBusyCycles) / (one_thousand * xclbin->pl.clockRatePLMHz) ;
 
 	  // Use the name of the monitor to determine the port and memory
 	  std::string portName   = "" ;
@@ -1731,14 +1757,14 @@ namespace xdp {
 	    double transferRate = (totalWriteTime == zero) ? 0 :
 	      (double)(values.WriteBytes[monitorId]) / (one_thousand * totalWriteTime);
 	    double aveBW =
-	      (one_hundred * transferRate) / xclbin->maxWriteBW ;
+	      (one_hundred * transferRate) / xclbin->pl.maxWriteBW ;
 	    if (aveBW > one_hundred) aveBW = one_hundred ;
 	    auto aveLatency =
               static_cast<double>(values.WriteLatency[monitorId]) /
               static_cast<double>(writeTranx) ;
 
 	    fout << device->getUniqueDeviceName() << ","
-		 << xclbin->cus[monitor->cuIndex]->getName() << "/"
+		 << xclbin->pl.cus[monitor->cuIndex]->getName() << "/"
 		 << portName << ","
 		 << (monitor->args) << ","
 		 << memoryName << ","
@@ -1753,14 +1779,14 @@ namespace xdp {
 	      double transferRate = (totalReadTime == zero) ? 0 :
 		(double)(values.ReadBytes[monitorId]) / (one_thousand * totalReadTime);
 	      double aveBW =
-		(one_hundred * transferRate) / xclbin->maxReadBW ;
+		(one_hundred * transferRate) / xclbin->pl.maxReadBW ;
 	      if (aveBW > one_hundred) aveBW = one_hundred ;
               auto aveLatency =
                 static_cast<double>(values.ReadLatency[monitorId]) /
                 static_cast<double>(readTranx) ;
 
 	      fout << device->getUniqueDeviceName() << ","
-		   << xclbin->cus[monitor->cuIndex]->getName() << "/"
+		   << xclbin->pl.cus[monitor->cuIndex]->getName() << "/"
 		   << portName << ","
 		   << (monitor->args) << ","
 		   << memoryName << ","
@@ -1785,7 +1811,7 @@ namespace xdp {
     bool monitorsExist = false ;
     for (auto device : infos) {
       for (auto xclbin : device->getLoadedXclbins()) {
-        for (auto aim : xclbin->aimList) {
+        for (auto aim : xclbin->pl.aims) {
           if (aim->cuIndex != -1) {
             monitorsExist = true ;
             break ;
@@ -1823,7 +1849,7 @@ namespace xdp {
 	xclCounterResults values =
 	  (db->getDynamicInfo()).getCounterResults(deviceId, xclbin->uuid) ;
 
-	for (auto cu : xclbin->cus)
+	for (auto cu : xclbin->pl.cus)
 	{
 	  // For each CU, we need to find the monitor that has 
 	  //  the most transactions
@@ -1857,7 +1883,7 @@ namespace xdp {
 	      auto totalBusyCycles =
 		values.ReadBusyCycles[AIMIndex]+values.WriteBusyCycles[AIMIndex];
 	      double totalTimeMSec = 
-		(double)(totalBusyCycles) /(one_thousand * xclbin->clockRateMHz) ;
+		(double)(totalBusyCycles) /(one_thousand * xclbin->pl.clockRatePLMHz) ;
 	      totalTransferRate =
 		(totalTimeMSec == 0) ? zero :
 		(double)(totalDataTransfer) / (one_thousand * totalTimeMSec) ;

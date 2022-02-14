@@ -21,9 +21,8 @@
 #include "lib/xmaapi.h"
 #include "app/xma_utils.hpp"
 #include "lib/xma_utils.hpp"
-//#include "lib/xmahw_hal.h"
-//#include "lib/xmares.h"
 #include "xmaplugin.h"
+#include "core/common/device.h"
 #include <bitset>
 
 #define XMA_FILTER_MOD "xmafilter"
@@ -138,7 +137,7 @@ xma_filter_session_create(XmaFilterProperties *filter_props)
         }
     }
 
-    void* dev_handle = hwcfg->devices[hwcfg_dev_index].handle;
+    auto dev_handle = hwcfg->devices[hwcfg_dev_index].xrt_device;
     XmaHwKernel* kernel_info = &hwcfg->devices[hwcfg_dev_index].kernels[cu_index];
 
     filter_session->base.hw_session.dev_index = hwcfg->devices[hwcfg_dev_index].dev_index;
@@ -196,6 +195,7 @@ xma_filter_session_create(XmaFilterProperties *filter_props)
     priv1->kernel_execbos.reserve(num_execbo);
     priv1->num_execbo_allocated = num_execbo;
     if (xma_core::create_session_execbo(priv1, num_execbo, XMA_FILTER_MOD) != XMA_SUCCESS) {
+        kernel_info->context_opened = false;
         free(filter_session->base.plugin_data);
         free(filter_session);
         delete priv1;
@@ -207,7 +207,10 @@ xma_filter_session_create(XmaFilterProperties *filter_props)
     //Singleton lock acquired
 
     if (!kernel_info->soft_kernel && !kernel_info->in_use && !kernel_info->context_opened) {
-        if (xclOpenContext(dev_handle, dev_tmp1.uuid, kernel_info->cu_index_ert, true) != 0) {
+        try {
+            dev_handle.get_handle()->open_context(dev_tmp1.uuid, kernel_info->cu_index_ert, true);
+        }
+        catch (const xrt_core::system_error&) {
             xma_logmsg(XMA_ERROR_LOG, XMA_FILTER_MOD, "Failed to open context to CU %s for this session\n", kernel_info->name);
             free(filter_session->base.plugin_data);
             free(filter_session);
