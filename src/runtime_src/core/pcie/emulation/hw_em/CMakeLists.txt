@@ -12,6 +12,7 @@ include_directories(
   "${EM_SRC_DIR}/xrt_model/hostenv"
   "${EM_SRC_DIR}/xrt_model/xrt"
   "${EM_SRC_DIR}/xrt_model/ringb/include"
+  "${EM_SRC_DIR}/res_solver/include"
   ${COMMON_EM_SRC_DIR}
   ${COMMON_EM_GEN_DIR}
   ${BOOST_FILESYSTEM_INCLUDE_DIRS}
@@ -26,6 +27,8 @@ file(GLOB EM_SRC_FILES
   "${EM_SRC_DIR}/xrt_model/xrt/*.cpp"
   "${EM_SRC_DIR}/xrt_model/xrt/*.h"
   "${EM_SRC_DIR}/xrt_model/ringb/*.cpp"
+  "${EM_SRC_DIR}/res_solver/include/*.h"
+  "${EM_SRC_DIR}/res_solver/*.c"
   "${COMMON_PCIE_SRC_DIR}/aie_stubs.cpp"
   "${COMMON_PCIE_SRC_DIR}/system_pcie.cpp"
   "${COMMON_PCIE_SRC_DIR}/device_pcie.cpp"
