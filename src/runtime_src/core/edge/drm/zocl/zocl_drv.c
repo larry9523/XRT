@@ -200,12 +200,20 @@ static void zocl_pr_slot_fini(struct drm_zocl_dev *zdev)
  */
 static int zocl_aperture_init(struct drm_zocl_dev *zdev)
 {
+	struct addr_aperture *apts = NULL;
+	int i = 0;
+
 	zdev->apertures = kcalloc(MAX_APT_NUM, sizeof(struct addr_aperture),
 				 GFP_KERNEL);
 	if (!zdev->apertures) {
 		DRM_ERROR("Out of memory for Aperture\n");
 		return -ENOMEM;
 	}
+
+	apts = zdev->apertures;
+	/* Consider this magic number as uninitialized aperture identity */
+	for (i = 0; i < MAX_APT_NUM; ++i)
+		apts[i].addr = EMPTY_APT_VALUE;
 
 	zdev->num_apts = 0;
 
@@ -485,12 +493,12 @@ void zocl_free_bo(struct drm_gem_object *obj)
 		else if (zocl_obj->flags & ZOCL_BO_FLAGS_HOST_BO)
 			zocl_free_host_bo(obj);
 		else if (zocl_obj->flags & ZOCL_BO_FLAGS_CMA) {
-			/* free resources associated with a CMA GEM object */
-			drm_gem_cma_free_object(obj);
-
 			/* Update memory usage statistics */
 			zocl_update_mem_stat(zdev, obj->size, -1,
 			    zocl_obj->mem_index);
+			/* free resources associated with a CMA GEM object */
+			drm_gem_cma_free_object(obj);
+
 		} else {
 			if (zocl_obj->mm_node) {
 				mutex_lock(&zdev->mm_lock);
