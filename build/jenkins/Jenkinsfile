@@ -430,6 +430,17 @@ node('xcoIPULinPool') {
       }
       parallel(publishStages)
     }
+    
+    // On successful above runs, Trigger AIE-IPU build environment update
+    if (!prBuild && BUILD_XLNX) {
+        if (!params.DEV) {
+          build job: 'IPU/AIE-IPU/AIE_IPU_DOCKER_IMG',
+          wait: false
+        } else {
+          build job: 'IPU/AIE-IPU/dev/AIE_IPU_DOCKER_IMG',
+          wait: false
+        }
+    }
   } catch (all) {
     if (prBuild) {
       echo "Skipping Failure Email"
