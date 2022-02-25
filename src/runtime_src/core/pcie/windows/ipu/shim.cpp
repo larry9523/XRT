@@ -754,20 +754,9 @@ done:
   void
   get_errors(char *buffer)
   {
-    //DWORD bytes = 0;
+    DWORD bytes = 0;
     auto err = reinterpret_cast<struct xcl_errors*>(buffer);
 
-#if 1 //TODO:For testing
-    err->errors[0].pid = 0;
-    err->errors[0].ts = 0x100;
-    err->errors[0].err_code = XRT_ERROR_CODE_BUILD( XRT_ERROR_NUM_AIE_SATURATION,
-        XRT_ERROR_DRIVER_AIE,
-        XRT_ERROR_SEVERITY_CRITICAL,
-        XRT_ERROR_MODULE_AIE_CORE,
-        XRT_ERROR_CLASS_AIE);
-
-    err->num_err = 1;
-#else //TODO:Enable after windows driver implenmented error report.
     bool status = DeviceIoControl(m_dev,
         IOCTL_KIPUDRV_ERROR_INFO,
         nullptr,
@@ -779,7 +768,35 @@ done:
 
     if (!status || bytes != sizeof(xcl_errors))
       throw std::runtime_error("DeviceIoControl IOCTL_KIPUDRV_ERROR_INFO (errors) failed");
-#endif
+
+  }
+
+  int
+  ErrorInject(uint16_t num, uint16_t driver, uint16_t severity, uint16_t module, uint16_t eclass)
+  {
+      DWORD bytes = 0;
+      XOCL_ERROR_INJECT_ARGS errorinject = { XOCL_ERROR_OP_INJECT, num, driver, severity, module, eclass };
+
+      bool status = DeviceIoControl(m_dev,
+          IOCTL_KIPUDRV_ERROR_INJECT,
+          &errorinject,
+          sizeof(errorinject),
+          nullptr,
+          0,
+          &bytes,
+          nullptr);
+
+      if (status) {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "OK");
+      }
+      else {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::error, "XRT", "DeviceIoControl IOCTL_KIPUDRV_ERROR_INJECT failed ");
+          return 1;
+      }
+
+      return 0;
   }
 
 }; // struct shim
@@ -1265,6 +1282,15 @@ void
 xclGetDebugIpLayout(xclDeviceHandle hdl, char* buffer, size_t size, size_t* size_ret)
 {
   //userpf::get_debug_ip_layout(hdl, buffer, size, size_ret);
+}
+
+int
+xclErrorInject(xclDeviceHandle handle, uint16_t num, uint16_t driver, uint16_t severity, uint16_t module, uint16_t eclass)
+{
+    xrt_core::message::
+        send(xrt_core::message::severity_level::debug, "XRT", "xclExecBuf()");
+    auto shim = get_shim_object(handle);
+    return shim->ErrorInject(num, driver, severity, module, eclass);
 }
 
 // Deprecated APIs

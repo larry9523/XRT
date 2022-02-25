@@ -21,8 +21,6 @@
 #include <initguid.h>
 #include <stdint.h>
 
-#define FILE_DEVICE_XRT_USER   ((ULONG)0x8879)   // "XO"
-
 //
 // Constant string for the symbolic link associated with the device
 //
@@ -30,6 +28,8 @@
 
 #define XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE L"\\Buffer"
 #define XRT_USER_DEVICE_DEVICE_NAMESPACE        L"\\Device"
+
+#define XOCL_DEFAULT_ERROR_CAPACITY 32
 
 typedef enum _XRT_BUFFER_SYNC_DIRECTION {
 
@@ -51,6 +51,11 @@ typedef enum _XRT_BUFFER_TYPE {
     XRT_BUFFER_TYPE_DEVICE_ONLY
 
 } XRT_BUFFER_TYPE, * PXRT_BUFFER_TYPE;
+
+enum xocl_err_ops {
+    XOCL_ERROR_OP_INJECT = 1,
+    XOCL_ERROR_OP_CLEAR_ALL
+};
 
 #define XRT_MAX_DDR_BANKS    4
 
@@ -205,6 +210,33 @@ typedef struct _XRT_ALLOC_HOST_MEM_ARGS {
 } XRT_ALLOC_HOST_MEM_ARGS, * PXRT_ALLOC_HOST_MEM_ARGS;
 
 /**
+ * struct _XOCL_ERROR_INJECT_ARGS - Aie error injection
+ */
+typedef struct _XOCL_ERROR_INJECT_ARGS {
+    uint16_t     err_ops;
+    uint16_t     err_num;
+    uint16_t     err_driver;
+    uint16_t     err_severity;
+    uint16_t     err_module;
+    uint16_t     err_class;
+}XOCL_ERROR_INJECT_ARGS, * PXOCL_ERROR_INJECT_ARGS;
+
+struct xocl_err_record {
+    xrtErrorCode    xer_err_code;   /* XRT error code */
+    uint64_t        xer_ts;         /* timestamp */
+    uint32_t        pid;            /* 32 bits; pid associated with error, if available */
+};
+
+/**
+ * struct _XOCL_ERRORS_USER_ARGS - Pass Aie error to user space
+ */
+typedef struct _XOCL_ERRORS_USER_ARGS {
+    int     num_err;    /* number of errors recorded */
+    struct xocl_err_record errors[XOCL_DEFAULT_ERROR_CAPACITY];  /* error array pointer */
+} XOCL_ERRORS_USER_ARGS, * PXOCL_ERRORS_USER_ARGS;
+
+
+/**
  * struct xcl_sensor - Data structure used to fetch SENSOR group
  */
 struct xcl_sensor {
@@ -267,7 +299,6 @@ struct xcl_sensor {
     uint32_t heartbeat_err_code;
     uint32_t heartbeat_stall;
 };
-
 
 /**
  * struct xcl_board_info - Data structure used to fetch BDINFO group
