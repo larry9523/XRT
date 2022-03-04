@@ -785,6 +785,11 @@ size_t
 xclDebugReadIPStatus(xclDeviceHandle handle, enum xclDebugReadType type,
                      void* debugResults);
 
+XCL_DRIVER_DLLESPEC
+int
+xclErrorInject(xclDeviceHandle handle, uint16_t num, uint16_t driver, uint16_t severity,
+    uint16_t module, uint16_t eclass);
+
 #ifdef __cplusplus
 }
 #endif
