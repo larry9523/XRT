@@ -192,7 +192,7 @@ int xclOpenContextByName(xclDeviceHandle handle, uint32_t slot, const uuid_t xcl
   xclhwemhal2::HwEmShim *drv = xclhwemhal2::HwEmShim::handleCheck(handle);
   if (!drv)
     return -1;
-  return drv->xclOpenContext(xclbinId, ipIndex, shared);
+  return drv->xclOpenContext(slot, xclbinId, cuname, shared);
 }
 
 int xclCloseContext(xclDeviceHandle handle, const uuid_t xclbinId, unsigned ipIndex)

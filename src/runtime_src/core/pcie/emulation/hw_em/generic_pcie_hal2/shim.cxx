@@ -3201,7 +3201,9 @@ int HwEmShim::xclExecWait(int timeoutMilliSec)
   return 1;
 }
 
-int HwEmShim::xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared)
+int
+HwEmShim::
+xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared)
 {
   // If not PS Kernel domain, don't create context
   if (ipIndex == 0xFFFFFFFF || !(ipIndex & 0xFFFF0000))
@@ -3215,6 +3217,15 @@ int HwEmShim::xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool s
 
   PRINTENDFUNC;
   return ret;
+}
+
+int
+HwEmShim::
+xclOpenContext(uint32_t slot, const uuid_t xclbinId, const char* cuname, bool shared)
+{
+  // TODO: implement
+  // For now default to single slit behavior
+  return xclOpenContext(xclbinId, mCoreDevice->get_cuidx(slot, cuname).index, shared);
 }
 
 int HwEmShim::xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex)

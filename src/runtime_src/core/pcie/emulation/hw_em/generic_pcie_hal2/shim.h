@@ -133,6 +133,7 @@ using addr_type = uint64_t;
       int xclExecBuf( unsigned int cmdBO);
       int xclExecBuf(unsigned int cmdBO, size_t num_bo_in_wait_list, unsigned int *bo_wait_list);
       int xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared);
+      int xclOpenContext(uint32_t slot, const uuid_t xclbinId, const char* cuname, bool shared);
       int xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex);
 
       int xclRegisterEventNotify( unsigned int userInterrupt, int fd);
@@ -310,7 +311,7 @@ using addr_type = uint64_t;
       void launchTempProcess() {};
 
       void initMemoryManager(std::list<xclemulation::DDRBank>& DDRBankList);
-      //Mapped CU register space for xclRegRead/Write()     
+      //Mapped CU register space for xclRegRead/Write()
       int xclRegRW(bool rd, uint32_t cu_index, uint32_t offset, uint32_t *datap);
 
       std::vector<xclemulation::MemoryManager *> mDDRMemoryManager;
