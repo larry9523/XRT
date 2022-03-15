@@ -39,12 +39,29 @@
 #include "ipu_msg.h"
 #include "mgmt_msg.h"
 #include "app_msg.h"
+#include "xrs.h"
 
 extern IpuHenvRing *XRT_WaitForERT(uint64_t io_hdl);
 template < typename COMMAND, typename RESPONSE >
 bool RINGB_Command(COMMAND command, RESPONSE  *response, IpuHenvRing *pRing,
                    uint32_t msg_id, ipu_msg_opcode_e opcode, const char *cmdStr,
                    const char *fnStr, bool expectSuccess = true);
+
+static int log_helper(const char *format, ...)
+{
+  va_list ap;
+  va_start(ap, format);
+  int ret = vprintf(format, ap);
+  va_end(ap);
+
+  return ret;
+}
+
+struct xrs_helper_func ipurb_xrs_func = {
+	.xrs_mem_alloc	= malloc,
+	.xrs_mem_free	= free,
+	.xrs_log	= log_helper,
+};
 
 using namespace xclhwemhal2;
 
@@ -310,14 +327,49 @@ namespace hwemu {
   {
     device = dev;
     nctx = 0;
+    pid = getpid();
+
+    xrs_hdl = xrs_init(5, XRS_MODE_SPACIAL_STATIC, &ipurb_xrs_func);
   }
 
   xocl_ipurb::~xocl_ipurb()
   {
+    xrs_fini(xrs_hdl);
   }
 
   int xocl_ipurb::load_xclbin(char *buf, size_t size, const uuid_t uuid)
   {
+    // Test code to verify the resource solver interfaces
+    struct xrs_actions *act = nullptr;
+    void (*action_cb)(xrs_handle_t hdl, struct xrs_actions *acts) = nullptr;
+
+    uint32_t start_col = 0;
+
+    struct cdo_parts cp;
+    cp.cdo_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(uuid)); // use XCLBIN uuid for now
+    cp.nparts = 1;
+    cp.ncols = 5;
+    cp.start_col = &start_col;
+
+    struct part_meta pm;
+    pm.xclbin_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(uuid));
+    pm.ncdos = 1;
+    pm.cdo = &cp;
+
+    int rval = xrs_load_xclbin(xrs_hdl, pid, &pm, &act, &action_cb);
+    if (action_cb != nullptr)
+      action_cb(xrs_hdl, act);
+
+    int npasid = xrs_query_npasid(xrs_hdl, pm.xclbin_uuid);
+    uint32_t pasids[npasid];
+    xrs_query_pasids(xrs_hdl, pm.xclbin_uuid, npasid, (reinterpret_cast<uint32_t *>(pasids)));
+    for (int i = 0; i < npasid; i++)
+      printf("In %s, npasid[%d]: %d\n", __func__, i, pasids[i]);
+
+    xrs_unload_xclbin(xrs_hdl, pid);
+
+    // End of resource solver test code
+
     xrt::device xdev(device->getMCoreDevice());
     xrt::bo xbo(xdev, size, xrt::bo::flags::host_only, 0);
 
@@ -325,11 +377,12 @@ namespace hwemu {
     if (!xcmd)
       return 1;
 
-    int rval = 0;
+    rval = 0;
     if (xcmd->load_xclbin(xbo, buf, size, uuid))
       rval = 1;
 
     cmd_pool.destroy(xcmd);
+
     return rval;
   }
 
