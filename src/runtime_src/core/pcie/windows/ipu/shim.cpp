@@ -366,6 +366,14 @@ done:
   }
 
   int
+  open_context(uint32_t slot, const xuid_t xclbin_id, const char* cuname, bool shared)
+  {
+    // TODO: implement
+    // For now default to single slot behavior
+    return open_context(xclbin_id, m_core_device->get_cuidx(slot, cuname).index, shared);
+  }
+
+  int
   close_context(const xuid_t xclbin_id, unsigned int ip_idx)
   {
     HANDLE deviceHandle = m_dev;
@@ -1080,6 +1088,23 @@ xclOpenContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipInd
 
   //Virtual resources are not currently supported by driver
   return (ipIndex == (unsigned int)-1) ? 0 : shim->open_context(xclbinId, ipIndex, shared);
+}
+
+int
+xclOpenContextByName(xclDeviceHandle handle, uint32_t slot, const xuid_t xclbin_uuid, const char* cuname, bool shared)
+{
+  try {
+    auto shim = get_shim_object(handle);
+    return shim->open_context(slot, xclbin_uuid, cuname, shared);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return -ENOENT;
+  }
 }
 
 int xclCloseContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipIndex)
