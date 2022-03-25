@@ -331,7 +331,7 @@ void TEST_IpuInvokeSelfTest(IpuHenvRing *pMngBuff)
     WR_SYSHUB(TEST_DRAM_BASE_ADDR, fill_data, sizeof(fill_data));
 
 
-    self_test_req.place_holder = 0xBA5EFACE;
+    // self_test_req.place_holder = 0xBA5EFACE;
 
     bool passed = RINGB_Command(self_test_req, &self_test_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_INVOKE_SELF_TEST
                                 , "IPU_MSG_INVOKE_SELF_TEST", __FUNCTION__);

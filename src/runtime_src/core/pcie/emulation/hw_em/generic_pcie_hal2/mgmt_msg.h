@@ -46,11 +46,19 @@ typedef struct load_xcl_bin_resp_ {
 // Create Context
 //
 
+typedef enum sec_comm_target_type_ {
+    SEC_COMM_TARGET_TYPE_INVALID    = 0,
+    SEC_COMM_TARGET_TYPE_ACP,
+    SEC_COMM_TARGET_TYPE_ISP,
+    SEC_COMM_TARGET_TYPE_MAX
+} sec_comm_target_type_e;
+
 typedef struct create_context_req_ {
     ipu_uuid_t uuid;
     uint32_t pasid : 16;
     uint32_t num_command_queue_pairs_requested : 8;
     uint32_t :8;
+    sec_comm_target_type_e sec_comm_target_type;
 } create_context_req_t;
 
 typedef struct ipu_command_queue_info_t {
@@ -163,11 +171,11 @@ typedef struct resume_resp_ {
 //
 // Command to invoke self test
 //
-typedef struct invoke_self_test_req_ {
-    uint32_t place_holder;
+typedef struct {
+    uint32_t test_mask;
 } invoke_self_test_req_t;
 
-typedef struct invoke_self_test_resp_ {
+typedef struct {
     ipu_status_e status;
 } invoke_self_test_resp_t;
 
@@ -232,6 +240,28 @@ typedef enum async_event_type_ {
 typedef struct async_msg_ {
     async_event_type_e async_event_type;
 } async_msg_t;
+
+//
+// Unload xcl bin
+//
+
+typedef struct unload_xcl_bin_req_ {
+    ipu_uuid_t uuid;
+} unload_xcl_bin_req_t;
+
+typedef struct unload_xcl_bin_resp_ {
+    ipu_status_e status;
+} unload_xcl_bin_resp_t;
+
+
+typedef struct aie_error_intr_req_ {
+    uint32_t place_holder;
+} aie_error_intr_req_t;
+
+typedef struct aie_error_intr_resp_ {
+    ipu_status_e status;
+} aie_error_intr_resp_t;
+
 
 #pragma pack(pop)
 
