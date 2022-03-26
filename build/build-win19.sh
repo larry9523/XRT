@@ -28,6 +28,7 @@ usage()
     echo "[-boost]                   BOOST libaries root directory (default: $BOOST)"
     echo "[-nocmake]                 Do not rerun cmake generation, just build"
     echo "[-mcdm]                    Build mcdm subset"
+    echo "[-ipu]                     Build ipu subset"
     echo "[-j <n>]                   Compile parallel (default: system cores)"
     echo "[-dbg]                     Build debug library (default: optimized)"
     echo "[-all]                     Build debug and optimized library (default: optimized)"
@@ -72,6 +73,10 @@ while [ $# -gt 0 ]; do
             ;;
         -mcdm)
             cmake_flags+=" -DMCDM=1"
+            shift
+            ;;
+        -ipu)
+            cmake_flags+=" -DXRT_IPU_BUILD=1"
             shift
             ;;
 	-boost)
