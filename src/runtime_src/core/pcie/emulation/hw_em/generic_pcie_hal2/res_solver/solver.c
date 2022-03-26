@@ -238,6 +238,15 @@ int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
 		return -ENODEV;
 	xrs = (struct solver_state *)hdl;
 
+	/*
+	 * Currently, one thread can only load one xclbin.
+	 * TODO add support for one thread to load multiple xclbins.
+	 */
+	if (search_node_by_pasid(xrs, pasid)) {
+		xrs->func->xrs_log("Solver: pasid %d exists\n", pasid);
+		return -EEXIST;
+	}
+
 	rval = allocate_partition(xrs, pmp, &cdo, &part);
 	if (rval) {
 		xrs->func->xrs_log("Solver: no available partition\n");

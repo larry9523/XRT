@@ -9,6 +9,29 @@
 #ifndef XRS_H
 #define XRS_H
 
+#ifdef _WIN32
+
+#include <ntddk.h>
+#include <stdint.h>
+
+typedef unsigned char uuid_t[16];
+
+inline int
+uuid_compare(const uuid_t uuid1, const uuid_t uuid2)
+{
+	if (RtlCompareMemory(&uuid1, &uuid2, sizeof(uuid_t) == sizeof(uuid_t)))
+		return 0;
+
+	return 1;
+}
+
+inline void
+uuid_copy(uuid_t dst, const uuid_t src)
+{
+	RtlCopyMemory(dst, src sizeof(uuid_t));
+}
+
+#else
 #if defined(__KERNEL__)
   #include <linux/types.h>
   #include <linux/uuid.h>
@@ -17,6 +40,7 @@
   #include <stdint.h>
   #include <uuid/uuid.h>
 #endif /* __KERNEL__ */
+#endif /* _WIN32 */
 
 /**
  * typedef xrs_handle_t - opaque XRT Resource Sovler handle
