@@ -431,6 +431,17 @@ node('xcoIPULinPool') {
       parallel(publishStages)
     }
     
+    if (prBuild) {
+      def dpuTestJob = build job: 'IPU/AIE-IPU/AIE_IPU_MASTER_BUILD_PIPELINE_DPU_TESTS', 
+      parameters: [string(name: 'XRT_PATH', value: "${env.NFSWORKSPACE}/${BUILD_NUMBER}/build/Release_centos76")],
+      wait: true
+
+      if (dpuTestJob.result != "SUCCESS") {
+        echo "DPU Tests for this XRT failed."
+        error("DPU TEST Job status: ${dpuTestJob.result}")
+      }
+    }
+
     // On successful above runs, Trigger AIE-IPU build environment update
     if (!prBuild && BUILD_XLNX) {
         if (!params.DEV) {
