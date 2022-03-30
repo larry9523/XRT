@@ -133,6 +133,7 @@ using addr_type = uint64_t;
       int xclExecBuf( unsigned int cmdBO);
       int xclExecBuf(unsigned int cmdBO, size_t num_bo_in_wait_list, unsigned int *bo_wait_list);
       int xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared);
+      int xclOpenContext(uint32_t slot, const uuid_t xclbinId, const char* cuname, bool shared);
       int xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex);
 
       int xclRegisterEventNotify( unsigned int userInterrupt, int fd);
@@ -174,8 +175,10 @@ using addr_type = uint64_t;
 
       //Performance Monitor APIs
       double xclGetDeviceClockFreqMHz();
-      double xclGetReadMaxBandwidthMBps();
-      double xclGetWriteMaxBandwidthMBps();
+      double xclGetHostReadMaxBandwidthMBps();
+      double xclGetHostWriteMaxBandwidthMBps();
+      double xclGetKernelReadMaxBandwidthMBps();
+      double xclGetKernelWriteMaxBandwidthMBps();
       size_t xclGetDeviceTimestamp();
       void xclReadBusStatus(xclPerfMonType type);
       void xclGetDebugMessages(bool force = false);
@@ -248,6 +251,8 @@ using addr_type = uint64_t;
        */
       std::string mRunDeviceBinDir;
 
+      std::vector<std::string> parsedMsgs;
+
       //QDMA Support
       int xclCreateWriteQueue(xclQueueContext *q_ctx, uint64_t *q_hdl);
       int xclCreateReadQueue(xclQueueContext *q_ctx, uint64_t *q_hdl);
@@ -283,6 +288,8 @@ using addr_type = uint64_t;
       void constructQueryTable();
       //CR-1120081
       void parseString(const std::string& simPath , const std::string& searchString);
+      //CR-1120700
+      int parseLog();
       void parseSimulateLog();
       void setSimPath(std::string simPath) { sim_path = simPath; }
       std::string getSimPath () { return sim_path; }
@@ -304,13 +311,12 @@ using addr_type = uint64_t;
       void launchTempProcess() {};
 
       void initMemoryManager(std::list<xclemulation::DDRBank>& DDRBankList);
-      //Mapped CU register space for xclRegRead/Write()     
+      //Mapped CU register space for xclRegRead/Write()
       int xclRegRW(bool rd, uint32_t cu_index, uint32_t offset, uint32_t *datap);
 
       std::vector<xclemulation::MemoryManager *> mDDRMemoryManager;
       xclemulation::MemoryManager* mDataSpace;
       std::list<xclemulation::DDRBank> mDdrBanks;
-      std::map<uint64_t,std::map<uint64_t, KernelArg>> mKernelOffsetArgsInfoMap;
       std::map<uint64_t,uint64_t> mAddrMap;
       std::map<std::string,std::string> mBinaryDirectories;
       std::map<uint64_t , std::ofstream*> mOffsetInstanceStreamMap;
