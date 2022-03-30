@@ -184,15 +184,38 @@ int xclExecBufWithWaitList(xclDeviceHandle handle, unsigned int cmdBO, size_t nu
 //defining following two functions as they gets called in scheduler init call
 int xclOpenContext(xclDeviceHandle handle, const uuid_t xclbinId, unsigned int ipIndex, bool shared)
 {
-  return 0;
+  try {
+    auto shim = xclhwemhal2::HwEmShim::handleCheck(handle);
+    if (!shim)
+      return -1;
+    return shim->xclOpenContext(xclbinId, ipIndex, shared);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return -ENOENT;
+  }
 }
 
 int xclOpenContextByName(xclDeviceHandle handle, uint32_t slot, const uuid_t xclbinId, const char* cuname, bool shared)
 {
-  xclhwemhal2::HwEmShim *drv = xclhwemhal2::HwEmShim::handleCheck(handle);
-  if (!drv)
-    return -1;
-  return drv->xclOpenContext(slot, xclbinId, cuname, shared);
+  try {
+    auto shim = xclhwemhal2::HwEmShim::handleCheck(handle);
+    if (!shim)
+      return -1;
+    return shim->xclOpenContext(slot, xclbinId, cuname, shared);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return -ENOENT;
+  }
 }
 
 int xclCloseContext(xclDeviceHandle handle, const uuid_t xclbinId, unsigned ipIndex)
