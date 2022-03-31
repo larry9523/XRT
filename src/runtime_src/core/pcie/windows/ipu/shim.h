@@ -1,25 +1,31 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Copyright (C) 2019-2021 Xilinx, Inc. All rights reserved.
- */
+// SPDX-License-Identifier: Apache-2.0
+//  Copyright (C) 2019-2022 Xilinx, Inc. All rights reserved.
 #ifndef XRT_CORE_PCIE_WINDOWS_IPU_SHIM_H
 #define XRT_CORE_PCIE_WINDOWS_IPU_SHIM_H
 
-#include "config.h"
 #include "xrt.h"
-#include "core/common/xrt_profiling.h"
+#include "core/common/device.h"
+#include "core/common/query_requests.h"
 #include "core/pcie/driver/windows/ipu/include/xrt-intf.hpp"
 #include "core/pcie/driver/windows/ipu/include/FW_Public.hpp"
-
 #include "core/pcie/driver/windows/ipu/include/xrt-intf_unused.hpp"
 
 struct FeatureRomHeader;
 
 namespace userpf {
 
+// Query to get cu info from driver
+// [slot, index, ...]+
+xrt_core::query::kds_cu_info::result_type
+kds_cu_info(const xrt_core::device* device);
+
+// Query to get xclbin info from driver
+// [slot, uuid]+
+xrt_core::query::xclbin_slots::result_type
+xclbin_slots(const xrt_core::device* device);
+
 void
 get_rom_info(xclDeviceHandle hdl, FeatureRomHeader* value);
-
 
 void
 get_device_info(xclDeviceHandle hdl, XOCL_DEVICE_INFORMATION* value);

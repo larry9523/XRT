@@ -1,22 +1,11 @@
-/**
- * Copyright (C) 2019-2021 Xilinx, Inc
- * Copyright (C) 2019 Samsung Semiconductor, Inc
- *
- * Licensed under the Apache License, Version 2.0 (the "License"). You may
- * not use this file except in compliance with the License. A copy of the
- * License is located at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2019-2022 Xilinx, Inc. All rights reserved.
+// Copyright (C) 2019 Samsung Semiconductor, Inc
 #define XCL_DRIVER_DLL_EXPORT
 #define XRT_CORE_PCIE_WINDOWS_SOURCE
-#include "shim.h"
+#include "shim.h"                      // this file implements shim.h
+#include "core/common/xrt_profiling.h" // this file implements xrt_profiling.h
+
 #include "xrt_mem.h"
 #include "xclfeatures.h"
 #include "core/common/config_reader.h"
@@ -759,6 +748,41 @@ done:
                      });
   }
 
+  xrt_core::query::kds_cu_info::result_type
+  kds_cu_info()
+  {
+    throw xrt_core::error(std::errc::not_supported, "kds_cu_info is not implemented");
+#if 0
+    xrt_core::query::kds_cu_info::result_type vec;
+    for (const auto& [idx, cud] : idx2cu) {
+      xrt_core::query::kds_cu_info::data data;
+      data.slot_index = cud.slot;
+      data.index = idx;
+      data.name = cud.name;
+      data.base_addr = 0xdeadbeef;
+      data.status = 0;
+      data.usages = 0;
+      vec.push_back(std::move(data));
+    }
+    return vec;
+#endif
+  }
+
+  xrt_core::query::xclbin_slots::result_type
+  xclbin_slots()
+  {
+    throw xrt_core::error(std::errc::not_supported, "kds_cu_info is not implemented");
+#if 0
+    xrt_core::query::xclbin_slots::result_type vec;
+    for (const auto& [slot, xclbin] : xclbins) {
+      xrt_core::query::xclbin_slots::slot_info data;
+      data.slot = slot;
+      data.uuid = xclbin.get_uuid().to_string();
+      vec.push_back(std::move(data));
+    }
+    return vec;
+#endif
+  }
 
 }; // struct shim
 
@@ -769,9 +793,30 @@ get_shim_object(xclDeviceHandle handle)
   return reinterpret_cast<shim*>(handle);
 }
 
+shim*
+get_shim_object(const xrt_core::device* device)
+{
+  // TODO: Do some sanity check
+  return get_shim_object(device->get_device_handle());
+}
+
 }
 
 namespace userpf {
+
+xrt_core::query::kds_cu_info::result_type
+kds_cu_info(const xrt_core::device* device)
+{
+  auto shim = get_shim_object(device);
+  return shim->kds_cu_info();
+}
+
+xrt_core::query::xclbin_slots::result_type
+xclbin_slots(const xrt_core::device* device)
+{
+  auto shim = get_shim_object(device);
+  return shim->xclbin_slots();
+}
 
 void
 get_rom_info(xclDeviceHandle hdl, FeatureRomHeader* value)

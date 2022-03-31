@@ -1,7 +1,5 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Copyright (C) 2019-2021 Xilinx, Inc. All rights reserved.
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2019-2022 Xilinx, Inc. All rights reserved.
 #define XRT_CORE_PCIE_WINDOWS_SOURCE
 #define XCL_DRIVER_DLL_EXPORT
 #include "device_windows.h"
@@ -47,6 +45,40 @@ unexpected_query_request_key(key_type key)
   return xrt_core::query::no_such_key
     (key, "unexpected query request ( " + std::to_string(static_cast<qtype>(key)) + ")");
 }
+
+struct kds_cu_info
+{
+  using result_type = xrt_core::query::kds_cu_info::result_type;
+
+  static result_type
+  user(const xrt_core::device* device, key_type)
+  {
+    return userpf::kds_cu_info(device);
+  }
+
+  static result_type
+  mgmt(const xrt_core::device*, key_type key)
+  {
+    throw mgmtpf_not_supported_error(key);
+  }
+};
+
+struct xclbin_slots
+{
+  using result_type = xrt_core::query::xclbin_slots::result_type;
+
+  static result_type
+  user(const xrt_core::device* device, key_type)
+  {
+    return userpf::xclbin_slots(device);
+  }
+
+  static result_type
+  mgmt(const xrt_core::device*, key_type key)
+  {
+    throw mgmtpf_not_supported_error(key);
+  }
+};
 
 struct flash
 {
@@ -1200,7 +1232,8 @@ initialize_query_table()
   emplace_function0_getput<query::data_retention,            data_retention>();
   emplace_function0_getter<query::is_recovery,               recovery>();
   emplace_function0_getter<query::mailbox_metrics,           mailbox>();
-  //emplace_function0_getter<query::kds_cu_info,               kds_cu_info>();
+  emplace_function0_getter<query::kds_cu_info,               kds_cu_info>();
+  emplace_function0_getter<query::xclbin_slots,              xclbin_slots>();
   emplace_function0_getter<query::memstat_raw,               memstat_raw>();
   emplace_function0_getter<query::memstat,                   memstat>();
   emplace_function0_getter<query::group_topology,            group_topology>();
