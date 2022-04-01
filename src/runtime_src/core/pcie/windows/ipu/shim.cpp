@@ -81,6 +81,7 @@ struct shim
     DWORD error = ERROR_UNABLE_TO_CLEAN;
     XRT_CREATE_BO_ARGS createBOArgs;
     DWORD bytesWritten;
+    xcl_bo_flags bo_flags{ flags };
 
     bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
                               GENERIC_READ | GENERIC_WRITE,
@@ -105,7 +106,7 @@ struct shim
 
     //'size' needs to be multiple of 4K
     createBOArgs.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    createBOArgs.BankNumber = flags & 0xFFFFLL; //16 bit BankNumber
+    createBOArgs.BankNumber = bo_flags.bank;
     createBOArgs.Flags = flags;
 
     if (flags & XCL_BO_FLAGS_HOST_ONLY) {
@@ -158,6 +159,7 @@ done:
     DWORD error = ERROR_UNABLE_TO_CLEAN;
     XRT_USERPTR_BO_ARGS userPtrBO;
     DWORD bytesWritten;
+    xcl_bo_flags bo_flags{ flags };
 
     bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
                                GENERIC_READ | GENERIC_WRITE,
@@ -183,7 +185,7 @@ done:
 
     userPtrBO.Address = userptr;
     userPtrBO.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    userPtrBO.BankNumber = flags & 0xFFFFLL;//16 bit BankNumber
+    userPtrBO.BankNumber = bo_flags.bank; //16 bit BankNumber
     userPtrBO.BufferType = XRT_BUFFER_TYPE_USERPTR;
     userPtrBO.Flags = flags;
 
@@ -803,12 +805,8 @@ done:
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
       bytesRequired += (slotInfo.SlotCount * sizeof(XRT_KDS_CU));
 
-      kdsCuInfo = (PXRT_KDS_CU_INFORMATION)malloc(bytesRequired);
-
-      if (kdsCuInfo == nullptr) {
-          printf("malloc failed\n");
-          return vec;
-      }
+      std::vector<char> kdsCuInfo_vec(bytesRequired);
+      kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
 
       xrt_core::message::
           send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv kds_cu_info)... ");
@@ -832,8 +830,6 @@ done:
           xrt_core::message::
               send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
 
-          free(kdsCuInfo);
-
           return vec;
       }
 
@@ -852,8 +848,6 @@ done:
           vec.push_back(std::move(data));
 
       }
-
-      free(kdsCuInfo);
 
       return vec;
   }
@@ -900,14 +894,8 @@ done:
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
       bytesRequired += (slotInfo.CuCount * sizeof(XRT_KDS_CU));
 
-      kdsCuInfo = (PXRT_KDS_CU_INFORMATION)malloc(bytesRequired);
-
-      if (kdsCuInfo == nullptr) {
-
-          printf("malloc failed\n");
-
-          return vec;
-      }
+      std::vector<char> kdsCuInfo_vec(bytesRequired);
+      kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
 
       xrt_core::message::
           send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv kds_cu_info)... ");
@@ -928,9 +916,9 @@ done:
               send(xrt_core::message::severity_level::debug, "XRT", "OK");
       }
       else {
+
           xrt_core::message::
               send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
-          free(kdsCuInfo);
 
           return vec;
       }
@@ -946,8 +934,6 @@ done:
           vec.push_back(std::move(data));
 
       }
-
-      free(kdsCuInfo);
 
       return vec;
   }

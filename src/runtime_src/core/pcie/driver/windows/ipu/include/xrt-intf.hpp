@@ -208,7 +208,7 @@ typedef struct _XRT_KDS_CU {
     ULONGLONG Usage;
     ULONG     SlotIdx;
     ULONG     CuIdx;
-    char      kname[32];
+    char      kname[64];
 } XRT_KDS_CU, * PXRT_KDS_CU;
 
 typedef struct _XRT_KDS_CU_INFORMATION {
