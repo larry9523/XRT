@@ -81,6 +81,7 @@ struct shim
     DWORD error = ERROR_UNABLE_TO_CLEAN;
     XRT_CREATE_BO_ARGS createBOArgs;
     DWORD bytesWritten;
+    xcl_bo_flags bo_flags{ flags };
 
     bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
                               GENERIC_READ | GENERIC_WRITE,
@@ -105,7 +106,7 @@ struct shim
 
     //'size' needs to be multiple of 4K
     createBOArgs.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    createBOArgs.BankNumber = flags & 0xFFFFFFLL;
+    createBOArgs.BankNumber = bo_flags.bank;
     createBOArgs.Flags = flags;
 
     if (flags & XCL_BO_FLAGS_HOST_ONLY) {
@@ -158,6 +159,7 @@ done:
     DWORD error = ERROR_UNABLE_TO_CLEAN;
     XRT_USERPTR_BO_ARGS userPtrBO;
     DWORD bytesWritten;
+    xcl_bo_flags bo_flags{ flags };
 
     bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
                                GENERIC_READ | GENERIC_WRITE,
@@ -183,7 +185,7 @@ done:
 
     userPtrBO.Address = userptr;
     userPtrBO.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    userPtrBO.BankNumber = flags & 0xFFFFFFLL;
+    userPtrBO.BankNumber = bo_flags.bank; //16 bit BankNumber
     userPtrBO.BufferType = XRT_BUFFER_TYPE_USERPTR;
     userPtrBO.Flags = flags;
 
@@ -319,7 +321,7 @@ done:
 
 
   int
-  open_context(const xuid_t xclbin_id, unsigned int ip_idx, bool shared)
+  open_context(uint32_t slot_idx, const xuid_t xclbin_id, unsigned int ip_idx, bool shared)
   {
     HANDLE deviceHandle = m_dev;
     XRT_CTX_ARGS ctxArgs = { 0 };
@@ -328,6 +330,7 @@ done:
     ctxArgs.Operation = XRT_CTX_OP_ALLOC_CTX;
     ctxArgs.Flags = (shared) ? XRT_CTX_SHARED : XRT_CTX_EXCLUSIVE;
     ctxArgs.CuIndex = ip_idx;
+    ctxArgs.SlotIdx = slot_idx;
     memcpy(&ctxArgs.XclBinUuid, xclbin_id, sizeof(xuid_t));
 
 #if 0
@@ -346,6 +349,18 @@ done:
                          NULL)) {
 
       auto error = GetLastError();
+
+      if (error == ERROR_RETRY) {
+
+        xrt_core::message::
+            send(xrt_core::message::severity_level::error, "XRT", "CTX failed retrying..");
+
+        error = EAGAIN;
+
+        return error;
+
+      }
+
       xrt_core::message::
         send(xrt_core::message::severity_level::error, "XRT", "CTX failed with error %d", error);
       return error;
@@ -359,7 +374,7 @@ done:
   {
     // TODO: implement
     // For now default to single slot behavior
-    return open_context(xclbin_id, m_core_device->get_cuidx(slot, cuname).index, shared);
+    return open_context(slot, xclbin_id, m_core_device->get_cuidx(slot, cuname).index, shared);
   }
 
   int
@@ -751,37 +766,176 @@ done:
   xrt_core::query::kds_cu_info::result_type
   kds_cu_info()
   {
-    throw xrt_core::error(std::errc::not_supported, "kds_cu_info is not implemented");
-#if 0
-    xrt_core::query::kds_cu_info::result_type vec;
-    for (const auto& [idx, cud] : idx2cu) {
-      xrt_core::query::kds_cu_info::data data;
-      data.slot_index = cud.slot;
-      data.index = idx;
-      data.name = cud.name;
-      data.base_addr = 0xdeadbeef;
-      data.status = 0;
-      data.usages = 0;
-      vec.push_back(std::move(data));
-    }
-    return vec;
-#endif
+
+      bool succeeded = 0;
+      HANDLE deviceHandle = m_dev;
+      XRT_SLOT_INFORMATION slotInfo;
+      PXRT_KDS_CU_INFORMATION kdsCuInfo;
+      XRT_STAT_CLASS_ARGS statClass = { 0 };
+      DWORD bytesRet;
+      DWORD bytesRequired;
+      DWORD i;
+      xrt_core::query::kds_cu_info::result_type vec;
+
+      xrt_core::message::
+          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv xclbin_slots)... ");
+
+      statClass.StatClass = XrtStatXclinSlots;
+
+      succeeded = DeviceIoControl(deviceHandle,
+          IOCTL_KIPUDRV_STAT,
+          &statClass,
+          sizeof(XRT_STAT_CLASS_ARGS),
+          &slotInfo,
+          sizeof(XRT_SLOT_INFORMATION),
+          &bytesRet,
+          NULL);
+
+      if (succeeded) {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "OK");
+      }
+      else {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
+
+          return vec;
+      }
+
+      bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
+      bytesRequired += (slotInfo.SlotCount * sizeof(XRT_KDS_CU));
+
+      std::vector<char> kdsCuInfo_vec(bytesRequired);
+      kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
+
+      xrt_core::message::
+          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv kds_cu_info)... ");
+
+      statClass.StatClass = XrtStatKdsCU;
+
+      succeeded = DeviceIoControl(m_dev,
+          IOCTL_KIPUDRV_STAT,
+          &statClass,
+          sizeof(XRT_STAT_CLASS_ARGS),
+          kdsCuInfo,
+          bytesRequired,
+          &bytesRet,
+          NULL);
+
+      if (succeeded) {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "OK");
+      }
+      else {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
+
+          return vec;
+      }
+
+
+      for (i = 0; i < kdsCuInfo->CuCount; i++) {
+
+          xrt_core::query::kds_cu_info::data data;
+
+          data.slot_index = kdsCuInfo->CuInfo[i].SlotIdx;
+          data.index = kdsCuInfo->CuInfo[i].CuIdx;
+          data.name = kdsCuInfo->CuInfo[i].kname;
+          data.base_addr = 0xdeadbeef;
+          data.status = 0;
+          data.usages = 0;
+
+          vec.push_back(std::move(data));
+
+      }
+
+      return vec;
   }
 
   xrt_core::query::xclbin_slots::result_type
   xclbin_slots()
   {
-    throw xrt_core::error(std::errc::not_supported, "kds_cu_info is not implemented");
-#if 0
-    xrt_core::query::xclbin_slots::result_type vec;
-    for (const auto& [slot, xclbin] : xclbins) {
-      xrt_core::query::xclbin_slots::slot_info data;
-      data.slot = slot;
-      data.uuid = xclbin.get_uuid().to_string();
-      vec.push_back(std::move(data));
-    }
-    return vec;
-#endif
+
+      bool succeeded = 0;
+      HANDLE deviceHandle = m_dev;
+      XRT_SLOT_INFORMATION slotInfo;
+      PXRT_KDS_CU_INFORMATION kdsCuInfo;
+      XRT_STAT_CLASS_ARGS statClass = { 0 };
+      DWORD bytesRet;
+      DWORD bytesRequired;
+      DWORD i;
+      xrt_core::query::xclbin_slots::result_type vec;
+      char str[512] = { 0 };
+
+      xrt_core::message::
+          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv xclbin_slots)... ");
+
+      statClass.StatClass = XrtStatXclinSlots;
+
+      succeeded = DeviceIoControl(deviceHandle,
+          IOCTL_KIPUDRV_STAT,
+          &statClass,
+          sizeof(XRT_STAT_CLASS_ARGS),
+          &slotInfo,
+          sizeof(XRT_SLOT_INFORMATION),
+          &bytesRet,
+          NULL);
+
+      if (succeeded) {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "OK");
+      }
+      else {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
+          return vec;
+      }
+
+      bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
+      bytesRequired += (slotInfo.CuCount * sizeof(XRT_KDS_CU));
+
+      std::vector<char> kdsCuInfo_vec(bytesRequired);
+      kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
+
+      xrt_core::message::
+          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv kds_cu_info)... ");
+
+      statClass.StatClass = XrtStatKdsCU;
+
+      succeeded = DeviceIoControl(m_dev,
+          IOCTL_KIPUDRV_STAT,
+          &statClass,
+          sizeof(XRT_STAT_CLASS_ARGS),
+          kdsCuInfo,
+          bytesRequired,
+          &bytesRet,
+          NULL);
+
+      if (succeeded) {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "OK");
+      }
+      else {
+
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
+
+          return vec;
+      }
+
+      for (i = 0; i < kdsCuInfo->CuCount; i++) {
+
+          xrt_core::query::xclbin_slots::slot_info data;
+
+          data.slot = kdsCuInfo->CuInfo[i].SlotIdx;
+          uuid_unparse_lower((const unsigned char*)&kdsCuInfo->CuInfo[i].XclBinUuid, str);
+          data.uuid = str;
+
+          vec.push_back(std::move(data));
+
+      }
+
+      return vec;
   }
 
 }; // struct shim
@@ -1132,7 +1286,7 @@ xclOpenContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipInd
   auto shim = get_shim_object(handle);
 
   //Virtual resources are not currently supported by driver
-  return (ipIndex == (unsigned int)-1) ? 0 : shim->open_context(xclbinId, ipIndex, shared);
+  return (ipIndex == (unsigned int)-1) ? 0 : shim->open_context(0, xclbinId, ipIndex, shared);
 }
 
 int

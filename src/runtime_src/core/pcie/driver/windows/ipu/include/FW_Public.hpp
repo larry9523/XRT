@@ -24,25 +24,28 @@ DEFINE_GUID (GUID_DEVINTERFACE_KIPUDRV,
 // Define a file device
 #define FILE_DEVICE_KIPUDRV 0x40011
 
-//IPC does not test more than 256 bytes of data
+// Maximum number of bytes supported in IPC message
 #define IPC_DATA_SIZE 256
 
 // Number of message stitching tests to return results for
 #define MESSAGE_STITCH_TEST_COUNT 7
 
+// Number of bytes supported by File Read/Write OSAL IOCTL Operations
+#define FILE_OSAL_DATA_SIZE 512
+
+// Maximum length of OSAL file path
+#define FILE_PATH_LEN 512
+
+// Number of bytes supported by RegKey Read/Write OSAL IOCTL Operations
+#define REGKEY_OSAL_DATA_SIZE 512
+
+// Maximum length of OSAL registry key path
+#define REGKEY_PATH_LEN 512
+
 // IOCTL code
 // Define an IOCTL code so that the test apps can use this for ioctl calls
 #define IOCTL_KIPUDRV_HELLO_WORLD \
     CTL_CODE(FILE_DEVICE_KIPUDRV, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_KIPUDRV_PM_POWER_ON \
-    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_KIPUDRV_PM_POWER_OFF \
-    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define IOCTL_KIPUDRV_PM_SET_LEVEL \
-    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x903, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_KIPUDRV_OSAL_FILE_CREATE \
     CTL_CODE(FILE_DEVICE_KIPUDRV, 0x910, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -58,6 +61,33 @@ DEFINE_GUID (GUID_DEVINTERFACE_KIPUDRV,
 
 #define IOCTL_KIPUDRV_MESSAGE_STITCH_TEST \
     CTL_CODE(FILE_DEVICE_KIPUDRV, 0x914, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_SHARED_XCLBIN_DOWNLOAD_TEST \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x915, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_SHARED_XCLBIN_UNLOAD_TEST \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x916, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_OSAL_REGKEY_OPEN \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x917, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_OSAL_REGKEY_GETSIZE \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x918, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_OSAL_REGKEY_READ \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x919, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_OSAL_REGKEY_CLOSE \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x91A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_SHARED_CREATE_DESTROY_CTX_TEST \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x920, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_SHARED_IPU_SELF_TEST \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x921, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_KIPUDRV_SHARED_QUERRY_ERROR_TEST \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, 0x922, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define IOCTL_KIPUDRV_IPC_INIT \
     CTL_CODE(FILE_DEVICE_KIPUDRV, 0xA00, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -113,6 +143,21 @@ DEFINE_GUID (GUID_DEVINTERFACE_KIPUDRV,
 #define IOCTL_KIPUDRV_EXECPOLL \
     CTL_CODE(FILE_DEVICE_KIPUDRV, (IOCTL_KIPUDRV_XRT_CORE_FUNCTION | 0xB), \
         METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KIPUDRV_ALLOC_HOST_MEM \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, (IOCTL_KIPUDRV_XRT_CORE_FUNCTION | 0xC), \
+        METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KIPUDRV_FREE_HOST_MEM \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, (IOCTL_KIPUDRV_XRT_CORE_FUNCTION | 0xD), \
+        METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KIPUDRV_ERROR_INFO \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, (IOCTL_KIPUDRV_XRT_CORE_FUNCTION | 0xE), \
+        METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KIPUDRV_ERROR_INJECT \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, (IOCTL_KIPUDRV_XRT_CORE_FUNCTION | 0xF), \
+        METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_KIPUDRV_STAT \
+    CTL_CODE(FILE_DEVICE_KIPUDRV, (IOCTL_KIPUDRV_XRT_CORE_FUNCTION | 0x10), \
+        METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 enum class DRIVER_STATUS
 {
@@ -148,8 +193,7 @@ typedef struct PmSetLevelOutput
 
 typedef struct OsalFileCreateInput
 {
-    uint32_t filePathSize;
-    char*    filePath;
+    wchar_t  filePath[FILE_PATH_LEN];
 } OsalFileCreateInput_t;
 
 typedef struct OsalFileCreateOutput
@@ -162,7 +206,7 @@ typedef struct OsalFileWriteInput
 {
     HANDLE   fileOpHandler;
     uint32_t inputDataSize;
-    char*    data;
+    char     data[FILE_OSAL_DATA_SIZE];
 } OsalFileWriteInput_t;
 
 typedef struct OsalFileWriteOutput
@@ -174,14 +218,12 @@ typedef struct OsalFileReadInput
 {
     HANDLE   fileOpHandler;
     uint32_t dataSize;
-    char*    data;
 } OsalFileReadInput_t;
 
 typedef struct OsalFileReadOutput
 {
     DRIVER_STATUS status;
-    uint32_t      dataSize;
-    char*         data;
+    char          data[FILE_OSAL_DATA_SIZE];
 } OsalFileReadOutput_t;
 
 typedef struct OsalFileCloseInput
@@ -198,6 +240,57 @@ typedef struct MessageStitchTestOutput
 {
     DRIVER_STATUS status[MESSAGE_STITCH_TEST_COUNT];
 } MessageStitchTestOutput_t;
+
+typedef struct SharedBackendOutput
+{
+    DRIVER_STATUS status;
+} SharedBackendOutput_t;
+
+typedef struct OsalRegKeyOpenInput
+{
+    wchar_t regKeyPath[FILE_PATH_LEN];
+} OsalRegKeyOpenInput_t;
+
+typedef struct OsalRegKeyOpenOutput
+{
+    HANDLE        regKeyOpHandler;
+    DRIVER_STATUS status;
+} OsalRegKeyOpenOutput_t;
+
+typedef struct OsalRegKeyGetSizeInput
+{
+    HANDLE  regKeyOpHandler;
+    wchar_t regValueName[REGKEY_PATH_LEN];
+} OsalRegKeyGetSizeInput_t;
+
+typedef struct OsalRegKeyGetSizeOutput
+{
+    DRIVER_STATUS status;
+    ULONG         size;
+} OsalRegKeyGetSizeOutput_t;
+
+typedef struct OsalRegKeyReadInput
+{
+    HANDLE  regKeyOpHandler;
+    ULONG   bufferSize;
+    wchar_t regValueName[REGKEY_PATH_LEN];
+} OsalRegKeyReadInput_t;
+
+typedef struct OsalRegKeyReadOutput
+{
+    DRIVER_STATUS status;
+    BYTE          data[REGKEY_OSAL_DATA_SIZE];
+} OsalRegKeyReadOutput_t;
+
+typedef struct OsalRegKeyCloseInput
+{
+    HANDLE regKeyOpHandler;
+} OsalRegKeyCloseInput_t;
+
+typedef struct OsalRegKeyCloseOutput
+{
+    DRIVER_STATUS status;
+} OsalRegKeyCloseOutput_t;
 
 typedef struct IpcInitOutput
 {
