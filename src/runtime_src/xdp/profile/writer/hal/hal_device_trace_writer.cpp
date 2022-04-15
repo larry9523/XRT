@@ -29,10 +29,10 @@ namespace xdp {
 
 
   HALDeviceTraceWriter::HALDeviceTraceWriter(const char* filename, uint64_t devId, 
-					     const std::string& version,
-					     const std::string& creationTime,
-					     const std::string& xrtV,
-					     const std::string& toolV)
+                                             const std::string& version,
+                                             const std::string& creationTime,
+                                             const std::string& xrtV,
+                                             const std::string& toolV)
       : VPTraceWriter(filename, version, creationTime, 9 /* ns */),
         xrtVersion(xrtV),
         toolVersion(toolV),
@@ -76,8 +76,8 @@ namespace xdp {
       fout << "Group_Start,KDMA" << std::endl ;
       for (unsigned int i = 0 ; i < numKDMA ; ++i)
       {
-	      fout << "Dynamic_Row," << ++rowCount << ",Read, ,KERNEL_READ" << std::endl;
-	      fout << "Dynamic_Row," << ++rowCount << ",Write, ,KERNEL_WRITE" << std::endl;
+              fout << "Dynamic_Row," << ++rowCount << ",Read, ,KERNEL_READ" << std::endl;
+              fout << "Dynamic_Row," << ++rowCount << ",Write, ,KERNEL_WRITE" << std::endl;
       }
       fout << "Group_End,KDMA" << std::endl ;
 #endif
@@ -95,7 +95,7 @@ namespace xdp {
         cuBucketIdMap[cu->getIndex()] = rowCount;
 
         // Wave Group for Kernel Stall, if Stall monitoring is enabled in CU
-        if(cu->stallEnabled()) {
+        if(cu->getStallEnabled()) {
           // KERNEL_STALL : stall type
           fout << "Group_Summary_Start,Stall,Stalls in accelerator " << cuName << std::endl;
           fout << "Static_Row," << (rowCount + KERNEL_STALL_EXT_MEM - KERNEL)  << ",External Memory Stall, Stalls from accessing external memory" << std::endl;
@@ -105,7 +105,7 @@ namespace xdp {
         }
 
         // Wave Group for Read and Write, if Data transfer monitoring is enabled in CU
-        if(cu->dataTransferEnabled()) {
+        if(cu->getDataTransferTraceEnabled()) {
           // Read : KERNEL_READ
           fout << "Group_Start,Read,Read data transfers between " << cuName << " and Global Memory" << std::endl;
           fout << "Static_Row," << (rowCount + KERNEL_READ - KERNEL) << ",M_AXI_GMEM-MEMORY (port_names)," << "Read Data Transfers " << std::endl;
@@ -117,7 +117,7 @@ namespace xdp {
           fout << "Group_End,Read" << std::endl;
         }
 
-        if(cu->streamEnabled()) {
+        if(cu->getStreamTraceEnabled()) {
           // KERNEL_STREAM_READ
           fout << "Group_Start,Stream Read,Read AXI Stream transaction between " << cuName << " and Global Memory" << std::endl;
           fout << "Static_Row," << (rowCount + KERNEL_STREAM_READ - KERNEL) << ",Stream Port,Read AXI Stream transaction between port and memory" << std::endl;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019-2021 Xilinx, Inc
+ * Copyright (C) 2019-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -229,6 +229,20 @@ kernel_max_ctx(const ip_data& ip)
   return ctxid;
 }
 
+//Get the cu functional from kernel xml entry
+static size_t
+get_functional(const pt::ptree& xml_kernel, const std::string& element)
+{
+  for (auto& elem : xml_kernel) {
+    if (elem.first != element)
+      continue;
+
+    return convert(elem.second.get<std::string>("<xmlattr>.functional"));
+  }
+
+  return 0;
+}
+
 // Determine the address range from kernel xml entry
 static size_t
 get_address_range(const pt::ptree& xml_kernel)
@@ -304,10 +318,62 @@ get_portname_width_map(const pt::ptree& xml_kernel)
 
     pwmap.emplace(nm, convert(dw));
   }
-  
+
   return pwmap;
 }
-  
+
+// Merge multi-component args into the first component of the argument
+//
+// Pre-condition:
+//  - args is sorted based on argidx
+//  - no_index args are at end of args
+//
+// This function iterates the sorted args to look for multi-component
+// args with same argidx.  For every multi-component argument, merge
+// the additional components into first component.  The size of the first
+// component is adjusted with size of all merged components.  The offset
+// of the first component is the mimimum of first component and those
+// merged into the first component.
+//
+// Post-condition:
+//  - all indexed args are stored in vector at same index
+static void
+merge_args(std::vector<xrt_core::xclbin::kernel_argument>& args)
+{
+  for (size_t idx = 0; idx < args.size(); ++idx) {
+    // first component of argument with argidx
+    auto& arg = args[idx];
+
+    // dont merge no_index args which are guarateed to be sorted to
+    // end of args
+    if (arg.index == xrt_core::xclbin::kernel_argument::no_index)
+      break;
+
+    // for all elements with same index as arg
+    auto next = idx + 1;
+    for (; next < args.size(); ++next) {
+      // break early ok because args is sorted.
+      if (args[next].index != arg.index)
+        break;
+
+      // merge to arg
+      arg.size += args[next].size;
+      arg.hostsize += args[next].hostsize;
+      arg.offset = std::min(arg.offset, args[next].offset);
+    }
+
+    // erase merged argument components
+    args.erase(args.begin() + idx + 1, args.begin() + next);
+  }
+
+  // assert post condition
+  size_t argidx = 0;
+  for (auto& arg : args)
+    if (arg.index != argidx++ && arg.index != xrt_core::xclbin::kernel_argument::no_index)
+      throw std::runtime_error("xclbin parser internal error: mismatched argument index");
+}
+
+
 } // namespace
 
 namespace xrt_core { namespace xclbin {
@@ -354,7 +420,7 @@ address_to_memidx(const mem_topology* mem_topology, uint64_t address)
 {
   if (is_sw_emulation())
     return 0;  // default bank in software emulation
-  
+
   // Reserve look for preferred group id
   for (int idx = mem_topology->m_count-1; idx >= 0; --idx) {
     auto& mem = mem_topology->m_mem_data[idx];
@@ -853,6 +919,10 @@ get_kernel_arguments(const char* xml_data, size_t xml_size, const std::string& k
     // stable sort to preserve order of multi-component arguments
     // for example global_size, local_size, etc.
     std::stable_sort(args.begin(), args.end(), [](auto& a1, auto& a2) { return a1.index < a2.index; });
+
+    // merge args with same index
+    merge_args(args);
+
     break;
   }
   return args;
@@ -890,6 +960,8 @@ get_kernel_properties(const char* xml_data, size_t xml_size, const std::string& 
     if (!sw_reset)
       sw_reset = get_sw_reset_from_ini(kname);
 
+    auto functional = get_functional(xml_kernel.second, "extended-data");
+
     return kernel_properties
       { kname
       , to_kernel_type(xml_kernel.second.get<std::string>("<xmlattr>.type", "pl"))
@@ -897,7 +969,8 @@ get_kernel_properties(const char* xml_data, size_t xml_size, const std::string& 
       , mailbox
       , get_address_range(xml_kernel.second)
       , sw_reset
-          
+      , functional
+
       , convert(xml_kernel.second.get<std::string>("<xmlattr>.workGroupSize", "0"))
       , get_xyz(xml_kernel.second, "compileWorkGroupSize")
       , get_xyz(xml_kernel.second, "maxWorkGroupSize")
@@ -907,7 +980,7 @@ get_kernel_properties(const char* xml_data, size_t xml_size, const std::string& 
 
   return kernel_properties{};
 }
-    
+
 kernel_properties
 get_kernel_properties(const axlf* top, const std::string& kname)
 {
@@ -1004,6 +1077,17 @@ get_project_name(const axlf* top)
   catch (const std::exception&) {
     return "";
   }
+}
+
+std::string
+get_fpga_device_name(const char* xml_data, size_t xml_size)
+{
+  pt::ptree xml_project;
+  std::stringstream xml_stream;
+  xml_stream.write(xml_data,xml_size);
+  pt::read_xml(xml_stream,xml_project);
+
+  return xml_project.get<std::string>("project.platform.device.<xmlattr>.fpgaDevice","");
 }
 
 }} // xclbin, xrt_core

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2021 Xilinx, Inc
+ * Copyright (C) 2021-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -17,11 +17,15 @@
 #ifndef __KernelUtilities_h_
 #define __KernelUtilities_h_
 
-// Include files
+// Please keep the include files to a minimum
 #include <boost/property_tree/ptree.hpp>
+#include <string>
+#include <vector>
 
 namespace XclBinUtilities {
-  void addKernel(const boost::property_tree::ptree & ptKernel, boost::property_tree::ptree & ptEmbeddedData);
-  void addKernel(const boost::property_tree::ptree & ptKernel, const boost::property_tree::ptree & ptMemTopology, boost::property_tree::ptree & ptIPLayout, boost::property_tree::ptree & ptConnectivity);
+  void addKernel(const boost::property_tree::ptree & ptKernel, bool isFixedPS, boost::property_tree::ptree & ptEmbeddedData);
+  void addKernel(const boost::property_tree::ptree & ptKernel, boost::property_tree::ptree & ptMemTopology, boost::property_tree::ptree & ptIPLayout, boost::property_tree::ptree & ptConnectivity);
+  void validateFunctions(const std::string &kernelLibrary, const boost::property_tree::ptree &ptFunctions);
+  void createPSKernelMetadata(unsigned long numInstances, const boost::property_tree::ptree & ptFunctions, const std::string &kernelLibrary, boost::property_tree::ptree &ptPSKernels);
 };
 #endif

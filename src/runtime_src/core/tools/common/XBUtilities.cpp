@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2021 Xilinx, Inc
+ * Copyright (C) 2019-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -16,6 +16,7 @@
 
 // ------ I N C L U D E   F I L E S -------------------------------------------
 // Local - Include Files
+#include "XBUtilitiesCore.h"
 #include "XBUtilities.h"
 #include "core/common/error.h"
 #include "core/common/utils.h"
@@ -68,257 +69,9 @@ struct fdt_header {
   uint32_t size_dt_struct;
 };
 
-
-// ------ N A M E S P A C E ---------------------------------------------------
-using namespace XBUtilities;
-
-// ------ S T A T I C   V A R I A B L E S -------------------------------------
-static bool m_bVerbose = false;
-static bool m_bTrace = false;
-static bool m_disableEscapeCodes = false;
-static bool m_bShowHidden = false;
-static bool m_bForce = false;
-
 namespace xq = xrt_core::query;
 
 // ------ F U N C T I O N S ---------------------------------------------------
-void
-XBUtilities::setVerbose(bool _bVerbose)
-{
-  bool prevVerbose = m_bVerbose;
-
-  if ((prevVerbose == true) && (_bVerbose == false))
-    verbose("Disabling Verbosity");
-
-  m_bVerbose = _bVerbose;
-
-  if ((prevVerbose == false) && (_bVerbose == true))
-    verbose("Enabling Verbosity");
-}
-
-bool 
-XBUtilities::getVerbose()
-{
-  return m_bVerbose;
-}
-
-void
-XBUtilities::setTrace(bool _bTrace)
-{
-  if (_bTrace)
-    trace("Enabling Tracing");
-  else
-    trace("Disabling Tracing");
-
-  m_bTrace = _bTrace;
-}
-
-
-void
-XBUtilities::setShowHidden(bool _bShowHidden)
-{
-  if (_bShowHidden)
-    trace("Hidden commands and options will be shown.");
-  else
-    trace("Hidden commands and options will be hidden");
-
-  m_bShowHidden = _bShowHidden;
-}
-
-bool
-XBUtilities::getShowHidden()
-{
-  return m_bShowHidden;
-}
-
-void
-XBUtilities::setForce(bool _bForce)
-{
-  m_bForce = _bForce;
-
-  if (m_bForce) 
-    trace("Enabling force option");
-  else
-    trace("Disabling force option");
-}
-
-bool 
-XBUtilities::getForce()
-{
-  return m_bForce;
-}
-
-void
-XBUtilities::disable_escape_codes(bool _disable)
-{
-  m_disableEscapeCodes = _disable;
-}
-
-bool
-XBUtilities::is_escape_codes_disabled() {
-  return m_disableEscapeCodes;
-}
-
-
-void
-XBUtilities::message_(MessageType _eMT, const std::string& _msg, bool _endl, std::ostream & _ostream)
-{
-  static std::map<MessageType, std::string> msgPrefix = {
-    { MT_MESSAGE, "" },
-    { MT_INFO, "Info: " },
-    { MT_WARNING, "Warning: " },
-    { MT_ERROR, "Error: " },
-    { MT_VERBOSE, "Verbose: " },
-    { MT_FATAL, "Fatal: " },
-    { MT_TRACE, "Trace: " },
-    { MT_UNKNOWN, "<type unknown>: " },
-  };
-
-  // A simple DRC check
-  if (_eMT > MT_UNKNOWN) {
-    _eMT = MT_UNKNOWN;
-  }
-
-  // Verbosity is not enabled
-  if ((m_bVerbose == false) && (_eMT == MT_VERBOSE)) {
-      return;
-  }
-
-  // Tracing is not enabled
-  if ((m_bTrace == false) && (_eMT == MT_TRACE)) {
-      return;
-  }
-
-  _ostream << msgPrefix[_eMT] << _msg;
-
-  if (_endl == true) {
-    _ostream << std::endl;
-  }
-}
-
-void
-XBUtilities::message(const std::string& _msg, bool _endl, std::ostream & _ostream)
-{
-  message_(MT_MESSAGE, _msg, _endl, _ostream);
-}
-
-void
-XBUtilities::info(const std::string& _msg, bool _endl)
-{
-  message_(MT_INFO, _msg, _endl);
-}
-
-void
-XBUtilities::warning(const std::string& _msg, bool _endl)
-{
-  message_(MT_WARNING, _msg, _endl);
-}
-
-void
-XBUtilities::error(const std::string& _msg, bool _endl)
-{
-  message_(MT_ERROR, _msg, _endl);
-}
-
-void
-XBUtilities::verbose(const std::string& _msg, bool _endl)
-{
-  message_(MT_VERBOSE, _msg, _endl);
-}
-
-void
-XBUtilities::fatal(const std::string& _msg, bool _endl)
-{
-  message_(MT_FATAL, _msg, _endl);
-}
-
-void
-XBUtilities::trace(const std::string& _msg, bool _endl)
-{
-  message_(MT_TRACE, _msg, _endl);
-}
-
-
-
-void
-XBUtilities::trace_print_tree(const std::string & _name,
-                              const boost::property_tree::ptree & _pt)
-{
-  if (m_bTrace == false) {
-    return;
-  }
-
-  XBUtilities::trace(_name + " (JSON Tree)");
-
-  std::ostringstream buf;
-  boost::property_tree::write_json(buf, _pt, true /*Pretty print*/);
-  XBUtilities::message(buf.str());
-}
-
-
-std::string
-XBUtilities::wrap_paragraphs( const std::string & unformattedString,
-                              unsigned int indentWidth,
-                              unsigned int columnWidth,
-                              bool indentFirstLine) {
-  std::vector<std::string> lines;
-
-  // Process the string
-  std::string workingString;
-
-  for (const auto &entry : unformattedString) {
-    // Do we have a new line added by the user
-    if (entry == '\n') {
-      lines.push_back(workingString);
-      workingString.clear();
-      continue;
-    }
-
-    workingString += entry;
-
-    // Check to see if this string is too long
-    if (workingString.size() >= columnWidth) {
-      // Find the beginning of the previous 'word'
-      auto index = workingString.find_last_of(" ");
-
-      // None found, keep on adding characters till we find a space
-      if (index == std::string::npos)
-        continue;
-
-      // Add the line and populate the next line
-      lines.push_back(workingString.substr(0, index));
-      workingString = workingString.substr(index + 1);
-    }
-  }
-
-  if (!workingString.empty())
-    lines.push_back(workingString);
-
-  // Early exit, nothing here
-  if (lines.size() == 0)
-    return std::string();
-
-  // -- Build the formatted string
-  std::string formattedString;
-
-  // Iterate over the lines building the formatted string
-  const std::string indention(indentWidth, ' ');
-  auto iter = lines.begin();
-  while (iter != lines.end()) {
-    // Add an indention
-    if (iter != lines.begin() || indentFirstLine)
-      formattedString += indention;
-    
-    // Add formatted line
-    formattedString += *iter;
-
-    // Don't add a '\n' on the last line
-    if (++iter != lines.end())
-      formattedString += "\n";
-  }
-
-  return formattedString;
-}
 
 boost::property_tree::ptree
 XBUtilities::get_available_devices(bool inUserDomain)
@@ -341,20 +94,21 @@ XBUtilities::get_available_devices(bool inUserDomain)
       auto mGoldenVer = xrt_core::device_query<xrt_core::query::mfg_ver>(device);
       std::string vbnv = "xilinx_" + xrt_core::device_query<xrt_core::query::board_name>(device) + "_GOLDEN_"+ std::to_string(mGoldenVer);
       pt_dev.put("vbnv", vbnv);
+      pt_dev.put("id", "n/a");
+      pt_dev.put("instance","n/a");
     }
     else {
       pt_dev.put("vbnv", xrt_core::device_query<xrt_core::query::rom_vbnv>(device));
       try { //1RP
         pt_dev.put("id", xrt_core::query::rom_time_since_epoch::to_string(xrt_core::device_query<xrt_core::query::rom_time_since_epoch>(device)));
-      } catch(...) 
-      {
+      } catch(...) {
         // The id wasn't added
       }
 
       try { //2RP
         auto logic_uuids = xrt_core::device_query<xrt_core::query::logic_uuids>(device);
         if (!logic_uuids.empty())
-          pt_dev.put("id", boost::str(boost::format("0x%s") % logic_uuids[0]));
+          pt_dev.put("id", xrt_core::query::interface_uuids::to_uuid_upper_string(logic_uuids[0]));
       } catch(...) {
         // The id wasn't added
       }
@@ -365,18 +119,17 @@ XBUtilities::get_available_devices(bool inUserDomain)
        std::string pf = device->is_userpf() ? "user" : "mgmt";
        pt_dev.put("instance",boost::str(boost::format("%s(inst=%d)") % pf % instance));
      } catch(const xrt_core::query::exception&) {
-         // The instance wasn't added 
+         // The instance wasn't added
        }
 
     }
-
     pt_dev.put("is_ready", xrt_core::device_query<xrt_core::query::is_ready>(device));
     pt.push_back(std::make_pair("", pt_dev));
   }
   return pt;
 }
 
-/* 
+/*
  * currently edge supports only one device
  */
 static uint16_t
@@ -391,7 +144,7 @@ str_available_devs(bool _inUserDomain)
   //gather available devices for user to pick from
   std::stringstream available_devs;
   available_devs << "\n Available devices:\n";
-  boost::property_tree::ptree available_devices = get_available_devices(_inUserDomain);
+  boost::property_tree::ptree available_devices = XBUtilities::get_available_devices(_inUserDomain);
   for(auto& kd : available_devices) {
     boost::property_tree::ptree& dev = kd.second;
     available_devs << boost::format("  [%s] : %s\n") % dev.get<std::string>("bdf") % dev.get<std::string>("vbnv");
@@ -434,13 +187,13 @@ bdf2index(const std::string& bdfstr, bool _inUserDomain)
     dev = static_cast<uint16_t>(std::stoi(std::string(tokens[0]), nullptr, radix));
   }
   bus = static_cast<uint16_t>(std::stoi(std::string(tokens[1]), nullptr, radix));
-  
+
   // domain is not mandatory if it is "0000"
   if(tokens.size() > 2)
     domain = static_cast<uint16_t>(std::stoi(std::string(tokens[2]), nullptr, radix));
 
-  uint64_t devices = _inUserDomain ? xrt_core::get_total_devices(true).first : xrt_core::get_total_devices(false).first;
-  for (uint16_t i = 0; i < devices; i++) {
+  auto devices = _inUserDomain ? xrt_core::get_total_devices(true).first : xrt_core::get_total_devices(false).first;
+  for (decltype(devices) i = 0; i < devices; i++) {
     std::shared_ptr<xrt_core::device> device;
     try{
       device = _inUserDomain ? xrt_core::get_userpf_device(i) : xrt_core::get_mgmtpf_device(i);
@@ -457,7 +210,7 @@ bdf2index(const std::string& bdfstr, bool _inUserDomain)
     };
 
     if (domain == std::get<0>(bdf) && bus == std::get<1>(bdf) && dev == std::get<2>(bdf) && cmp_func(func))
-      return i;
+      return static_cast<uint16_t>(i);
   }
 
   throw std::runtime_error(boost::str(boost::format("Specified device BDF '%s' not found") % bdfstr) + str_available_devs(_inUserDomain));
@@ -518,11 +271,11 @@ XBUtilities::collect_devices( const std::set<std::string> &_deviceBDFs,
           _deviceCollection.push_back( xrt_core::get_userpf_device(index) );
         else
           _deviceCollection.push_back( xrt_core::get_mgmtpf_device(index) );
-      } catch (...) { 
+      } catch (...) {
         /* If the device is not available, quietly ignore it
            Use case: when a device is being reset in parallel */
       }
-      
+
     }
 
     return;
@@ -538,37 +291,11 @@ XBUtilities::collect_devices( const std::set<std::string> &_deviceBDFs,
   }
 }
 
-bool
-XBUtilities::can_proceed(bool force)
-{
-  bool proceed = false;
-  std::string input;
-
-  std::cout << "Are you sure you wish to proceed? [Y/n]: ";
-
-  if (force) 
-    std::cout << "Y (Force override)" << std::endl;
-  else
-    std::getline(std::cin, input);
-  
-  // Ugh, the std::transform() produces windows compiler warnings due to
-  // conversions from 'int' to 'char' in the algorithm header file
-  boost::algorithm::to_lower(input);
-  //std::transform( input.begin(), input.end(), input.begin(), [](unsigned char c){ return std::tolower(c); });
-  //std::transform( input.begin(), input.end(), input.begin(), ::tolower);
-
-  // proceeds for "y", "Y" and no input
-  proceed = ((input.compare("y") == 0) || input.empty());
-  if (!proceed)
-    std::cout << "Action canceled." << std::endl;
-  return proceed;
-}
-
 void
 XBUtilities::can_proceed_or_throw(const std::string& info, const std::string& error)
 {
   std::cout << info << "\n";
-  if (!can_proceed(getForce()))
+  if (!XBUtilities::can_proceed(getForce()))
     throw xrt_core::system_error(ECANCELED, error);
 }
 
@@ -585,7 +312,7 @@ XBUtilities::sudo_or_throw(const std::string& msg)
 }
 
 
-void 
+void
 XBUtilities::print_exception_and_throw_cancel(const xrt_core::error& e)
 {
   // Remove the type of error from the message.
@@ -596,7 +323,7 @@ XBUtilities::print_exception_and_throw_cancel(const xrt_core::error& e)
   throw xrt_core::error(std::errc::operation_canceled);
 }
 
-void 
+void
 XBUtilities::print_exception_and_throw_cancel(const std::runtime_error& e)
 {
   std::cerr << boost::format("ERROR: %s\n") % e.what();
@@ -606,7 +333,7 @@ XBUtilities::print_exception_and_throw_cancel(const std::runtime_error& e)
 std::vector<char>
 XBUtilities::get_axlf_section(const std::string& filename, axlf_section_kind kind)
 {
-  std::ifstream in(filename);
+  std::ifstream in(filename, std::ios::binary);
   if (!in.is_open())
     throw std::runtime_error(boost::str(boost::format("Can't open %s") % filename));
 
@@ -738,7 +465,7 @@ static const std::map<uint64_t, std::string> oemid_map = {
   {0x2b79, "Google"}
 };
 
-std::string 
+std::string
 XBUtilities::parse_oem_id(const std::string& oemid)
 {
   uint64_t oem_id_val = 0;
@@ -760,17 +487,17 @@ static const std::map<std::string, std::string> clock_map = {
   {"SYSTEM_CLK", "System"},
 };
 
-std::string 
+std::string
 XBUtilities::parse_clock_id(const std::string& id)
 {
   auto clock_str = clock_map.find(id);
   if (clock_str != clock_map.end())
     return clock_str->second;
-  
+
   throw xrt_core::error(std::errc::invalid_argument);
 }
 
-uint64_t 
+uint64_t
 XBUtilities::string_to_bytes(std::string str)
 {
   boost::algorithm::trim(str);
@@ -801,7 +528,7 @@ XBUtilities::string_to_bytes(std::string str)
   uint64_t size = 0;
   try {
     size = std::stoll(str);
-  } 
+  }
   catch (const std::exception&) {
     //out of range, invalid argument ex
     throw xrt_core::error(std::errc::invalid_argument);

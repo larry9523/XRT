@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2021 Xilinx, Inc. All rights reserved.
+ * Copyright (C) 2016-2022 Xilinx, Inc. All rights reserved.
  *
  * Authors: Lizhi.Hou@xilinx.com
  *
@@ -50,8 +50,6 @@
 #define XDEV_DEFAULT_EXPIRE_SECS	1
 
 #define MAX_SB_APERTURES		256
-
-extern int kds_mode;
 
 static const struct pci_device_id pciidlist[] = {
 	XOCL_USER_XDMA_PCI_IDS,
@@ -163,6 +161,22 @@ void xocl_update_mig_cache(struct xocl_dev *xdev)
 	mutex_unlock(&xdev->dev_lock);
 }
 
+int xocl_register_cus(xdev_handle_t xdev_hdl, int slot_hdl, xuid_t *uuid,
+		      struct ip_layout *ip_layout,
+		      struct ps_kernel_node *ps_kernel)
+{
+	struct xocl_dev *xdev = container_of(XDEV(xdev_hdl), struct xocl_dev, core);
+
+	return xocl_kds_register_cus(xdev, slot_hdl, uuid, ip_layout, ps_kernel);
+}
+
+void xocl_unregister_cus(xdev_handle_t xdev_hdl, int slot_hdl)
+{
+	struct xocl_dev *xdev = container_of(XDEV(xdev_hdl), struct xocl_dev, core);
+
+	return xocl_kds_unregister_cus(xdev, slot_hdl);
+}
+
 static int userpf_intr_config(xdev_handle_t xdev_hdl, u32 intr, bool en)
 {
 	int ret;
@@ -207,8 +221,7 @@ void xocl_reset_notify(struct pci_dev *pdev, bool prepare)
 	mutex_unlock(&xdev->core.errors_lock);
 
 	if (prepare) {
-		if (kds_mode)
-			xocl_kds_reset(xdev, xclbin_id);
+		xocl_kds_reset(xdev, xclbin_id);
 
 		/* clean up mem topology */
 		if (xdev->core.drm) {
@@ -244,12 +257,15 @@ void xocl_reset_notify(struct pci_dev *pdev, bool prepare)
 			return;
 		}
 
-		if (kds_mode)
-			xocl_kds_reset(xdev, xclbin_id);
-		else {
-			XDEV(xdev)->kds.ini_disable = false;
-			xocl_exec_reset(xdev, xclbin_id);
+		if (XOCL_DSA_IS_VERSAL_ES3(xdev)) {
+			ret = xocl_hwmon_sdm_init(xdev);
+			if (ret) {
+				userpf_err(xdev, "failed to init hwmon_sdm driver, err: %d", ret);
+				return;
+			}
 		}
+
+		xocl_kds_reset(xdev, xclbin_id);
 		XOCL_PUT_XCLBIN_ID(xdev);
 		if (!xdev->core.drm) {
 			xdev->core.drm = xocl_drm_init(xdev);
@@ -680,12 +696,8 @@ int xocl_reclock(struct xocl_dev *xdev, void *data)
 	/* Re-clock changes PR region, make sure next ERT configure cmd will
 	 * go through
 	 */
-	if (err == 0) {
-		if (kds_mode)
-			(void) xocl_kds_reconfig(xdev);
-		else
-			(void) xocl_exec_reconfig(xdev);
-	}
+	if (err == 0)
+		(void) xocl_kds_reconfig(xdev);
 
 	kfree(req);
 	return err;
@@ -944,6 +956,15 @@ int xocl_refresh_subdevs(struct xocl_dev *xdev)
 		goto failed;
 	}
 
+	if (XOCL_DSA_IS_VERSAL_ES3(xdev)) {
+		//probe & initialize hwmon_sdm driver only on versal
+		ret = xocl_hwmon_sdm_init(xdev);
+		if (ret) {
+			userpf_err(xdev, "failed to init hwmon_sdm driver, err: %d", ret);
+			goto failed;
+		}
+	}
+
 	(void) xocl_peer_listen(xdev, xocl_mailbox_srv, (void *)xdev);
 
 	ret = xocl_init_sysfs(xdev);
@@ -998,6 +1019,72 @@ int xocl_p2p_init(struct xocl_dev *xdev)
 		xocl_xdev_err(xdev, "create p2p subdev failed. ret %d", ret);
 		return ret;
 	}
+
+	return 0;
+}
+
+static int xocl_hwmon_sdm_init_sysfs(struct xocl_dev *xdev, enum xcl_group_kind kind)
+{
+	struct xcl_mailbox_subdev_peer subdev_peer = {0};
+	size_t resp_len = 4 * 1024;
+	size_t data_len = sizeof(struct xcl_mailbox_subdev_peer);
+	struct xcl_mailbox_req *mb_req = NULL;
+	char *in_buf = NULL;
+	size_t reqlen = sizeof(struct xcl_mailbox_req) + data_len;
+	int ret = 0;
+
+	mb_req = vmalloc(reqlen);
+	if (!mb_req)
+		goto done;
+
+	in_buf = vzalloc(resp_len);
+	if (!in_buf)
+		goto done;
+
+	mb_req->req = XCL_MAILBOX_REQ_SDR_DATA;
+	subdev_peer.size = resp_len;
+	subdev_peer.kind = kind;
+	subdev_peer.entries = 1;
+
+	memcpy(mb_req->data, &subdev_peer, data_len);
+
+	ret = xocl_peer_request(xdev, mb_req, reqlen, in_buf, &resp_len, NULL, NULL, 0, 0);
+	if (ret) {
+		userpf_err(xdev, "sdr peer request failed, err: %d", ret);
+		goto done;
+	}
+
+	// if the response has any error, mgmt sets the resp_len to size of int (error code).
+	if (resp_len <= sizeof(int))
+		goto done;
+
+	ret = xocl_hwmon_sdm_create_sensors_sysfs(xdev, in_buf, resp_len, kind);
+	if (ret)
+		userpf_err(xdev, "hwmon_sdm sysfs creation failed for xcl_sdr 0x%x, err: %d", kind, ret);
+	else
+		userpf_dbg(xdev, "successfully created hwmon_sdm sensor sysfs node for xcl_sdr 0x%x", kind);
+
+done:
+	vfree(in_buf);
+	vfree(mb_req);
+
+	return ret;
+}
+
+int xocl_hwmon_sdm_init(struct xocl_dev *xdev)
+{
+	struct xocl_subdev_info subdev_info = XOCL_DEVINFO_HWMON_SDM;
+	int ret;
+
+	ret = xocl_subdev_create(xdev, &subdev_info);
+	if (ret && ret != -EEXIST)
+		return ret;
+
+	(void) xocl_hwmon_sdm_init_sysfs(xdev, XCL_SDR_BDINFO);
+	(void) xocl_hwmon_sdm_init_sysfs(xdev, XCL_SDR_TEMP);
+	(void) xocl_hwmon_sdm_init_sysfs(xdev, XCL_SDR_CURRENT);
+	(void) xocl_hwmon_sdm_init_sysfs(xdev, XCL_SDR_POWER);
+	(void) xocl_hwmon_sdm_init_sysfs(xdev, XCL_SDR_VOLTAGE);
 
 	return 0;
 }
@@ -1783,7 +1870,6 @@ static int (*xocl_drv_reg_funcs[])(void) __initdata = {
 	xocl_init_xdma,
 	xocl_init_qdma,
 	xocl_init_qdma4,
-	xocl_init_mb_scheduler,
 	xocl_init_mailbox,
 	xocl_init_xmc,
 	xocl_init_xmc_u2,
@@ -1817,6 +1903,8 @@ static int (*xocl_drv_reg_funcs[])(void) __initdata = {
 	xocl_init_m2m,
 	xocl_init_config_gpio,
 	xocl_init_command_queue,
+	xocl_init_hwmon_sdm,
+	xocl_init_ert_ctrl,
 };
 
 static void (*xocl_drv_unreg_funcs[])(void) = {
@@ -1826,7 +1914,6 @@ static void (*xocl_drv_unreg_funcs[])(void) = {
 	xocl_fini_xdma,
 	xocl_fini_qdma,
 	xocl_fini_qdma4,
-	xocl_fini_mb_scheduler,
 	xocl_fini_mailbox,
 	xocl_fini_xmc,
 	xocl_fini_xmc_u2,
@@ -1860,6 +1947,8 @@ static void (*xocl_drv_unreg_funcs[])(void) = {
 	xocl_fini_intc,
 	xocl_fini_config_gpio,
 	xocl_fini_command_queue,
+	xocl_fini_hwmon_sdm,
+	xocl_fini_ert_ctrl,
 };
 
 static int __init xocl_init(void)
@@ -1921,3 +2010,6 @@ MODULE_VERSION(XRT_DRIVER_VERSION);
 MODULE_DESCRIPTION(XOCL_DRIVER_DESC);
 MODULE_AUTHOR("Lizhi Hou <lizhi.hou@xilinx.com>");
 MODULE_LICENSE("GPL v2");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0)
+MODULE_IMPORT_NS(DMA_BUF);
+#endif

@@ -2,7 +2,7 @@
 /*
  * Xilinx Unify CU Model
  *
- * Copyright (C) 2020 Xilinx, Inc. All rights reserved.
+ * Copyright (C) 2020-2021 Xilinx, Inc. All rights reserved.
  *
  * Authors: min.ma@xilinx.com
  *
@@ -211,6 +211,7 @@ static inline void __process_sq(struct xrt_cu *xcu)
 		if (xcu->done_cnt) {
 			/* Done command has priority */
 			xcmd->status = KDS_COMPLETED;
+			xcmd->rcode = xcu->rcode;
 			--xcu->done_cnt;
 			xrt_cu_circ_produce(xcu, CU_LOG_STAGE_SQ, (uintptr_t)xcmd);
 		} else if (unlikely(ev_client)) {
@@ -296,7 +297,10 @@ static inline int process_rq(struct xrt_cu *xcu)
 		return 0;
 
 	/* if successfully get credit, you must start cu */
-	xrt_cu_config(xcu, (u32 *)xcmd->info, xcmd->isize, xcmd->payload_type);
+	if (xrt_cu_config(xcu, (u32 *)xcmd->info, xcmd->isize, xcmd->payload_type)) {
+		xrt_cu_put_credit(xcu, 1);
+		return 0;
+	}
 	xrt_cu_start(xcu);
 	set_xcmd_timestamp(xcmd, KDS_RUNNING);
 	xrt_cu_circ_produce(xcu, CU_LOG_STAGE_RQ, (uintptr_t)xcmd);
@@ -641,7 +645,7 @@ int xrt_cu_cfg_update(struct xrt_cu *xcu, int intr)
 		return -ENOSYS;
 
 	if (xrt_cu_get_protocol(xcu) == CTRL_NONE) {
-		xcu_err(xcu, "Interrupt enabled value should be false for ap_ctrl_none cu\n");
+		xcu_warn(xcu, "Interrupt enabled value should be false for ap_ctrl_none cu\n");
 		return -ENOSYS;
 	}
 
@@ -743,6 +747,11 @@ int xrt_cu_get_protocol(struct xrt_cu *xcu)
 	return xcu->info.protocol;
 }
 
+u32 xrt_cu_get_status(struct xrt_cu *xcu)
+{
+	return xcu->status;
+}
+
 int xrt_cu_regmap_size(struct xrt_cu *xcu)
 {
 	int max_off_idx = 0;
@@ -810,6 +819,7 @@ int xrt_cu_init(struct xrt_cu *xcu)
 	atomic_set(&xcu->tick, 0);
 	xcu->thread = NULL;
 
+	mod_timer(&xcu->timer, jiffies + CU_TIMER);
 	return err;
 }
 
@@ -825,6 +835,7 @@ void xrt_cu_fini(struct xrt_cu *xcu)
 	if (xcu->thread && !IS_ERR(xcu->thread))
 		(void) kthread_stop(xcu->thread);
 
+	del_timer_sync(&xcu->timer);
 	return;
 }
 

@@ -45,6 +45,7 @@
 #include "core/include/xrt/xrt_bo.h"
 #include "em_defines.h"
 #include "ert.h"
+#include "xrs.h"
 
 namespace xclhwemhal2 {
   class HwEmShim;
@@ -159,6 +160,8 @@ namespace hwemu {
 
     private:
       int    nctx;
+      pid_t  pid;
+      xrs_handle_t xrs_hdl;
   };
 }  // namespace hwemu
 

@@ -110,8 +110,6 @@ void xocl_mm_get_usage_stat(struct xocl_drm *drm_p, u32 ddr,
 void xocl_mm_update_usage_stat(struct xocl_drm *drm_p, u32 ddr,
         u64 size, int count);
 
-int xocl_mm_insert_node_range(struct xocl_drm *drm_p, u32 mem_id,
-                    struct drm_mm_node *node, u64 size);
 int xocl_mm_insert_node(struct xocl_drm *drm_p, u32 ddr,
                 struct drm_mm_node *node, u64 size);
 
@@ -161,7 +159,7 @@ int xocl_init_unmgd(struct drm_xocl_unmgd *unmgd, uint64_t data_ptr,
 		        uint64_t size, u32 write);
 void xocl_finish_unmgd(struct drm_xocl_unmgd *unmgd);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || defined(RHEL_8_5_GE)
 extern const struct drm_gem_object_funcs xocl_gem_object_funcs;
 #endif
 

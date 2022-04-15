@@ -15,6 +15,7 @@
  */
 
 #include "xdp/profile/writer/aie_trace/aie_trace_writer.h"
+#include "core/common/message.h"
 
 #include <iostream>
 
@@ -37,6 +38,26 @@ namespace xdp {
 
   AIETraceWriter::~AIETraceWriter()
   {
+
+    std::string dId = std::to_string(deviceId);
+    std::string tId = std::to_string(traceStreamId);
+
+    std::string filename = "aie_trace_" + dId + "_" + tId + ".txt";
+
+    try {
+      // Check if final file output is empty and throw a warning.
+      std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
+
+      // \n is 2 bytes
+      if (in.tellg() <= 2){
+        std::string msg = "File: " + filename + " (device #" + dId + ", stream #" + tId + ") trace data was not captured.";
+        xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg);
+      }
+
+    } catch (...){
+        std::string msg = "Trace File: " + filename + " not found.";
+        xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg);
+    }
   }
 
   void AIETraceWriter::writeHeader()
@@ -65,7 +86,8 @@ namespace xdp {
       void*    buf = traceData->buffer[j];
       // We write 4 bytes at a time
       // Max chunk size should be multiple of 4
-      // If last chunk is not multiple of 4 then in worst case, 3 bytes of data will not be written
+      // If last chunk is not multiple of 4 then in worst case, 
+      // 3 bytes of data will not be written. But this is not possible, as we always write full packet.
       uint64_t bufferSz = (traceData->bufferSz[j] / 4);
       if(nullptr == buf) {
         fout << std::endl;
@@ -78,6 +100,7 @@ namespace xdp {
       }
     }
     fout << std::endl;
+    delete traceData;
 
 #if 0
     void*    buf = traceData->buffer;
@@ -105,7 +128,7 @@ std::cout << " AIETraceWriter::writeTraceEvents : dataBuffer " << dataBuffer << 
   {
   }
 
-  bool AIETraceWriter::write(bool openNewFile)
+  bool AIETraceWriter::write(bool /*openNewFile*/)
   {
 #if 0
     writeHeader() ;
@@ -122,7 +145,7 @@ std::cout << " AIETraceWriter::writeTraceEvents : dataBuffer " << dataBuffer << 
     fout << std::endl ;
 #endif
 
-    if (openNewFile) switchFiles() ;
+   // if (openNewFile) switchFiles() ;
     return true;
   }
 

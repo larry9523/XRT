@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2020 Xilinx, Inc
+ * Copyright (C) 2020-2021 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -16,25 +16,27 @@
 
 #define XDP_SOURCE
 
-#include "xdp/profile/plugin/vp_base/info.h"
-#include "xdp/profile/plugin/aie_trace/aie_trace_plugin.h"
-#include "xdp/profile/writer/aie_trace/aie_trace_writer.h"
-#include "xdp/profile/writer/aie_trace/aie_trace_config_writer.h"
-
-#include "core/common/xrt_profiling.h"
-#include "core/edge/user/shim.h"
-#include "xdp/profile/database/database.h"
-#include "xdp/profile/device/device_intf.h"
-#include "xdp/profile/device/tracedefs.h"
-#include "xdp/profile/device/hal_device/xdp_hal_device.h"
-#include "xdp/profile/device/aie_trace/aie_trace_offload.h"
-#include "xdp/profile/database/events/creator/aie_trace_data_logger.h"
+#include <boost/algorithm/string.hpp>
+#include <cmath>
+#include <iostream>
+#include <memory>
 
 #include "core/common/message.h"
-#include <iostream>
-#include <boost/algorithm/string.hpp>
-#include <memory>
-#include <cmath>
+#include "core/common/xrt_profiling.h"
+#include "core/edge/user/shim.h"
+
+#include "xdp/profile/database/database.h"
+#include "xdp/profile/database/events/creator/aie_trace_data_logger.h"
+#include "xdp/profile/database/static_info/aie_constructs.h"
+#include "xdp/profile/database/static_info/pl_constructs.h"
+#include "xdp/profile/device/aie_trace/aie_trace_offload.h"
+#include "xdp/profile/device/device_intf.h"
+#include "xdp/profile/device/hal_device/xdp_hal_device.h"
+#include "xdp/profile/device/tracedefs.h"
+#include "xdp/profile/plugin/aie_trace/aie_trace_plugin.h"
+#include "xdp/profile/plugin/vp_base/info.h"
+#include "xdp/profile/writer/aie_trace/aie_trace_writer.h"
+#include "xdp/profile/writer/aie_trace/aie_trace_config_writer.h"
 
 #define NUM_CORE_TRACE_EVENTS   8
 #define NUM_MEMORY_TRACE_EVENTS 8
@@ -73,11 +75,31 @@ namespace xdp {
   using severity_level = xrt_core::message::severity_level;
   using module_type = xrt_core::edge::aie::module_type;
 
+  constexpr double AIE_DEFAULT_FREQ_MHZ = 1000.0;
+
+  bool AieTracePlugin::live = false;
+
   AieTracePlugin::AieTracePlugin()
-                : XDPPlugin()
+                : XDPPlugin(),
+                  continuousTrace(false),
+                  offloadIntervalms(0)
   {
+    AieTracePlugin::live = true;
+
     db->registerPlugin(this);
     db->registerInfo(info::aie_trace);
+
+    // Check whether continuous trace is enabled in xrt.ini
+    // AIE trace is now supported for HW only
+    continuousTrace = xrt_core::config::get_aie_trace_periodic_offload();
+    if (continuousTrace) {
+      offloadIntervalms = xrt_core::config::get_aie_trace_buffer_offload_interval_ms();
+    }
+
+    // Set Delay parameters
+    // Update delay with clock cycles when we get device handle later
+    mDelayCycles = static_cast<uint32_t>(getTraceStartDelayCycles(nullptr));
+    mUseDelay = (mDelayCycles > 0) ? true : false;
 
     // Pre-defined metric sets
     metricSets = {"functions", "functions_partial_stalls", "functions_all_stalls", "all"};
@@ -85,21 +107,6 @@ namespace xdp {
     // Pre-defined metric sets
     //
     // **** Core Module Trace ****
-    // functions: "traced_events": [35, 36, 7, 8, 0, 0, 0, 0]
-    // functions_partial_stalls: "traced_events": [35, 36, 7, 8, 0, 0, 0, 0]
-    // functions_all_stalls: "traced_events": [35, 36, 7, 8, 0, 0, 0, 0]
-    // all: "traced_events": [35, 36, 7, 8, 0, 0, 0, 0]
-    //      "group_event_config": {
-    //          "2": 0,
-    //          "15": 0,
-    //          "22": 15,
-    //          "32": 12,
-    //          "46": 0,
-    //          "47": 0,
-    //          "73": 8738,
-    //          "106": 0,
-    //          "123": 0
-    //      },
     // NOTE: these are supplemented with counter events as those are dependent on counter #
     coreEventSets = {
       {"functions",                {XAIE_EVENT_INSTR_CALL_CORE,       XAIE_EVENT_INSTR_RETURN_CORE}},
@@ -113,11 +120,6 @@ namespace xdp {
     coreTraceEndEvent   = XAIE_EVENT_DISABLED_CORE;
     
     // **** Memory Module Trace ****
-    // functions: "traced_events": [120, 119, 5, 6, 0, 0, 0, 0]
-    // functions_partial_stalls: "traced_events": [120, 119, 118, 117, 116, 5, 6, 0]
-    // functions_all_stalls: "traced_events": [120, 119, 118, 117, 116, 115, 5, 6]
-    // all: "traced_events": [120, 119, 118, 117, 116, 115, 5, 6]
-    //
     // NOTE 1: Core events listed here are broadcast by the resource manager
     // NOTE 2: These are supplemented with counter events as those are dependent on counter #
     // NOTE 3: For now, 'all' is the same as 'functions_all_stalls'. Combo events (required 
@@ -136,18 +138,48 @@ namespace xdp {
     };
 
     // **** Core Module Counters ****
-    // NOTE: reset events are dependent on actual profile counter reserved
-    coreCounterStartEvents   = {XAIE_EVENT_ACTIVE_CORE,               XAIE_EVENT_ACTIVE_CORE};
-    coreCounterEndEvents     = {XAIE_EVENT_DISABLED_CORE,             XAIE_EVENT_DISABLED_CORE};
-    coreCounterResetEvents   = {XAIE_EVENT_PERF_CNT_0_CORE,           XAIE_EVENT_PERF_CNT_1_CORE,
-                                XAIE_EVENT_PERF_CNT_2_CORE,           XAIE_EVENT_PERF_CNT_3_CORE};
-    coreCounterEventValues   = {1020, 1040400};
+    // NOTE 1: Reset events are dependent on actual profile counter reserved.
+    // NOTE 2: These counters are required HW workarounds with thresholds chosen 
+    //         to produce events before hitting the bug. For example, sync packets 
+    //         occur after 1024 cycles and with no events, is incorrectly repeated.
+    auto counterScheme = xrt_core::config::get_aie_trace_counter_scheme();
+    // ES1 is more stable for delay usecase
+    if (mUseDelay)
+      counterScheme = "es1";
 
+    if (counterScheme == "es1") {
+      coreCounterStartEvents   = {XAIE_EVENT_ACTIVE_CORE,             XAIE_EVENT_ACTIVE_CORE};
+      coreCounterEndEvents     = {XAIE_EVENT_DISABLED_CORE,           XAIE_EVENT_DISABLED_CORE};
+      coreCounterEventValues   = {1020, 1020*1020};
+    }
+    else if (counterScheme == "es2") {
+      coreCounterStartEvents   = {XAIE_EVENT_ACTIVE_CORE};
+      coreCounterEndEvents     = {XAIE_EVENT_DISABLED_CORE};
+      coreCounterEventValues   = {0x3FF00};
+    }
+    
     // **** Memory Module Counters ****
-    // NOTE: reset events are dependent on actual profile counter reserved
-    memoryCounterStartEvents = {XAIE_EVENT_TRUE_MEM,                  XAIE_EVENT_TRUE_MEM};
-    memoryCounterEndEvents   = {XAIE_EVENT_NONE_MEM,                  XAIE_EVENT_NONE_MEM};
-    memoryCounterEventValues = {1020, 1040400};
+    // NOTE 1: Reset events are dependent on actual profile counter reserved.
+    // NOTE 2: These counters are required HW workarounds (see description above).
+    //         They are only required for ES1 devices. For ES2 devices, the core
+    //         counter is broadcast.
+    if (counterScheme == "es1") {
+      memoryCounterStartEvents = {XAIE_EVENT_TRUE_MEM,                XAIE_EVENT_TRUE_MEM};
+      memoryCounterEndEvents   = {XAIE_EVENT_NONE_MEM,                XAIE_EVENT_NONE_MEM};
+      memoryCounterEventValues = {1020, 1020*1020};
+    }
+    else if (counterScheme == "es2") {
+      memoryCounterStartEvents = {XAIE_EVENT_TRUE_MEM};
+      memoryCounterEndEvents   = {XAIE_EVENT_NONE_MEM};
+      memoryCounterEventValues = {0x3FF00};
+    }
+
+    //Process the file dump interval
+    aie_trace_file_dump_int_s = xrt_core::config::get_aie_trace_file_dump_interval_s();
+    if (aie_trace_file_dump_int_s < MIN_TRACE_DUMP_INTERVAL_S){
+      aie_trace_file_dump_int_s = MIN_TRACE_DUMP_INTERVAL_S;
+      xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", AIE_TRACE_DUMP_INTERVAL_WARN_MSG);
+    }
   }
 
   AieTracePlugin::~AieTracePlugin()
@@ -167,6 +199,7 @@ namespace xdp {
     for(auto h : deviceHandles) {
       xclClose(h);
     }
+    AieTracePlugin::live = false;
   }
 
   // Convert broadcast ID to event ID
@@ -196,7 +229,7 @@ namespace xdp {
     return ((tile1.col == tile2.col) && (tile1.row == tile2.row));
   }
 
-  bool AieTracePlugin::tileHasFreeRsc(xaiefal::XAieDev* aieDevice, XAie_LocType& loc, const std::string& metricSet, bool useDelay)
+  bool AieTracePlugin::tileHasFreeRsc(xaiefal::XAieDev* aieDevice, XAie_LocType& loc, const std::string& metricSet)
   {
     auto stats = aieDevice->getRscStat(XAIEDEV_DEFAULT_GROUP_AVAIL);
     uint32_t available = 0;
@@ -206,7 +239,7 @@ namespace xdp {
     // Core Module perf counters
     available = stats.getNumRsc(loc, XAIE_CORE_MOD, XAIE_PERFCNT_RSC);
     required = coreCounterStartEvents.size();
-    if (useDelay)
+    if (mUseDelay)
       required += 1;
     if (available < required) {
       msg << "Available core module performance counters for aie trace : " << available << std::endl
@@ -356,6 +389,11 @@ namespace xdp {
     return metricSet;
   }
 
+  bool AieTracePlugin::alive()
+  {
+    return AieTracePlugin::live;
+  }
+
   std::vector<tile_type> AieTracePlugin::getTilesForTracing(void* handle)
   {
     std::vector<tile_type> tiles;
@@ -383,13 +421,17 @@ namespace xdp {
 
   uint64_t AieTracePlugin::getTraceStartDelayCycles(void* handle)
   {
-    auto device = xrt_core::get_userpf_device(handle);
-    auto freqMhz = xrt_core::edge::aie::get_clock_freq_mhz(device.get());
+    double freqMhz = AIE_DEFAULT_FREQ_MHZ;
+
+    if (handle != nullptr) {
+      auto device = xrt_core::get_userpf_device(handle);
+      freqMhz = xrt_core::edge::aie::get_clock_freq_mhz(device.get());
+    }
 
     std::smatch pieces_match;
     uint64_t cycles_per_sec = static_cast<uint64_t>(freqMhz * 1e6);
     const uint64_t max_cycles = 0xffffffff;
-    std::string size_str = xrt_core::config::get_aie_trace_start_delay();
+    std::string size_str = xrt_core::config::get_aie_trace_start_time();
 
     // Catch cases like "1Ms" "1NS"
     std::transform(size_str.begin(), size_str.end(), size_str.begin(),
@@ -398,25 +440,32 @@ namespace xdp {
     // Default is 0 cycles
     uint64_t cycles = 0;
     // Regex can parse values like : "1s" "1ms" "1ns"
-    const std::regex size_regex("\\s*([0-9]+)\\s*(s|ms|us|ns|)\\s*");
+    const std::regex size_regex("\\s*(\\d+\\.?\\d*)\\s*(s|ms|us|ns|)\\s*");
     if (std::regex_match(size_str, pieces_match, size_regex)) {
       try {
         if (pieces_match[2] == "s") {
-          cycles = std::stoull(pieces_match[1]) * cycles_per_sec;
+          cycles = static_cast<uint64_t>(std::stof(pieces_match[1]) * cycles_per_sec);
         } else if (pieces_match[2] == "ms") {
-          cycles = (std::stoull(pieces_match[1]) * cycles_per_sec) /  1e3;
+          cycles = static_cast<uint64_t>(std::stof(pieces_match[1]) * cycles_per_sec /  1e3);
         } else if (pieces_match[2] == "us") {
-          cycles = (std::stoull(pieces_match[1]) * cycles_per_sec) /  1e6;
+          cycles = static_cast<uint64_t>(std::stof(pieces_match[1]) * cycles_per_sec /  1e6);
         } else if (pieces_match[2] == "ns") {
-          cycles = (std::stoull(pieces_match[1]) * cycles_per_sec) /  1e9;
+          cycles = static_cast<uint64_t>(std::stof(pieces_match[1]) * cycles_per_sec /  1e9);
         } else {
-          cycles = std::stoull(pieces_match[1]);
+          cycles = static_cast<uint64_t>(std::stof(pieces_match[1]));
         }
+        
+        std::string msg("Parsed aie_trace_start_time: " + std::to_string(cycles) + " cycles.");
+        xrt_core::message::send(xrt_core::message::severity_level::info, "XRT", msg);
+
       } catch (const std::exception& ) {
         // User specified number cannot be parsed
-        std::string msg("Unable to parse aie_trace_delay. Setting delay to 0.");
+        std::string msg("Unable to parse aie_trace_start_time. Setting start time to 0.");
         xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg);
       }
+    } else {  
+      std::string msg("Unable to parse aie_trace_start_time. Setting start time to 0.");
+      xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg);
     }
 
     if (cycles > max_cycles) {
@@ -448,10 +497,8 @@ namespace xdp {
       return false;
     }
     auto tiles = getTilesForTracing(handle);
-
     // getTraceStartDelayCycles is 32 bit for now
-    uint32_t delayCycles = static_cast<uint32_t>(getTraceStartDelayCycles(handle));
-    bool useDelay = (delayCycles > 0) ? true : false;
+    mDelayCycles = static_cast<uint32_t>(getTraceStartDelayCycles(handle));
 
     // Keep track of number of events reserved per tile
     int numTileCoreTraceEvents[NUM_CORE_TRACE_EVENTS+1] = {0};
@@ -477,93 +524,102 @@ namespace xdp {
 
       // Check Resource Availability
       // For now only counters are checked
-      if (!tileHasFreeRsc(aieDevice, loc, metricSet, useDelay)) {
+      if (!tileHasFreeRsc(aieDevice, loc, metricSet)) {
         xrt_core::message::send(severity_level::warning, "XRT", "Tile doesn't have enough free resources for trace. Aborting trace configuration.");
         printTileStats(aieDevice, tile);
         return false;
       }
 
       //
-      // 1. Reserve and start core module counters
+      // 1. Reserve and start core module counters (as needed)
       //
       int numCoreCounters = 0;
-      XAie_ModuleType mod = XAIE_CORE_MOD;
-      for (int i=0; i < coreCounterStartEvents.size(); ++i) {
-        auto perfCounter = core.perfCounter();
-        auto ret = perfCounter->initialize(mod, coreCounterStartEvents.at(i),
-                                           mod, coreCounterEndEvents.at(i));
-        if (ret != XAIE_OK) break;
-        ret = perfCounter->reserve();
-        if (ret != XAIE_OK) break;
+      {
+        XAie_ModuleType mod = XAIE_CORE_MOD;
 
-        // NOTE: store events for later use in trace
-        XAie_Events counterEvent;
-        perfCounter->getCounterEvent(mod, counterEvent);
-        int idx = static_cast<int>(counterEvent) - static_cast<int>(XAIE_EVENT_PERF_CNT_0_CORE);
-        perfCounter->changeThreshold(coreCounterEventValues.at(i));
+        for (int i=0; i < coreCounterStartEvents.size(); ++i) {
+          auto perfCounter = core.perfCounter();
+          if (perfCounter->initialize(mod, coreCounterStartEvents.at(i),
+                                      mod, coreCounterEndEvents.at(i)) != XAIE_OK)
+            break;
+          if (perfCounter->reserve() != XAIE_OK) 
+            break;
 
-        // Set reset event based on counter number
-        perfCounter->changeRstEvent(mod, counterEvent);
-        coreEvents.push_back(counterEvent);
+          // NOTE: store events for later use in trace
+          XAie_Events counterEvent;
+          perfCounter->getCounterEvent(mod, counterEvent);
+          int idx = static_cast<int>(counterEvent) - static_cast<int>(XAIE_EVENT_PERF_CNT_0_CORE);
+          perfCounter->changeThreshold(coreCounterEventValues.at(i));
 
-        ret = perfCounter->start();
-        if (ret != XAIE_OK) break;
+          // Set reset event based on counter number
+          perfCounter->changeRstEvent(mod, counterEvent);
+          coreEvents.push_back(counterEvent);
 
-        mCoreCounterTiles.push_back(tile);
-        mCoreCounters.push_back(perfCounter);
-        numCoreCounters++;
+          // If no memory counters are used, then we need to broadcast the core counter
+          if (memoryCounterStartEvents.empty())
+            memoryCrossEvents.push_back(counterEvent);
 
-        // Update config file
-        uint8_t phyEvent = 0;
-        auto& cfg = cfgTile->core_trace_config.pc[idx];
-        XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, coreCounterStartEvents[i], &phyEvent);
-        cfg.start_event = phyEvent;
-        XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, coreCounterEndEvents[i], &phyEvent);
-        cfg.stop_event = phyEvent;
-        XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, counterEvent, &phyEvent);
-        cfg.reset_event = phyEvent;
-        cfg.event_value = coreCounterEventValues[i];
+          if (perfCounter->start() != XAIE_OK) 
+            break;
+
+          mCoreCounterTiles.push_back(tile);
+          mCoreCounters.push_back(perfCounter);
+          numCoreCounters++;
+
+          // Update config file
+          uint8_t phyEvent = 0;
+          auto& cfg = cfgTile->core_trace_config.pc[idx];
+          XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, coreCounterStartEvents[i], &phyEvent);
+          cfg.start_event = phyEvent;
+          XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, coreCounterEndEvents[i], &phyEvent);
+          cfg.stop_event = phyEvent;
+          XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, counterEvent, &phyEvent);
+          cfg.reset_event = phyEvent;
+          cfg.event_value = coreCounterEventValues[i];
+        }
       }
 
       //
-      // 2. Reserve and start memory module counters
+      // 2. Reserve and start memory module counters (as needed)
       //
       int numMemoryCounters = 0;
-      for (int i=0; i < memoryCounterStartEvents.size(); ++i) {
-        auto perfCounter = memory.perfCounter();
+      {
         XAie_ModuleType mod = XAIE_MEM_MOD;
-        auto ret = perfCounter->initialize(mod, memoryCounterStartEvents.at(i),
-                                           mod, memoryCounterEndEvents.at(i));
-        if (ret != XAIE_OK) break;
-        ret = perfCounter->reserve();
-        if (ret != XAIE_OK) break;
 
-        // Set reset event based on counter number
-        XAie_Events counterEvent;
-        perfCounter->getCounterEvent(mod, counterEvent);
-        int idx = static_cast<int>(counterEvent) - static_cast<int>(XAIE_EVENT_PERF_CNT_0_MEM);
-        perfCounter->changeThreshold(memoryCounterEventValues.at(i));
+        for (int i=0; i < memoryCounterStartEvents.size(); ++i) {
+          auto perfCounter = memory.perfCounter();
+          if (perfCounter->initialize(mod, memoryCounterStartEvents.at(i),
+                                      mod, memoryCounterEndEvents.at(i)) != XAIE_OK) 
+            break;
+          if (perfCounter->reserve() != XAIE_OK) 
+            break;
 
-        perfCounter->changeRstEvent(mod, counterEvent);
-        memoryEvents.push_back(counterEvent);
+          // Set reset event based on counter number
+          XAie_Events counterEvent;
+          perfCounter->getCounterEvent(mod, counterEvent);
+          int idx = static_cast<int>(counterEvent) - static_cast<int>(XAIE_EVENT_PERF_CNT_0_MEM);
+          perfCounter->changeThreshold(memoryCounterEventValues.at(i));
 
-        ret = perfCounter->start();
-        if (ret != XAIE_OK) break;
+          perfCounter->changeRstEvent(mod, counterEvent);
+          memoryEvents.push_back(counterEvent);
 
-        mMemoryCounters.push_back(perfCounter);
-        numMemoryCounters++;
+          if (perfCounter->start() != XAIE_OK) 
+            break;
 
-        // Update config file
-        uint8_t phyEvent = 0;
-        auto& cfg = cfgTile->memory_trace_config.pc[idx];
-        XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, memoryCounterStartEvents[i], &phyEvent);
-        cfg.start_event = phyEvent;
-        XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, memoryCounterEndEvents[i], &phyEvent);
-        cfg.stop_event = phyEvent;
-        XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, counterEvent, &phyEvent);
-        cfg.reset_event = phyEvent;
-        cfg.event_value = memoryCounterEventValues[i];
-        cfgTile->memory_trace_config.packet_type=1;
+          mMemoryCounters.push_back(perfCounter);
+          numMemoryCounters++;
+
+          // Update config file
+          uint8_t phyEvent = 0;
+          auto& cfg = cfgTile->memory_trace_config.pc[idx];
+          XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, memoryCounterStartEvents[i], &phyEvent);
+          cfg.start_event = phyEvent;
+          XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, memoryCounterEndEvents[i], &phyEvent);
+          cfg.stop_event = phyEvent;
+          XAie_EventLogicalToPhysicalConv(aieDevInst, loc, mod, counterEvent, &phyEvent);
+          cfg.reset_event = phyEvent;
+          cfg.event_value = memoryCounterEventValues[i];
+        }
       }
 
       // Catch when counters cannot be reserved: report, release, and return
@@ -584,7 +640,6 @@ namespace xdp {
       //
       // 3. Configure Core Tracing Events
       //
-      // TODO: Configure group or combo events where applicable
       {
         XAie_ModuleType mod = XAIE_CORE_MOD;
         uint8_t phyEvent = 0;
@@ -594,14 +649,15 @@ namespace xdp {
         if (xrt_core::config::get_aie_trace_user_control()) {
           coreTraceStartEvent = XAIE_EVENT_INSTR_EVENT_0_CORE;
           coreTraceEndEvent = XAIE_EVENT_INSTR_EVENT_1_CORE;
-        } else if (useDelay) {
+        } else if (mUseDelay) {
           auto perfCounter = core.perfCounter();
-          auto ret = perfCounter->initialize(mod, XAIE_EVENT_ACTIVE_CORE,
-                                             mod, XAIE_EVENT_DISABLED_CORE);
-          if (ret != XAIE_OK) break;
-          ret = perfCounter->reserve();
-          if (ret != XAIE_OK) break;
-          perfCounter->changeThreshold(delayCycles);
+          if (perfCounter->initialize(mod, XAIE_EVENT_ACTIVE_CORE,
+                                      mod, XAIE_EVENT_DISABLED_CORE) != XAIE_OK) 
+            break;
+          if (perfCounter->reserve() != XAIE_OK) 
+            break;
+
+          perfCounter->changeThreshold(mDelayCycles);
           XAie_Events counterEvent;
           perfCounter->getCounterEvent(mod, counterEvent);
 
@@ -612,16 +668,16 @@ namespace xdp {
           // to get around some hw bugs. We cannot restart tracemodules when that happens
           coreTraceEndEvent = XAIE_EVENT_NONE_CORE;
 
-          ret = perfCounter->start();
-          if (ret != XAIE_OK) break;
+          if (perfCounter->start() != XAIE_OK) 
+            break;
         }
 
         // Set overall start/end for trace capture
         // Wendy said this should be done first
-        auto ret = coreTrace->setCntrEvent(coreTraceStartEvent, coreTraceEndEvent);
-        if (ret != XAIE_OK) break;
+        if (coreTrace->setCntrEvent(coreTraceStartEvent, coreTraceEndEvent) != XAIE_OK) 
+          break;
 
-        ret = coreTrace->reserve();
+        auto ret = coreTrace->reserve();
         if (ret != XAIE_OK) {
           std::stringstream msg;
           msg << "Unable to reserve core module trace control for AIE tile (" 
@@ -637,10 +693,10 @@ namespace xdp {
         int numTraceEvents = 0;
         for (int i=0; i < coreEvents.size(); i++) {
           uint8_t slot;
-          ret = coreTrace->reserveTraceSlot(slot);
-          if (ret != XAIE_OK) break;
-          ret = coreTrace->setTraceEvent(slot, coreEvents[i]);
-          if (ret != XAIE_OK) break;
+          if (coreTrace->reserveTraceSlot(slot) != XAIE_OK) 
+            break;
+          if (coreTrace->setTraceEvent(slot, coreEvents[i]) != XAIE_OK) 
+            break;
           numTraceEvents++;
 
           // Update config file
@@ -660,14 +716,13 @@ namespace xdp {
         msg << "Reserved " << numTraceEvents << " core trace events for AIE tile (" << col << "," << row << ").";
         xrt_core::message::send(severity_level::debug, "XRT", msg.str());
 
-        if (ret != XAIE_OK) break;
-        ret = coreTrace->setMode(XAIE_TRACE_EVENT_PC);
-        if (ret != XAIE_OK) break;
+        if (coreTrace->setMode(XAIE_TRACE_EVENT_PC) != XAIE_OK) 
+          break;
         XAie_Packet pkt = {0, 0};
-        ret = coreTrace->setPkt(pkt);
-        if (ret != XAIE_OK) break;
-        ret = coreTrace->start();
-        if (ret != XAIE_OK) break;
+        if (coreTrace->setPkt(pkt) != XAIE_OK) 
+          break;
+        if (coreTrace->start() != XAIE_OK) 
+          break;
       }
 
       //
@@ -679,10 +734,10 @@ namespace xdp {
         auto memoryTrace = memory.traceControl();
         // Set overall start/end for trace capture
         // Wendy said this should be done first
-        auto ret = memoryTrace->setCntrEvent(coreTraceStartEvent, coreTraceEndEvent);
-        if (ret != XAIE_OK) break;
+        if (memoryTrace->setCntrEvent(coreTraceStartEvent, coreTraceEndEvent) != XAIE_OK) 
+          break;
 
-        ret = memoryTrace->reserve();
+        auto ret = memoryTrace->reserve();
         if (ret != XAIE_OK) {
           std::stringstream msg;
           msg << "Unable to reserve memory module trace control for AIE tile (" 
@@ -702,17 +757,14 @@ namespace xdp {
           uint32_t bcBit = 0x1;
           auto TraceE = memory.traceEvent();
           TraceE->setEvent(XAIE_CORE_MOD, memoryCrossEvents[i]);
-          if (ret != XAIE_OK) break;
-          auto ret = TraceE->reserve();
-          if (ret != XAIE_OK) break;
+          if (TraceE->reserve() != XAIE_OK) 
+            break;
 
           int bcId = TraceE->getBc();
-          if (ret != XAIE_OK) break;
           coreToMemBcMask |= (bcBit << bcId);
 
-          ret = TraceE->start();
-          if (ret != XAIE_OK) break;
-
+          if (TraceE->start() != XAIE_OK) 
+            break;
           numTraceEvents++;
 
           // Update config file
@@ -731,11 +783,10 @@ namespace xdp {
         for (int i=0; i < memoryEvents.size(); i++) {
           auto TraceE = memory.traceEvent();
           TraceE->setEvent(XAIE_MEM_MOD, memoryEvents[i]);
-          if (ret != XAIE_OK) break;
-          auto ret = TraceE->reserve();
-          if (ret != XAIE_OK) break;
-          ret = TraceE->start();
-          if (ret != XAIE_OK) break;
+          if (TraceE->reserve() != XAIE_OK) 
+            break;
+          if (TraceE->start() != XAIE_OK) 
+            break;
           numTraceEvents++;
 
           // Update config file
@@ -786,14 +837,17 @@ namespace xdp {
         msg << "Reserved " << numTraceEvents << " memory trace events for AIE tile (" << col << "," << row << ").";
         xrt_core::message::send(severity_level::debug, "XRT", msg.str());
 
-        if (ret != XAIE_OK) break;
-        ret = memoryTrace->setMode(XAIE_TRACE_EVENT_TIME);
-        if (ret != XAIE_OK) break;
-        XAie_Packet  pkt = {0, 1};
-        ret = memoryTrace->setPkt(pkt);
-        if (ret != XAIE_OK) break;
-        ret = memoryTrace->start();
-        if (ret != XAIE_OK) break;
+        if (memoryTrace->setMode(XAIE_TRACE_EVENT_TIME) != XAIE_OK) 
+          break;
+        XAie_Packet pkt = {0, 1};
+        if (memoryTrace->setPkt(pkt) != XAIE_OK) 
+          break;
+        if (memoryTrace->start() != XAIE_OK) 
+          break;
+
+        // Update memory packet type in config file
+        // NOTE: Use time packets for memory module (type 1)
+        cfgTile->memory_trace_config.packet_type = 1;
       }
 
       std::stringstream msg;
@@ -952,6 +1006,16 @@ namespace xdp {
     uint64_t aieTraceBufSize = GetTS2MMBufSize(true /*isAIETrace*/);
     bool isPLIO = (db->getStaticInfo()).getNumTracePLIO(deviceId) ? true : false;
 
+    if (continuousTrace) {
+      // Continuous Trace Offload is supported only for PLIO flow
+      if (isPLIO) {
+        XDPPlugin::startWriteThread(aie_trace_file_dump_int_s, "AIE_EVENT_TRACE", false);
+      } else {
+        std::string msg("Continuous offload of AIE Trace is not supported for GMIO mode. So, AIE Trace for GMIO mode will be offloaded only at the end of application.");
+        xrt_core::message::send(severity_level::warning, "XRT", msg);
+      }
+    }
+
     // First, check against memory bank size
     // NOTE: Check first buffer for PLIO; assume bank 0 for GMIO
     uint8_t memIndex = isPLIO ? deviceIntf->getAIETs2mmMemIndex(0) : 0;
@@ -1040,6 +1104,13 @@ namespace xdp {
       return;
     }
     aieOffloaders[deviceId] = std::make_tuple(aieTraceOffloader, aieTraceLogger, deviceIntf);
+
+    // Continuous Trace Offload is supported only for PLIO flow
+    if (continuousTrace && isPLIO) {
+      aieTraceOffloader->setContinuousTrace();
+      aieTraceOffloader->setOffloadIntervalms(offloadIntervalms);
+      aieTraceOffloader->startOffload();
+    }
   }
 
   void AieTracePlugin::setFlushMetrics(uint64_t deviceId, void* handle)
@@ -1060,11 +1131,11 @@ namespace xdp {
     //coreTraceStartEvent = XAIE_EVENT_TRUE_CORE;
     coreTraceEndEvent   = XAIE_EVENT_TIMER_VALUE_REACHED_CORE;
 
-    // Timer trigger value: 300* 1020*1020 = 312,120,000 = 0x129A92C0
-    // NOTES: Each packet has 7 payload words (one word: 32bits)
+    // Timer trigger value: 300*1020*1020 = 312,120,000 = 0x129A92C0
+    // NOTES: Each packet has 7 payload words (one word: 32 bits)
     //        We need 64 packets, so we need 7 * 64 = 448 words.
-    //        Existing counters generates 1.5 words for every perf counter 2 triggers.
-    //        Thus, 300 (299 exactly,, but 300 would have no harm) perf 2 counter events.
+    //        Existing counters generates 1.5 words for every perf 
+    //        counter 2 triggers. Thus, 300 perf 2 counter events.
     //uint32_t timerTrigValueLow  = 0x129A92C0;
     //uint32_t timerTrigValueLow  = 0x4A6A4B00;
     uint32_t timerTrigValueLow  = 0x29A92C00;
@@ -1072,10 +1143,53 @@ namespace xdp {
 
     uint32_t prevCol = 0;
     uint32_t prevRow = 0;
+    constexpr int numFlushCounters = 2;
 
+    // 1. Ensure we have counters, whether or not requested previously
+    if (coreCounterStartEvents.size() < numFlushCounters) {
+      XAie_ModuleType mod = XAIE_CORE_MOD;
+      auto tiles = getTilesForTracing(handle);
+      auto numCountersToRequest = numFlushCounters - coreCounterStartEvents.size();
+
+      // For consistency, always use ES1 counter values for flushing
+      ValueVector flushEventValues = {1020, 1020*1020};
+
+      for (auto& tile : tiles) {
+        auto& core = aieDevice->tile(tile.col, tile.row + 1).core();
+
+        // We need two counters to flush out the trace
+        for (int c=0; c < numCountersToRequest; ++c) {
+          auto perfCounter = core.perfCounter();
+          if (perfCounter->initialize(mod, XAIE_EVENT_NONE_CORE,
+                                      mod, XAIE_EVENT_NONE_CORE) != XAIE_OK) 
+            continue;
+          if (perfCounter->reserve() != XAIE_OK) 
+            continue;
+
+          // Configure threshold and reset of counter
+          XAie_Events counterEvent;
+          perfCounter->getCounterEvent(mod, counterEvent);
+          perfCounter->changeThreshold(flushEventValues.at(c));
+          perfCounter->changeRstEvent(mod, counterEvent);
+
+          // Add the counter event to trace so it forces the flush
+          auto coreTrace = core.traceControl();
+          coreTrace->stop();
+          uint8_t slot = 0;
+          if (coreTrace->reserveTraceSlot(slot) != XAIE_OK) 
+            break;
+          if (coreTrace->setTraceEvent(slot, counterEvent) != XAIE_OK) 
+            break;
+
+          mCoreCounters.push_back(perfCounter);
+          mCoreCounterTiles.push_back(tile);
+        }
+      }
+    }
+    
     // Reconfigure profile counters
     for (int i=0; i < mCoreCounters.size(); ++i) {
-      // 1. For every tile, stop trace & change trace start/stop and timer
+      // 2. For every tile, stop trace & change trace start/stop and timer
       auto& tile = mCoreCounterTiles.at(i);
       auto  col  = tile.col;
       auto  row  = tile.row;
@@ -1093,7 +1207,7 @@ namespace xdp {
         coreTrace->setCntrEvent(coreTraceStartEvent, coreTraceEndEvent);
       }
 
-      // 2. For every counter, change start/stop events
+      // 3. For every counter, change start/stop events
       std::stringstream msg;
       msg << "AIE Trace Flush: Modifying start/stop events for counter " << i;
       xrt_core::message::send(severity_level::debug, "XRT", msg.str());
@@ -1105,7 +1219,7 @@ namespace xdp {
       counter->start();
     }
 
-    // 3. For every tile, restart trace and reset timer
+    // 4. For every tile, restart trace and reset timer
     prevCol = 0;
     prevRow = 0;
     for (int i=0; i < mCoreCounters.size(); ++i) {
@@ -1175,6 +1289,11 @@ namespace xdp {
       auto offloader = std::get<0>(aieOffloaders[deviceId]);
       auto logger    = std::get<1>(aieOffloaders[deviceId]);
 
+      if (offloader->continuousTrace()) {
+        offloader->stopOffload() ;
+        while(offloader->getOffloadStatus() != AIEOffloadThreadStatus::STOPPED) ;
+      }
+
       offloader->readTrace();
       if (offloader->isTraceBufferFull())
         xrt_core::message::send(severity_level::warning, "XRT", AIE_TS2MM_WARN_MSG_BUF_FULL);
@@ -1188,12 +1307,17 @@ namespace xdp {
     
   }
 
-  void AieTracePlugin::writeAll(bool openNewFiles)
+  void AieTracePlugin::writeAll(bool /*openNewFiles*/)
   {
     // read the trace data from device and wrie to the output file
     for(auto o : aieOffloaders) {
       auto offloader = std::get<0>(o.second);
       auto logger    = std::get<1>(o.second);
+
+      if (offloader->continuousTrace()) {
+        offloader->stopOffload() ;
+        while(offloader->getOffloadStatus() != AIEOffloadThreadStatus::STOPPED) ;
+      }
 
       offloader->readTrace();
       if (offloader->isTraceBufferFull())
@@ -1206,9 +1330,7 @@ namespace xdp {
     }
     aieOffloaders.clear();
 
-    for(auto w : writers) {
-      w->write(openNewFiles);
-    }
+    XDPPlugin::endWrite();
   }
 
 } // namespace xdp

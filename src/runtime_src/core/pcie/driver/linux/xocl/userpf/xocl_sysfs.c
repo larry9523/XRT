@@ -17,7 +17,6 @@
 #include "common.h"
 #include "kds_core.h"
 
-extern int kds_mode;
 extern int kds_echo;
 
 /* Attributes followed by bin_attributes. */
@@ -246,34 +245,19 @@ kds_echo_store(struct device *dev, struct device_attribute *da,
 	       const char *buf, size_t count)
 {
 	struct xocl_dev *xdev = dev_get_drvdata(dev);
-	u32 clients = 0;
 
-	/* TODO: this should be as simple as */
-	/* return stroe_kds_echo(&XDEV(xdev)->kds, buf, count); */
-
-	if (!kds_mode)
-		clients = get_live_clients(xdev, NULL);
-
-	return store_kds_echo(&XDEV(xdev)->kds, buf, count,
-			      kds_mode, clients, &kds_echo);
+	return store_kds_echo(&XDEV(xdev)->kds, buf, count, &kds_echo);
 }
 static DEVICE_ATTR(kds_echo, 0644, kds_echo_show, kds_echo_store);
 
 static ssize_t
-kds_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%d\n", kds_mode);
-}
-static DEVICE_ATTR_RO(kds_mode);
-
-static ssize_t
-kds_numcdma_show(struct device *dev, struct device_attribute *attr, char *buf)
+kds_numcdmas_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct xocl_dev *xdev = dev_get_drvdata(dev);
 	struct kds_sched *kds = &XDEV(xdev)->kds;
 	return sprintf(buf, "%d\n", kds->cu_mgmt.num_cdma);
 }
-static DEVICE_ATTR_RO(kds_numcdma);
+static DEVICE_ATTR_RO(kds_numcdmas);
 
 static ssize_t
 kds_stat_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -338,19 +322,18 @@ kds_interrupt_store(struct device *dev, struct device_attribute *da,
 		return -ENODEV;
 
 	mutex_lock(&XDEV(xdev)->kds.lock);
-	if (kds_mode)
-		live_clients = kds_live_clients_nolock(&XDEV(xdev)->kds, NULL);
-	else
-		live_clients = get_live_clients(xdev, NULL);
+	live_clients = kds_live_clients_nolock(&XDEV(xdev)->kds, NULL);
 
 	if (live_clients > 0) {
 		mutex_unlock(&XDEV(xdev)->kds.lock);
 		return -EBUSY;
 	}
 
-	if (!kds->cu_intr_cap)
+	/* If cfg_gpio device exist, shell supports CU to host interrupt */
+	if (!CFG_GPIO_OPS(xdev))
 		goto done;
 
+	kds->cu_intr_cap = 1;
 	/* The last character of buf is '\n' */
 	if (!strncmp(buf, "ert", count-1))
 		cu_intr = 0;
@@ -359,18 +342,25 @@ kds_interrupt_store(struct device *dev, struct device_attribute *da,
 	else
 		goto done;
 
-	if (kds->cu_intr == cu_intr)
+	if (KDS_SETTING(kds->cu_intr) == cu_intr)
 		goto done;
 
-	if (cu_intr) {
-		xocl_ert_user_disable(xdev);
-		xocl_kds_cus_enable(xdev);
+	if (ERT_USER_DEV(xdev)) {
+		if (cu_intr) {
+			xocl_ert_user_disable(xdev);
+			xocl_kds_cus_enable(xdev);
+		} else {
+			xocl_kds_cus_disable(xdev);
+			xocl_ert_user_enable(xdev);
+		}
 	} else {
-		xocl_kds_cus_disable(xdev);
-		xocl_ert_user_enable(xdev);
+		if (cu_intr)
+			xocl_gpio_cfg(xdev, INTR_TO_CU);
+		else
+			xocl_gpio_cfg(xdev, INTR_TO_ERT);
 	}
 
-	kds->cu_intr = cu_intr;
+	kds->cu_intr = KDS_SET_SYSFS_BIT(cu_intr);
 	kds_cfg_update(&XDEV(xdev)->kds);
 
 done:
@@ -435,10 +425,7 @@ ert_disable_store(struct device *dev, struct device_attribute *da,
 		return -ENODEV;
 
 	mutex_lock(&XDEV(xdev)->kds.lock);
-	if (kds_mode)
-		live_clients = kds_live_clients_nolock(&XDEV(xdev)->kds, NULL);
-	else
-		live_clients = get_live_clients(xdev, NULL);
+	live_clients = kds_live_clients_nolock(&XDEV(xdev)->kds, NULL);
 
 	if (live_clients > 0) {
 		mutex_unlock(&XDEV(xdev)->kds.lock);
@@ -451,7 +438,7 @@ ert_disable_store(struct device *dev, struct device_attribute *da,
 	}
 
 	/* If ERT subdev doesn't present, cound not enable ERT */
-	if (kds_mode && !XDEV(xdev)->kds.ert)
+	if (!XDEV(xdev)->kds.ert)
 		disable = 1;
 
 	/* once ini_disable set to true, xrt.ini could not
@@ -787,9 +774,8 @@ static struct attribute *xocl_attrs[] = {
 	&dev_attr_kdsstat.attr,
 	&dev_attr_memstat.attr,
 	&dev_attr_memstat_raw.attr,
-	&dev_attr_kds_mode.attr,
 	&dev_attr_kds_echo.attr,
-	&dev_attr_kds_numcdma.attr,
+	&dev_attr_kds_numcdmas.attr,
 	&dev_attr_kds_stat.attr,
 	&dev_attr_kds_custat_raw.attr,
 	&dev_attr_kds_scustat_raw.attr,

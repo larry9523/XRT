@@ -51,8 +51,6 @@
 #define DRM_DBG(fmt, args...)
 #endif
 
-extern int kds_mode;
-
 static char driver_date[9];
 
 static void xocl_free_object(struct drm_gem_object *obj)
@@ -139,16 +137,7 @@ static int xocl_native_mmap(struct file *filp, struct vm_area_struct *vma)
 		u32 cu_addr;
 		u32 cu_idx = vma->vm_pgoff - 1;
 
-		if (kds_mode)
-			ret = xocl_cu_map_addr(xdev, cu_idx, priv, vsize, &cu_addr);
-		else {
-			if (vsize > 64 * 1024) {
-				userpf_err(xdev,
-					   "bad size (0x%lx) for native CU mmap", vsize);
-				return -EINVAL;
-			}
-			ret = xocl_exec_cu_map_addr(xdev, cu_idx, priv, &cu_addr);
-		}
+		ret = xocl_cu_map_addr(xdev, cu_idx, priv, vsize, &cu_addr);
 		if (ret != 0)
 			return ret;
 		res_start += cu_addr;
@@ -232,9 +221,10 @@ static bool is_mem_region_valid(struct xocl_drm *drm_p,
 
 		/*
 		 * Memory region in mem_topology needs to match or
-		 * be inside the PS reserved memory region.
+		 * be inside the PS reserved memory region for U30.
+		 * Restriction relaxed for Versal
 		 */
-		if (mem_start >= start && mem_end <= end)
+		if ((mem_start >= start && mem_end <= end) || (XOCL_DSA_IS_VERSAL(xdev)))
 			return true;
 	}
 
@@ -296,7 +286,7 @@ int xocl_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 #else
 		ret = vm_insert_page(vma, vmf_address, xobj->pages[page_offset]);
 #endif
-	} else if (xocl_bo_cma(xobj)) {
+	} else if (xocl_bo_cma(xobj) || xocl_bo_userptr(xobj)) {
 /*  vm_insert_page does not allow driver to insert anonymous pages.
  *  Instead, we call vm_insert_mixed.
  */
@@ -370,10 +360,7 @@ static int xocl_client_open(struct drm_device *dev, struct drm_file *filp)
 		return -ENXIO;
 	}
 
-	if (kds_mode == 1)
-		ret = xocl_create_client(drm_p->xdev, &filp->driver_priv);
-	else
-		ret = xocl_exec_create_client(drm_p->xdev, &filp->driver_priv);
+	ret = xocl_create_client(drm_p->xdev, &filp->driver_priv);
 	if (ret) {
 		xocl_drvinst_close(drm_p);
 		goto failed;
@@ -389,10 +376,7 @@ static void xocl_client_release(struct drm_device *dev, struct drm_file *filp)
 {
 	struct xocl_drm	*drm_p = dev->dev_private;
 
-	if (kds_mode == 1)
-		xocl_destroy_client(drm_p->xdev, &filp->driver_priv);
-	else
-		xocl_exec_destroy_client(drm_p->xdev, &filp->driver_priv);
+	xocl_destroy_client(drm_p->xdev, &filp->driver_priv);
 	xocl_p2p_mem_reclaim(drm_p->xdev);
 	xocl_drvinst_close(drm_p);
 }
@@ -400,16 +384,10 @@ static void xocl_client_release(struct drm_device *dev, struct drm_file *filp)
 static uint xocl_poll(struct file *filp, poll_table *wait)
 {
 	struct drm_file *priv = filp->private_data;
-	struct drm_device *dev = priv->minor->dev;
-	struct xocl_drm	*drm_p = dev->dev_private;
 
 	BUG_ON(!priv->driver_priv);
-
 	DRM_ENTER("");
-	if (kds_mode == 1)
-		return xocl_poll_client(filp, wait, priv->driver_priv);
-	else
-		return xocl_exec_poll_client(drm_p->xdev, filp, wait, priv->driver_priv);
+	return xocl_poll_client(filp, wait, priv->driver_priv);
 }
 
 static const struct drm_ioctl_desc xocl_ioctls[] = {
@@ -513,7 +491,7 @@ static struct drm_driver mm_drm_driver = {
 	.postclose			= xocl_client_release,
 	.open				= xocl_client_open,
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0) && !defined(RHEL_8_5_GE)
 	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0)
 		.gem_free_object_unlocked       = xocl_free_object,
 	#else
@@ -521,7 +499,7 @@ static struct drm_driver mm_drm_driver = {
 	#endif
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0) && !defined(RHEL_8_5_GE)
         .gem_vm_ops                     = &xocl_vm_ops,
         .gem_prime_get_sg_table         = xocl_gem_prime_get_sg_table,
         .gem_prime_vmap                 = xocl_gem_prime_vmap,
@@ -547,7 +525,7 @@ static struct drm_driver mm_drm_driver = {
 	.date				= driver_date,
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || defined(RHEL_8_5_GE)
 const struct drm_gem_object_funcs xocl_gem_object_funcs = {
         .free = xocl_free_object,
         .vm_ops = &xocl_vm_ops,
@@ -589,7 +567,14 @@ void *xocl_drm_init(xdev_handle_t xdev_hdl)
 	}
 	drm_p->xdev = xdev_hdl;
 
+	/*
+	 * The pdev field was removed from drm_device starting from 5.14 and
+	 * should be skipped starting from that version.
+	 * https://github.com/torvalds/linux/commit/b347e04452ff6382ace8fba9c81f5bcb63be17a6
+	 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 	ddev->pdev = XDEV(xdev_hdl)->pdev;
+#endif
 
 	ret = drm_dev_register(ddev, 0);
 	if (ret) {
@@ -663,60 +648,102 @@ void xocl_mm_update_usage_stat(struct xocl_drm *drm_p, u32 ddr,
 	drm_p->mm_usage_stat[ddr]->bo_count += count;
 }
 
-int xocl_mm_insert_node_range(struct xocl_drm *drm_p, u32 mem_id,
-			      struct drm_mm_node *node, u64 size)
+static int xocl_mm_insert_node_range_all(struct xocl_drm *drm_p, u32 mem_id,
+		struct mem_topology *grp_topology, struct drm_mm_node *dnode, u64 size)
+{
+	struct xocl_mm_wrapper *wrapper = NULL;
+	uint64_t start_addr = 0;
+	uint64_t end_addr = 0;
+	uint64_t hash_start_addr = 0;
+	int ret = 0;
+	int i = 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0)
+	for (i = 0; i < grp_topology->m_count; i++) {
+		if (IS_HOST_MEM(grp_topology->m_mem_data[i].m_tag) ||
+				XOCL_IS_PS_KERNEL_MEM(grp_topology, i))
+			continue;
+
+		hash_start_addr = grp_topology->m_mem_data[i].m_base_address;
+		hash_for_each_possible(drm_p->mm_range, wrapper, node, hash_start_addr) {
+			if (!wrapper)
+				continue;
+
+			start_addr = wrapper->start_addr;
+			end_addr = wrapper->start_addr + wrapper->size;
+
+#if defined(XOCL_DRM_FREE_MALLOC)
+			ret = drm_mm_insert_node_in_range(drm_p->mm, dnode, size, PAGE_SIZE, 0,
+					start_addr, end_addr, 0);
+#else
+			ret = drm_mm_insert_node_in_range(drm_p->mm, dnode, size, PAGE_SIZE,
+					start_addr, end_addr, 0);
+#endif
+
+			if (!ret) 
+				/* Found the memory. Return it from here  */
+				return 0;
+		}
+	}	
+#endif
+
+	return ret;
+}
+
+
+static int xocl_mm_insert_node_range(struct xocl_drm *drm_p, u32 mem_id,
+		struct mem_topology *grp_topology, struct drm_mm_node *node, u64 size)
 {
 	uint64_t start_addr = 0;
 	uint64_t end_addr = 0;
-	struct mem_topology *grp_topology = NULL;
-	int err = 0;
-	BUG_ON(!mutex_is_locked(&drm_p->mm_lock));
-
-	err = XOCL_GET_GROUP_TOPOLOGY(drm_p->xdev, grp_topology);
-	if (err)
-		return 0;
-
-	if (drm_p->mm == NULL) {
-		err = -EINVAL;
-		goto out;
-	}
+	int ret = 0;
 
 	start_addr = grp_topology->m_mem_data[mem_id].m_base_address;
 	end_addr = start_addr + grp_topology->m_mem_data[mem_id].m_size * 1024;
 
 #if defined(XOCL_DRM_FREE_MALLOC)
-	err = drm_mm_insert_node_in_range(drm_p->mm, node, size, PAGE_SIZE, 0,
+	ret = drm_mm_insert_node_in_range(drm_p->mm, node, size, PAGE_SIZE, 0,
 					   start_addr, end_addr, 0);
 #else
-	err = drm_mm_insert_node_in_range(drm_p->mm, node, size, PAGE_SIZE,
+	ret = drm_mm_insert_node_in_range(drm_p->mm, node, size, PAGE_SIZE,
 					   start_addr, end_addr, 0);
 #endif
 
-out:
-	XOCL_PUT_GROUP_TOPOLOGY(drm_p->xdev);
-	return err;
-
+	return ret;
 }
 
-int xocl_mm_insert_node(struct xocl_drm *drm_p, u32 ddr,
+int xocl_mm_insert_node(struct xocl_drm *drm_p, u32 mem_id,
 			struct drm_mm_node *node, u64 size)
 {
+	int ret = 0;
+	struct mem_topology *grp_topology = NULL;
+	
 	BUG_ON(!mutex_is_locked(&drm_p->mm_lock));
-	if (drm_p->mm == NULL)
-		return -EINVAL;
+        if (drm_p->mm == NULL)
+                return -EINVAL;
 
-	return drm_mm_insert_node_generic(drm_p->mm, node, size, PAGE_SIZE,
-#if defined(XOCL_DRM_FREE_MALLOC)
-		0, 0);
-#else
-		0, 0, 0);
-#endif
+	ret = XOCL_GET_GROUP_TOPOLOGY(drm_p->xdev, grp_topology);
+        if (ret)
+                return 0;
+
+	if (grp_topology->m_mem_data[mem_id].m_type == MEM_PS_KERNEL) {
+		ret = xocl_mm_insert_node_range_all(drm_p, mem_id, 
+				grp_topology, node, size);
+	}
+	else {
+		ret = xocl_mm_insert_node_range(drm_p, mem_id,
+				grp_topology, node, size);
+	}
+
+        XOCL_PUT_GROUP_TOPOLOGY(drm_p->xdev);
+        return ret;
+
 }
 
 int xocl_check_topology(struct xocl_drm *drm_p)
 {
 	struct mem_topology    *group_topology = NULL;
-	u16	i;
+	int32_t	i;
 	int	err = 0;
 
 	err = XOCL_GET_GROUP_TOPOLOGY(drm_p->xdev, group_topology);
@@ -782,7 +809,7 @@ int xocl_cleanup_mem_nolock(struct xocl_drm *drm_p)
 	int err;
 	struct mem_topology *topology = NULL;
 	struct mem_topology *group_topology = NULL;
-	u16 i, ddr;
+	int32_t i, ddr;
 	uint64_t addr;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0)
 	struct xocl_mm_wrapper *wrapper;
@@ -1034,6 +1061,9 @@ int xocl_init_mem(struct xocl_drm *drm_p)
 			continue;
 
 		if (XOCL_IS_STREAM(topo, i))
+			continue;
+
+		if (XOCL_IS_PS_KERNEL_MEM(topo, i))
 			continue;
 
 		if (!is_mem_region_valid(drm_p, mem_data))

@@ -1,5 +1,6 @@
 /**
- * Copyright (C) 2020-2021 Xilinx, Inc
+ * Copyright (C) 2020-2022 Xilinx, Inc
+ * Copyright (C) 2022 Advanced Micro Devices, Inc. - All rights reserved
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -21,6 +22,8 @@
 #include <cstring>
 
 #include "xdp/profile/database/database.h"
+#include "xdp/profile/database/static_info/device_info.h"
+#include "xdp/profile/database/static_info/pl_constructs.h"
 #include "xdp/profile/plugin/device_offload/device_offload_plugin.h"
 #include "xdp/profile/plugin/vp_base/utility.h"
 #include "xdp/profile/plugin/vp_base/info.h"
@@ -29,7 +32,6 @@
 
 #include "core/common/config_reader.h"
 #include "core/common/message.h"
-#include "experimental/xrt_profile.h"
 
 // Anonymous namespace for helper functions
 namespace {
@@ -84,13 +86,19 @@ namespace {
 namespace xdp {
 
   DeviceOffloadPlugin::DeviceOffloadPlugin() :
-    XDPPlugin(), continuous_trace(false), trace_buffer_offload_interval_ms(10)
+    XDPPlugin(),
+    device_trace(false), continuous_trace(false), trace_buffer_offload_interval_ms(10)
   {
-    active = db->claimDeviceOffloadOwnership() ;
-    if (!active) return ; 
-
     db->registerPlugin(this) ;
-    db->registerInfo(info::device_offload);
+
+    // Since OpenCL device offload doesn't actually add device offload info,
+    //  setting the available information has to be pushed down to both
+    //  the HAL or HWEmu plugin
+
+    if (xrt_core::config::get_data_transfer_trace() != "off" ||
+          xrt_core::config::get_device_trace() != "off") {
+      device_trace = true;
+    }
 
     // Get the profiling continuous offload options from xrt.ini
     //  Device offload continuous offload and dumping is only supported
@@ -105,21 +113,15 @@ namespace xdp {
     }
     else {
       if (xrt_core::config::get_continuous_trace()) {
-	xrt_core::message::send(xrt_core::message::severity_level::warning,
+        xrt_core::message::send(xrt_core::message::severity_level::warning,
                                 "XRT",
                                 "Continuous offload and dumping of device data is not supported in emulation and has been disabled.");
       }
     }
   }
 
-  DeviceOffloadPlugin::~DeviceOffloadPlugin()
-  {
-  }
-
   void DeviceOffloadPlugin::addDevice(const std::string& sysfsPath)
   {
-    if (!active) return ;
-
     uint64_t deviceId = db->addDevice(sysfsPath) ;
 
     // When adding a device, also add a writer to dump the information
@@ -178,24 +180,33 @@ namespace xdp {
   void DeviceOffloadPlugin::addOffloader(uint64_t deviceId,
                                          DeviceIntf* devInterface)
   {
-    if (!active) return ;
+    uint64_t trace_buffer_size = 0;
+    std::vector<uint64_t> buf_sizes;
 
-    // If offload via memory is requested, make sure the size requested
-    //  fits inside the chosen memory resource.
-    uint64_t trace_buffer_size = GetTS2MMBufSize() ;
     if (devInterface->hasTs2mm()) {
-      Memory* memory = (db->getStaticInfo()).getMemory(deviceId, devInterface->getTS2MmMemIndex());
-      if(nullptr == memory) {
-        std::string msg = "Information about memory index " + std::to_string(devInterface->getTS2MmMemIndex()) 
-                           + " not found in given xclbin. So, cannot check availability of memory resource for device trace offload.";
-        xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg);
-        return;
-      } else {
-        uint64_t memorySz = (memory->size) * 1024 ;
-        if (memorySz > 0 && trace_buffer_size > memorySz) {
-          trace_buffer_size = memorySz ;
-          std::string msg = "Trace buffer size is too big for memory resource.  Using " + std::to_string(memorySz) + " instead." ;
-          xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg) ;
+      size_t num_ts2mm = devInterface->getNumberTS2MM();
+
+      trace_buffer_size = GetTS2MMBufSize();
+
+      uint64_t each_buffer_size = (1 == num_ts2mm) ? trace_buffer_size : ((trace_buffer_size / num_ts2mm) % 0xfffffffffffff000);
+      buf_sizes.resize(num_ts2mm, each_buffer_size);
+      for(size_t i = 0; i < num_ts2mm; i++) {
+        Memory* memory = (db->getStaticInfo()).getMemory(deviceId, devInterface->getTS2MmMemIndex(i));
+        if(nullptr == memory) {
+          std::string msg = "Information about memory index " + std::to_string(devInterface->getTS2MmMemIndex(i)) 
+                             + " not found in given xclbin. So, cannot check availability of memory resource for "
+                             + std::to_string(i) +
+                             + "th. TS2MM for device trace offload.";
+          xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg);
+          return;
+        } else {
+          uint64_t memorySz = (memory->size) * 1024 ;
+          if (memorySz > 0 && each_buffer_size > memorySz) {
+            buf_sizes[i] = memorySz ;
+            std::string msg = "Trace buffer size for " + std::to_string(i)
+                              + "th. TS2MM is too big for memory resource.  Using " + std::to_string(memorySz) + " instead." ;
+            xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", msg) ;
+          }
         }
       }
     }
@@ -206,14 +217,13 @@ namespace xdp {
     DeviceTraceOffload* offloader = 
       new DeviceTraceOffload(devInterface, logger,
                              trace_buffer_offload_interval_ms, // offload_sleep_ms
-                             trace_buffer_size);           // trbuf_size
+                             trace_buffer_size);           // trace buffer size
 
     // If trace is enabled, set up trace.  Otherwise just keep the offloader
     //  for reading the counters.
-    if (xrt_core::config::get_data_transfer_trace() != "off" ||
-        xrt_core::config::get_device_trace() != "off") {
+    if (device_trace) {
       bool init_successful =
-        offloader->read_trace_init(m_enable_circular_buffer) ;
+        offloader->read_trace_init(m_enable_circular_buffer, buf_sizes) ;
 
       if (!init_successful) {
         if (devInterface->hasTs2mm()) {
@@ -230,13 +240,14 @@ namespace xdp {
 
   void DeviceOffloadPlugin::startContinuousThreads(uint64_t deviceId)
   {
-    if (!active) return ;
-    if (offloaders.find(deviceId) == offloaders.end()) return ;
+    if (offloaders.find(deviceId) == offloaders.end())
+      return ;
 
     DeviceData& data = offloaders[deviceId] ;
     auto offloader = std::get<0>(data) ;
     auto devInterface = std::get<2>(data) ;
-    if (offloader == nullptr) return ;
+    if (offloader == nullptr)
+      return ;
 
     offloader->train_clock();
     // Trace FIFO is usually very small (8k,16k etc)
@@ -255,8 +266,7 @@ namespace xdp {
       offloader->start_offload(OffloadThreadType::TRACE);
       offloader->set_continuous();
       if (m_enable_circular_buffer) {
-        auto tdma = devInterface->getTs2mm() ;
-        if (tdma->supportsCircBuf()) {
+        if (devInterface->supportsCircBuf()) {
           uint64_t min_offload_rate = 0 ;
           uint64_t requested_offload_rate = 0 ;
           bool use_circ_buf =
@@ -270,8 +280,8 @@ namespace xdp {
               std::to_string(requested_offload_rate);
             xrt_core::message::send(xrt_core::message::severity_level::warning,
                                     "XRT", msg);
-	  }
-	}
+          }
+        }
       }
     }
     else {
@@ -343,9 +353,11 @@ namespace xdp {
         while(offloader->get_status() != OffloadThreadStatus::STOPPED) ;
       }
       else {
-        offloader->read_trace();
-        offloader->process_trace();
-        offloader->read_trace_end();
+        if (device_trace) {
+          offloader->read_trace();
+          offloader->process_trace();
+          offloader->read_trace_end();
+        }
       }
     } catch (std::exception& /*e*/) {
         // Reading the trace could throw an exception if ioctls fail.
@@ -355,10 +367,8 @@ namespace xdp {
     return true;
   }
 
-  void DeviceOffloadPlugin::writeAll(bool openNewFiles)
+  void DeviceOffloadPlugin::writeAll(bool /*openNewFiles*/)
   {
-    if (!active) return ;
-
     // This function gets called if the database is destroyed before
     //  the plugin object.  At this time, the information in the database
     //  still exists and is viable, so we should flush our devices
@@ -372,33 +382,20 @@ namespace xdp {
     // Also, store away the counter results
     readCounters() ;
 
-    XDPPlugin::endWrite(openNewFiles);
+    XDPPlugin::endWrite();
   }
 
   void DeviceOffloadPlugin::checkTraceBufferFullness(DeviceTraceOffload* offloader, uint64_t deviceId)
   {
     if (!(getFlowMode() == HW))
       return;
-
-    db->getDynamicInfo().setTraceBufferFull(deviceId, offloader->trace_buffer_full());
-
-    if (offloader->has_fifo() && offloader->trace_buffer_full()) {
-      xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", FIFO_WARN_MSG);
-      xrt::profile::user_event events;
-      events.mark("Trace FIFO Full");
-    }
-
-    if (offloader->has_ts2mm() && offloader->trace_buffer_full()) {
-        xrt_core::message::send(xrt_core::message::severity_level::warning, "XRT", TS2MM_WARN_MSG_BUF_FULL);
-        xrt::profile::user_event events;
-        events.mark("Trace Buffer Full");
+    if (device_trace) {
+      db->getDynamicInfo().setTraceBufferFull(deviceId, offloader->trace_buffer_full());
     }
   }
 
   void DeviceOffloadPlugin::broadcast(VPDatabase::MessageType msg, void* /*blob*/)
   {
-    if (!active) return ;
-
     switch(msg)
     {
     case VPDatabase::READ_COUNTERS:
@@ -413,7 +410,7 @@ namespace xdp {
       break ;
     case VPDatabase::DUMP_TRACE:
       {
-	XDPPlugin::forceWrite(true) ;
+        XDPPlugin::trySafeWrite("VP_TRACE", true);
       }
       break ;
     default:

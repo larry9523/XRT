@@ -19,15 +19,16 @@
 
 #include "unix_socket.h"
 
-unix_socket::unix_socket(const std::string& sock_id,double timeout_insec,bool fatal_error)
+unix_socket::unix_socket(const std::string& env, const std::string& sock_id, double timeout_insec, bool fatal_error)
 {
   std::string socket = sock_id;
   server_started = false;
   fd = -1;
   char* cUser = getenv("USER");
+
   if(cUser && !sock_id.compare("xcl_sock")) {
     std::string user = cUser;
-    char* c_sock_id = getenv("EMULATION_SOCKETID"); 
+    char* c_sock_id = getenv(env.c_str()); 
     if(c_sock_id ) {
       socket = c_sock_id;
     }
@@ -46,7 +47,7 @@ unix_socket::unix_socket(const std::string& sock_id,double timeout_insec,bool fa
   start_server(timeout_insec,fatal_error);
 }
 
-void unix_socket::start_server(double timeout_insec,bool fatal_error)
+void unix_socket::start_server(double timeout_insec, bool fatal_error)
 {
   int sock= -1;
   struct sockaddr_un server;
@@ -82,8 +83,7 @@ void unix_socket::start_server(double timeout_insec,bool fatal_error)
   tv.tv_sec = timeout_insec;
   tv.tv_usec = 0;
   int r = select(sock+1,&rfds, NULL, NULL, &tv);
-  if(r <= 0 && fatal_error)
-  {
+  if(r <= 0 && fatal_error) {
     std::cout<<"ERROR: [SDx-EM 08-0] Failed to connect to device process"<<std::endl;
     exit(1);
   }

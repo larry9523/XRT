@@ -412,7 +412,7 @@ static struct drm_xocl_bo *xocl_create_bo(struct drm_device *dev,
 		xobj->metadata.state = DRM_XOCL_EXECBUF_STATE_ABORT;
 
 	obj = &xobj->base;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || defined(RHEL_8_5_GE)
 	obj->funcs = &xocl_gem_object_funcs;
 #endif
 
@@ -439,10 +439,11 @@ static struct drm_xocl_bo *xocl_create_bo(struct drm_device *dev,
 	xocl_xdev_dbg(xdev, "alloc bo from bank%u, flag %x, host bank %d",
 		memidx, xobj->flags, drm_p->cma_bank_idx);
 
-	err = xocl_mm_insert_node_range(drm_p, memidx, xobj->mm_node,
+	err = xocl_mm_insert_node(drm_p, memidx, xobj->mm_node,
 		xobj->base.size);
 	if (err)
 		goto failed;
+
 	BO_DEBUG("insert mm_node:%p, start:%llx size: %llx",
 		xobj->mm_node, xobj->mm_node->start,
 		xobj->mm_node->size);
@@ -736,6 +737,10 @@ int xocl_userptr_bo_ioctl(
 		goto out1;
 	}
 
+	ret = drm_gem_create_mmap_offset(&xobj->base);
+	if (ret < 0)
+		goto out1;
+
 	ret = drm_gem_handle_create(filp, &xobj->base, &args->handle);
 	if (ret)
 		goto out1;
@@ -774,14 +779,9 @@ int xocl_map_bo_ioctl(struct drm_device *dev,
 	}
 
 	BO_ENTER("xobj %p", xobj);
-	if (xocl_bo_userptr(xobj)) {
-		ret = -EPERM;
-		goto out;
-	}
 	/* The mmap offset was set up at BO allocation time. */
 	args->offset = drm_vma_node_offset_addr(&obj->vma_node);
 	xocl_describe(to_xocl_bo(obj));
-out:
 	XOCL_DRM_GEM_OBJECT_PUT_UNLOCKED(obj);
 	return ret;
 }
@@ -1230,8 +1230,14 @@ struct drm_gem_object *xocl_gem_prime_import_sg_table(struct drm_device *dev,
 		ret = -ENOMEM;
 		goto out_free;
 	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0) || defined(RHEL_8_5_GE)
+	ret = drm_prime_sg_to_page_array(sgt, importing_xobj->pages,
+			attach->dmabuf->size >> PAGE_SHIFT);
+#else
 	ret = drm_prime_sg_to_page_addr_arrays(sgt, importing_xobj->pages,
-	       NULL, attach->dmabuf->size >> PAGE_SHIFT);
+			NULL, attach->dmabuf->size >> PAGE_SHIFT);
+#endif
 	if (ret)
 		goto out_free;
 
@@ -1255,7 +1261,7 @@ out_free:
 	return ERR_PTR(ret);
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0) && !defined(RHEL_8_5_GE)
 void *xocl_gem_prime_vmap(struct drm_gem_object *obj)
 {
 	struct drm_xocl_bo *xobj = to_xocl_bo(obj);
@@ -1312,7 +1318,7 @@ int xocl_gem_prime_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
 		vma->vm_ops = xobj->dmabuf_vm_ops;
 	} else if (!IS_ERR_OR_NULL(xobj->base.dma_buf) && !IS_ERR_OR_NULL(xobj->base.dma_buf->file)) {
 		vma->vm_file = get_file(xobj->base.dma_buf->file);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || defined(RHEL_8_5_GE)
 		vma->vm_ops = xobj->base.funcs->vm_ops;
 #else
 		vma->vm_ops = xobj->base.dev->driver->gem_vm_ops;

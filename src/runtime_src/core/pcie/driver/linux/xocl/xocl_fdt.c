@@ -20,9 +20,6 @@
 #include "version.h"
 #include "xocl_fdt.h"
 
-/* TODO: remove this with old kds */
-extern int kds_mode;
-
 struct ip_node {
 	const char *name;
 	const char *regmap_name;
@@ -438,8 +435,8 @@ static struct xocl_subdev_map subdev_map[] = {
 		.max_level = XOCL_SUBDEV_LEVEL_PRP,
  	},
 	{
-		.id = XOCL_SUBDEV_COMMAND_QUEUE,
-		.dev_name = XOCL_COMMAND_QUEUE,
+		.id = XOCL_SUBDEV_ERT_CTRL,
+		.dev_name = XOCL_ERT_CTRL,
 		.res_array = (struct xocl_subdev_res[]) {
 			{.res_name = NODE_ERT_CQ_USER, .regmap_name = PROP_ERT_CQ},
 			{.res_name = NODE_ERT_CQ_USER, .regmap_name = PROP_ERT_LEGACY},
@@ -450,21 +447,25 @@ static struct xocl_subdev_map subdev_map[] = {
 		.build_priv_data = ert_build_priv,
 		.devinfo_cb = NULL,
 		.max_level = XOCL_SUBDEV_LEVEL_PRP,
- 	},
- 	{
-		.id = XOCL_SUBDEV_MB_SCHEDULER,
-		.dev_name = XOCL_MB_SCHEDULER,
+	},
+	{
+		/* Platform has XGQ IP, in this case, there is no CQ. */
+		.id = XOCL_SUBDEV_ERT_CTRL,
+		.dev_name = XOCL_ERT_CTRL_VERSAL,
 		.res_array = (struct xocl_subdev_res[]) {
-			{.res_name = NODE_ERT_SCHED},
-			{.res_name = NODE_ERT_CQ_USER},
+			{.res_name = NODE_XGQ_USR_RING_BASE},
+			{.res_name = NODE_XGQ_USR_SQ_00_BASE},
+			{.res_name = NODE_XGQ_USR_SQ_01_BASE},
+			{.res_name = NODE_XGQ_USR_SQ_02_BASE},
+			{.res_name = NODE_XGQ_USR_SQ_03_BASE},
 			{NULL},
 		},
-		.required_ip = 2,
+		.required_ip = 1,
 		.flags = XOCL_SUBDEV_MAP_USERPF_ONLY,
-		.build_priv_data = ert_build_priv,
+		.build_priv_data = NULL,
 		.devinfo_cb = NULL,
 		.max_level = XOCL_SUBDEV_LEVEL_PRP,
- 	},
+	},
 	{
 		.id = XOCL_SUBDEV_XVC_PUB,
 		.dev_name = XOCL_XVC_PUB,
@@ -1392,15 +1393,6 @@ static int xocl_fdt_parse_subdevs(xdev_handle_t xdev_hdl, char *blob,
 		j++;
 
 	for (id = 0; id < XOCL_SUBDEV_NUM; id++) { 
-		/* workaround MB_SCHEDULER and INTC resource conflict
-		 * Remove below if expression when MB_SCHEDULER is removed
-		 *
-		 * Skip MB_SCHEDULER if kds_mode is 1. So that INTC subdev could
-		 * get resources.
-		 */
-		if (id == XOCL_SUBDEV_MB_SCHEDULER && kds_mode)
-			continue;
-
 		for (j = 0; j < ARRAY_SIZE(subdev_map); j++) {
 			map_p = &subdev_map[j];
 			if (map_p->id != id)

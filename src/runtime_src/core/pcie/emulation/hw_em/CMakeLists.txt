@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright (C) 2019-2021 Xilinx, Inc. All rights reserved.
+# Copyright (C) 2019-2022 Xilinx, Inc. All rights reserved.
 #
 set(EM_SRC_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/generic_pcie_hal2")
+set(EM_PLUGIN_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generic_pcie_hal2/plugin/xdp")
 set(COMMON_EM_SRC_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/../common_em")
 set(COMMON_EM_GEN_DIR  "${CMAKE_CURRENT_BINARY_DIR}/../common_em")
 set(COMMON_PCIE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../common")
@@ -11,12 +12,12 @@ include_directories(
   "${EM_SRC_DIR}/xrt_model/hostenv"
   "${EM_SRC_DIR}/xrt_model/xrt"
   "${EM_SRC_DIR}/xrt_model/ringb/include"
+  "${EM_SRC_DIR}/res_solver/include"
   ${COMMON_EM_SRC_DIR}
   ${COMMON_EM_GEN_DIR}
   ${BOOST_FILESYSTEM_INCLUDE_DIRS}
   ${BOOST_SYSTEM_INCLUDE_DIRS}
   )
-
 
 file(GLOB EM_SRC_FILES
   "${EM_SRC_DIR}/*.h"
@@ -26,9 +27,13 @@ file(GLOB EM_SRC_FILES
   "${EM_SRC_DIR}/xrt_model/xrt/*.cpp"
   "${EM_SRC_DIR}/xrt_model/xrt/*.h"
   "${EM_SRC_DIR}/xrt_model/ringb/*.cpp"
+  "${EM_SRC_DIR}/res_solver/include/*.h"
+  "${EM_SRC_DIR}/res_solver/*.c"
   "${COMMON_PCIE_SRC_DIR}/aie_stubs.cpp"
   "${COMMON_PCIE_SRC_DIR}/system_pcie.cpp"
   "${COMMON_PCIE_SRC_DIR}/device_pcie.cpp"
+  "${EM_PLUGIN_SRC_DIR}/*.h"
+  "${EM_PLUGIN_SRC_DIR}/*.cpp"
   )
 
 add_definitions(-DXCLHAL_MAJOR_VER=1 -DXCLHAL_MINOR_VER=0)
@@ -39,6 +44,12 @@ set(CURR_SOURCE "")
 add_library(xrt_hwemu SHARED ${CURR_SOURCE}
   $<TARGET_OBJECTS:hw_emu_objects>
   $<TARGET_OBJECTS:core_common_objects>
+  )
+
+add_library(xrt_hwemu_static STATIC ${CURR_SOURCE}
+  $<TARGET_OBJECTS:hw_emu_objects>
+  $<TARGET_OBJECTS:core_common_objects>
+  $<TARGET_OBJECTS:common_em_objects>
   )
 
 set_target_properties(xrt_hwemu PROPERTIES VERSION ${XRT_VERSION_STRING}
@@ -55,14 +66,25 @@ target_link_libraries(xrt_hwemu
   uuid
   )
 
+target_link_libraries(xrt_hwemu_static
+  INTERFACE
+  boost_filesystem
+  boost_system
+  ${PROTOBUF_LIBRARY}
+  xrt_coreutil_static
+  rt
+  uuid
+  )
+
 install (TARGETS xrt_hwemu
   EXPORT xrt-targets
   LIBRARY DESTINATION ${XRT_INSTALL_LIB_DIR} ${XRT_NAMELINK_SKIP}
   RUNTIME DESTINATION ${XRT_INSTALL_BIN_DIR}
 )
 
-install (TARGETS xrt_hwemu
+install (TARGETS xrt_hwemu xrt_hwemu_static
   EXPORT xrt-dev-targets
   ARCHIVE DESTINATION ${XRT_INSTALL_LIB_DIR} COMPONENT ${XRT_DEV_COMPONENT}
   LIBRARY DESTINATION ${XRT_INSTALL_LIB_DIR} COMPONENT ${XRT_DEV_COMPONENT} ${XRT_NAMELINK_ONLY}
 )
+

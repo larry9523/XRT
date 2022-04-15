@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2021 Xilinx, Inc
+ * Copyright (C) 2021-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -17,6 +17,7 @@
 #include "info_platform.h"
 #include "query_requests.h"
 #include "utils.h"
+#include "xclbin.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -103,6 +104,32 @@ add_mig_info(const xrt_core::device* device, ptree_type& pt)
 }
 
 void
+add_p2p_config(const xrt_core::device* device, ptree_type& pt)
+{
+  try {
+    ptree_type pt_p2p;
+    const auto config = xrt_core::device_query<xq::p2p_config>(device);
+    const auto config_map = xrt_core::query::p2p_config::to_map(config);
+    for(const auto& pair : config_map)
+      pt_p2p.add(pair.first, xrt_core::utils::unit_convert(pair.second)); // Turn bytes into GB
+    pt.put_child("p2p", pt_p2p);
+  }
+  catch (const xq::exception&) {
+    // Devices that do not suport p2p will not add anything to the passed in ptree
+  }
+}
+
+void
+add_config_info(const xrt_core::device* device, ptree_type& pt)
+{
+  ptree_type pt_config;
+
+  add_p2p_config(device, pt_config);
+
+  pt.put_child("config", pt_config);
+}
+
+void
 add_p2p_info(const xrt_core::device* device, ptree_type& pt)
 {
   auto value = xq::p2p_config::value_type::not_supported;
@@ -134,18 +161,60 @@ add_controller_info(const xrt_core::device* device, ptree_type& pt)
 
   try {
     ptree_type sc;
-    sc.add("version", xrt_core::device_query<xq::xmc_sc_version>(device));
+    std::string sc_ver = xrt_core::device_query<xq::xmc_sc_version>(device);
+    if (sc_ver.empty()) {
+      try {
+        sc_ver = xrt_core::device_query<xq::hwmon_sdm_active_msp_ver>(device);
+      }
+      catch (const xq::exception&) {
+        // Ignoring if not available
+      }
+    }
+    sc.add("version", sc_ver);
     sc.add("expected_version", xrt_core::device_query<xq::expected_sc_version>(device));
     ptree_type cmc;
-    std::stringstream version;
-    
-    try {
-       version << "0x" << std::hex << std::stoi(xrt_core::device_query<xq::xmc_version>(device));
+
+    /*
+     * The card managment controller (CMC) version number is formatted where the bottom three bytes contain
+     * the Major, Minor, and Version values respectively.
+     * Ex:
+     * CMC version = 010203
+     * This implies
+     * 01 -> Major Number
+     * 02 -> Minor Number
+     * 03 -> Version Number
+     * Output = 1.2.3
+     */
+    uint64_t versionValue = std::stoull(xrt_core::device_query<xq::xmc_version>(device), nullptr, 10);
+    std::string version = boost::str(boost::format("%u.%u.%u")
+                          % ((versionValue >> (2 * 8)) & 0xFF) // Major
+                          % ((versionValue >> (1 * 8)) & 0xFF) // Minor
+                          % ((versionValue >> (0 * 8)) & 0xFF)); // Version
+    cmc.add("version", version);
+    std::string sn = xrt_core::device_query<xq::xmc_serial_num>(device);
+    if (sn.empty()) {
+      try {
+        sn = xrt_core::device_query<xq::hwmon_sdm_serial_num>(device);
+      }
+      catch (const xq::exception&) {
+        // Ignoring if not available
+      }
     }
-    catch (...) {}
-    cmc.add("version", version.str());
-    cmc.add("serial_number", xrt_core::device_query<xq::xmc_serial_num>(device));
-    cmc.add("oem_id", xq::oem_id::parse(xrt_core::device_query<xq::oem_id>(device)));
+    cmc.add("serial_number", sn);
+
+    std::string oid = xq::oem_id::parse(xrt_core::device_query<xq::oem_id>(device));
+    if (boost::iequals(oid, "N/A"))
+      oid.clear();
+    if (oid.empty()) {
+      try {
+        oid = xq::oem_id::parse(xrt_core::device_query<xq::hwmon_sdm_oem_id>(device));
+      }
+      catch (const xq::exception&) {
+        // Ignoring if not available
+      }
+    }
+    cmc.add("oem_id", oid);
+
     controller.put_child("satellite_controller", sc);
     controller.put_child("card_mgmt_controller", cmc);
     pt.put_child("controller", controller);
@@ -155,6 +224,23 @@ add_controller_info(const xrt_core::device* device, ptree_type& pt)
   }
 }
 
+static std::string
+enum_to_str(CLOCK_TYPE type)
+{
+  switch(type) {
+    case CT_UNUSED:
+      return "Unused";
+    case CT_DATA:
+      return "Data";
+    case CT_KERNEL:
+      return "Kernel";
+    case CT_SYSTEM:
+      return "System";
+    default:
+      throw xrt_core::internal_error("enum value does not exists");
+    }
+}
+
 void
 add_clock_info(const xrt_core::device* device, ptree_type& pt)
 {
@@ -162,15 +248,15 @@ add_clock_info(const xrt_core::device* device, ptree_type& pt)
 
   try {
     auto raw = xrt_core::device_query<xq::clock_freq_topology_raw>(device);
-    if(raw.empty())
+    if (raw.empty())
       return;
 
     ptree_type pt_clocks;
     auto clock_topology = reinterpret_cast<const clock_freq_topology*>(raw.data());
-    for(int i = 0; i < clock_topology->m_count; i++) {
+    for (int i = 0; i < clock_topology->m_count; i++) {
       ptree_type pt_clock;
       pt_clock.add("id", clock_topology->m_clock_freq[i].m_name);
-      pt_clock.add("description", xq::clock_freq_topology_raw::parse(clock_topology->m_clock_freq[i].m_name));
+      pt_clock.add("description", enum_to_str(static_cast<CLOCK_TYPE>(clock_topology->m_clock_freq[i].m_type)));
       pt_clock.add("freq_mhz", clock_topology->m_clock_freq[i].m_freq_Mhz);
       pt_clock_array.push_back(std::make_pair("", pt_clock));
     }
@@ -215,7 +301,7 @@ add_mac_info(const xrt_core::device* device, ptree_type& pt)
     pt.put_child("macs", pt_mac);
 
   }
-  catch (const xq::no_such_key&) {
+  catch (const xq::exception&) {
     // Ignoring if not available: Edge Case
   }
 }
@@ -232,6 +318,7 @@ add_platform_info(const xrt_core::device* device, ptree_type& pt_platform_array)
   add_controller_info(device, pt_platform);
   add_clock_info(device, pt_platform);
   add_mac_info(device, pt_platform);
+  add_config_info(device, pt_platform);
 
   pt_platforms.push_back(std::make_pair("", pt_platform));
   pt_platform_array.add_child("platforms", pt_platforms);
@@ -259,14 +346,16 @@ pcie_info(const xrt_core::device * device)
     ptree.add("device", xq::pcie_device::to_string(xrt_core::device_query<xq::pcie_device>(device)));
     ptree.add("sub_device", xq::pcie_subsystem_id::to_string(xrt_core::device_query<xq::pcie_subsystem_id>(device)));
     ptree.add("sub_vendor", xq::pcie_subsystem_vendor::to_string(xrt_core::device_query<xq::pcie_subsystem_vendor>(device)));
-    ptree.add("link_speed_gbit_sec", xrt_core::device_query<xq::pcie_link_speed_max>(device));
+    ptree.add("link_speed_gbit_sec", xrt_core::device_query<xq::pcie_link_speed>(device));
+    ptree.add("expected_link_speed_gbit_sec", xrt_core::device_query<xq::pcie_link_speed_max>(device));
     ptree.add("express_lane_width_count", xrt_core::device_query<xq::pcie_express_lane_width>(device));
+    ptree.add("expected_express_lane_width_count", xrt_core::device_query<xq::pcie_express_lane_width_max>(device));
 
     // dma_thread_count might not be present for nodma, but it is safe to ignore.
     try {
       ptree.add("dma_thread_count", xrt_core::device_query<xq::dma_threads_raw>(device).size());
     }
-    catch(const xq::no_such_key&) {
+    catch (const xq::exception&) {
     }
 
     ptree.add("cpu_affinity", xrt_core::device_query<xq::cpu_affinity>(device));
@@ -274,7 +363,7 @@ pcie_info(const xrt_core::device * device)
     ptree.add("shared_host_mem_size_bytes", xrt_core::utils::unit_convert(xrt_core::device_query<xq::shared_host_mem>(device)));
     ptree.add("enabled_host_mem_size_bytes", xrt_core::utils::unit_convert(xrt_core::device_query<xq::enabled_host_mem>(device)));
   }
-  catch(const xq::exception&) {
+  catch (const xq::exception&) {
   }
 
   return ptree;

@@ -82,6 +82,7 @@ typedef struct _XRT_CTX_ARGS {
     GUID             XclBinUuid;  // IN: XCLBIN to acquire a context on
     ULONG              CuIndex;     // IN: Compute unit for the request
     ULONG              Flags;       // IN: XOCL_CTX_FLAG_XXX values
+    ULONG              SlotIdx;     //IN: Slot index
 } XRT_CTX_ARGS, * PXRT_CTX_ARGS;
 
 //
@@ -185,7 +186,8 @@ typedef enum _XRT_STAT_CLASS {
     XrtStatTempByMemTopology,
     XrtStatGroupTopology,
     XrtStatMemStatRaw,
-    XrtStatMemStat
+    XrtStatMemStat,
+    XrtStatXclinSlots
 } XRT_STAT_CLASS, * PXRT_STAT_CLASS;
 
 typedef struct _XRT_STAT_CLASS_ARGS {
@@ -194,6 +196,30 @@ typedef struct _XRT_STAT_CLASS_ARGS {
 
 } XRT_STAT_CLASS_ARGS, * PXRT_STAT_CLASS_ARGS;
 
+//
+// XrtStatXclbinSlots
+//
+typedef struct _XRT_SLOT_INFORMATION {
+    ULONG     CuCount;
+    ULONG     SlotCount;
+} XRT_SLOT_INFORMATION, * PXRT_SLOT_INFORMATION;
+
+//
+// XoclStatKdsCU
+//
+typedef struct _XRT_KDS_CU {
+    GUID      XclBinUuid;
+    ULONGLONG BaseAddress;
+    ULONGLONG Usage;
+    ULONG     SlotIdx;
+    ULONG     CuIdx;
+    char      kname[64];
+} XRT_KDS_CU, * PXRT_KDS_CU;
+
+typedef struct _XRT_KDS_CU_INFORMATION {
+    ULONG       CuCount;
+    XRT_KDS_CU  CuInfo[1];
+} XRT_KDS_CU_INFORMATION, * PXRT_KDS_CU_INFORMATION;
 
 typedef struct _XRT_EXECBUF_ARGS {
     HANDLE      ExecBO;

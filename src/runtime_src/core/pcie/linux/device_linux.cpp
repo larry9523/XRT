@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019-2021 Xilinx, Inc
+ * Copyright (C) 2019-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -33,6 +33,9 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <poll.h>
+#include <sys/syscall.h>
+#include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
@@ -71,7 +74,6 @@ get_pcidev(const xrt_core::device* device)
 {
   return pcidev::get_dev(device->get_device_id(), device->is_userpf());
 }
-
 
 static std::vector<uint64_t> 
 get_counter_status_from_sysfs(const std::string &mon_name_address, 
@@ -127,10 +129,153 @@ struct bdf
   }
 };
 
-struct kds_cu_stat
+/*
+ * sdm_sensor_info query request used to access sensor information from
+ * hwmon sysfs directly. It is a data driven approach.
+ */
+struct sdm_sensor_info
 {
-  using result_type = query::kds_cu_stat::result_type;
-  using data_type = query::kds_cu_stat::data_type;
+  using result_type = query::sdm_sensor_info::result_type;
+  using data_type = query::sdm_sensor_info::data_type;
+  using sdr_req_type = query::sdm_sensor_info::sdr_req_type;
+
+  static result_type
+  get_sdm_sensors(const xrt_core::device* device,
+                  const sdr_req_type& req_type,
+                  const std::string& path)
+  {
+    auto pdev = get_pcidev(device);
+    result_type output;
+    //sensors are stored in hwmon sysfs dir with name starts & ends with as follows.
+    std::array<std::string, 5> sname_start = {"curr", "in", "power", "temp", "fan"};
+    std::array<std::string, 5> sname_end = {"label", "input", "max", "average", "highest"};
+    int max_end_types = sname_end.size();
+    bool next_id = false;
+    //All sensor sysfs nodes starts with 1 as starting index.
+    int start_id = 1;
+    auto type = sname_start[(int)req_type];
+
+    //voltage sensor sysfs node starts with "in" with 0 as starting index.
+    if (!type.compare("in"))
+      start_id = 0;
+
+    while (!next_id)
+    {
+      data_type data;
+      const auto slash = "/";
+      const auto underscore = "_";
+      /*
+       * Forming sysfs node as /<start>[start_id]_.
+       * Example: /in0_ or /curr1_ or /power1_ or /temp1_ in 1st iteration.
+       * start_id will be incremented till next_id become true.
+       * So, next iteration will be /in1_ or /curr2_ or /power2_ or /temp2_.
+       * Similarly, end string of sysfs node name will be retrieved using end[].
+       */
+      std::string tmp = slash + type + std::to_string(start_id) + underscore;
+      for (int end_id = 0; end_id < max_end_types; end_id++)
+      {
+        if (end_id == 0)
+        {
+          std::string errmsg;
+          std::string label;
+          pdev->sysfs_get("", path + tmp + sname_end[end_id], errmsg, label);
+          if (!errmsg.empty())
+          {
+            //go and read next sysfs node
+            data.label = "N/A";
+            next_id = true;
+            end_id = max_end_types;
+            continue;
+          }
+          data.label = label;
+        }
+        else
+        {
+          std::string errmsg;
+          uint32_t input = 0;
+          pdev->sysfs_get<uint32_t>("", path + tmp + sname_end[end_id], errmsg, input, EINVAL);
+          if (!errmsg.empty())
+            continue;
+
+          if (end_id == 1)
+            data.input = input;
+          else if (end_id == 2)
+            data.max = input;
+          else if (end_id == 3)
+            data.average = input;
+          else
+            data.highest = input;
+        }
+      } // for (end_id =0; end_id < max ...)
+
+      if (data.label.compare("N/A"))
+        output.push_back(data);
+
+      start_id++;
+    } //while (!next_id)
+
+    return output;
+  } //get_sdm_sensors()
+
+  static result_type
+  get(const xrt_core::device* device, key_type, const boost::any& reqType)
+  {
+    const sdr_req_type req_type = boost::any_cast<query::sdm_sensor_info::req_type>(reqType);
+    auto pdev = get_pcidev(device);
+    const std::string target_dir = "hwmon";
+    const std::string target_file = "name";
+    const std::string target_name = "hwmon_sdm";
+    const std::string slash = "/";
+    std::string parent_path = pdev->get_sysfs_path("", target_dir);
+    std::string path;
+
+    /*
+     * Goal here is to find the correct hwmon sysfs directory.
+     * hwmon sysfs directory has a sysfs node called "name", and it is decision factor.
+     * So, the target hwmon sysfs dir is the one whose name contains target_name.
+     */
+    boost::filesystem::path render_dirs(parent_path);
+    if (!boost::filesystem::is_directory(render_dirs))
+      return result_type();
+
+    //iterate over list of hwmon syfs directory's directories
+    boost::filesystem::directory_iterator iter(render_dirs);
+    while (iter != boost::filesystem::directory_iterator{})
+    {
+      if (!boost::filesystem::is_directory(iter->path()))
+      {
+        ++iter;
+        continue;
+      }
+
+      std::string f_name = iter->path().filename().string();
+      if (boost::algorithm::starts_with(f_name, target_dir))
+      {
+        std::string name;
+        std::string errmsg;
+        pdev->sysfs_get("", target_dir + slash + f_name + slash + target_file, errmsg, name);
+        if (errmsg.empty() && (name.find(target_name) != std::string::npos))
+        {
+          //found target hwmon sysfs directory, store it to path variable.
+          //Here, f_name contains hwmon1 or hwmon2 etc." So, final path looks like "hwmon/<f_name>"
+          path = target_dir + slash + f_name;
+          break;
+        }
+      }
+      ++iter;
+    }
+
+    if (path.empty())
+      return result_type();
+
+    return get_sdm_sensors(device, req_type, path);
+  } //get()
+};
+
+struct kds_cu_info
+{
+  using result_type = query::kds_cu_info::result_type;
+  using data_type = query::kds_cu_info::data_type;
 
   static result_type
   get(const xrt_core::device* device, key_type)
@@ -153,12 +298,23 @@ struct kds_cu_stat
       boost::char_separator<char> sep(",");
       tokenizer tokens(line, sep);
 
-      if (std::distance(tokens.begin(), tokens.end()) != 5)
+      /* TODO : For backward compartability changing the following logic
+       * as the first column should represent the slot index */
+      // stats e.g.
+      // Slot index present
+      //   0,0,vadd:vadd_1,0x1400000,0x4,0
+      // Without Slot index
+      //   0,vadd:vadd_1,0x1400000,0x4,0
+      if ((std::distance(tokens.begin(), tokens.end()) != 5) &&
+	(std::distance(tokens.begin(), tokens.end()) != 6))
         throw xrt_core::query::sysfs_error("CU statistic sysfs node corrupted");
 
-      data_type data;
+      data_type data = { 0 };
       const int radix = 16;
       tokenizer::iterator tok_it = tokens.begin();
+      if (std::distance(tokens.begin(), tokens.end()) == 6)
+        data.slot_index =std::stoi(std::string(*tok_it++));
+
       data.index     = std::stoi(std::string(*tok_it++));
       data.name      = std::string(*tok_it++);
       data.base_addr = std::stoull(std::string(*tok_it++), nullptr, radix);
@@ -194,11 +350,27 @@ struct instance
 
 };
 
-
-struct kds_scu_stat
+struct hotplug_offline 
 {
-  using result_type = query::kds_scu_stat::result_type;
-  using data_type = query::kds_scu_stat::data_type;
+  using result_type = query::hotplug_offline::result_type;
+
+  static result_type
+  get(const xrt_core::device* device, key_type)
+  {
+    auto mgmt_dev = pcidev::get_dev(device->get_device_id(), false);
+
+    // Remove both user_pf and mgmt_pf
+    if (pcidev::shutdown(mgmt_dev, true, true))
+      throw xrt_core::query::sysfs_error("Hotplug offline failed");
+
+    return true;
+  }
+};
+
+struct kds_scu_info
+{
+  using result_type = query::kds_scu_info::result_type;
+  using data_type = query::kds_scu_info::data_type;
   static constexpr uint32_t scu_domain = 0x10000;
 
   static result_type
@@ -223,61 +395,24 @@ struct kds_scu_stat
       boost::char_separator<char> sep(",");
       tokenizer tokens(line, sep);
 
-      if (std::distance(tokens.begin(), tokens.end()) != 4)
+      if ((std::distance(tokens.begin(), tokens.end()) != 4) &&
+	  (std::distance(tokens.begin(), tokens.end()) != 5))
         throw xrt_core::query::sysfs_error("PS kernel statistic sysfs node corrupted");
 
       data_type data;
       const int radix = 16;
       tokenizer::iterator tok_it = tokens.begin();
+      if (std::distance(tokens.begin(), tokens.end()) == 5)
+	data.slot_index  = std::stoi(std::string(*tok_it++));
       data.index  = std::stoi(std::string(*tok_it++));
       data.name   = std::string(*tok_it++);  // kernel name
       data.status = std::stoul(std::string(*tok_it++), nullptr, radix);
       data.usages = std::stoul(std::string(*tok_it++));
 
-      // TODO: Let's avoid this special handling for PS kernel name
-      // Modify instance name to match up with xclbin convention where
-      // instance names are numbered 0..n as in kernel_name:[0..n] for
-      // kernel_name.  It is important that the instance name matches
-      // up with the expectations of core XRT, which is based off of
-      // the instance names in the IP_LAYOUT.  By using a knm -> idx
-      // map the driver can assign internal indeces in any order it
-      // likes and sysfs node does not have to list all kernel
-      // instances of a kernel before instances of another kernel.
-      auto& kidx = name2idx[data.name];  // integral values are zero-initialized
-      data.name += ":scu_" + std::to_string(kidx++);
-
       cu_stats.push_back(data);
     }
 
     return cu_stats;
-  }
-};
-
-struct kds_cu_info
-{
-  using result_type = query::kds_cu_info::result_type;
-
-  static result_type
-  get(const xrt_core::device* device, key_type)
-  {
-    auto pdev = get_pcidev(device);
-  
-    std::vector<std::string> stats; 
-    std::string errmsg;
-    pdev->sysfs_get("mb_scheduler", "kds_custat", errmsg, stats);
-    if (!errmsg.empty())
-      throw xrt_core::query::sysfs_error(errmsg);
-
-    result_type cuStats;
-    for (auto& line : stats) {
-	uint32_t base_addr = 0;
-	uint32_t usage = 0;
-	uint32_t status = 0;
-	sscanf(line.c_str(), "CU[@0x%x] : %d status : %d", &base_addr, &usage, &status);
-	cuStats.push_back(std::make_tuple(base_addr, usage, status));
-    }
-
-    return cuStats;
   }
 };
 
@@ -332,7 +467,22 @@ struct mac_addr_list
     for (int i=0; i < LEGACY_COUNT; i++) {
       std::string addr, errmsg;
       pdev->sysfs_get("xmc", "mac_addr"+std::to_string(i), errmsg, addr);
-      list.push_back(addr);
+      if (!addr.empty())
+        list.push_back(addr);
+    }
+
+    if (list.empty()) {
+      //check if the data can be retrieved from vmr.
+      std::string errmsg;
+      int i = 0;
+      do {
+        std::string addr;
+        errmsg.clear();
+        pdev->sysfs_get("hwmon_sdm", "mac_addr"+std::to_string(i), errmsg, addr);
+        if (!addr.empty())
+          list.push_back(addr);
+        i++;
+      } while (errmsg.empty());
     }
 
     return list;
@@ -749,7 +899,7 @@ initialize_query_table()
   emplace_sysfs_get<query::xmc_scaling_support>                ("xmc", "scaling_support");
   emplace_sysfs_getput<query::xmc_scaling_enabled>             ("xmc", "scaling_enabled");
   emplace_sysfs_get<query::xmc_scaling_critical_pow_threshold> ("xmc", "scaling_critical_power_threshold");
-  emplace_sysfs_get<query::xmc_scaling_critical_temp_threshold> ("xmc", "scaling_critical_temp_threshold");
+  emplace_sysfs_get<query::xmc_scaling_critical_temp_threshold>("xmc", "scaling_critical_temp_threshold");
   emplace_sysfs_get<query::xmc_scaling_threshold_power_limit>  ("xmc", "scaling_threshold_power_limit");
   emplace_sysfs_get<query::xmc_scaling_threshold_temp_limit>   ("xmc", "scaling_threshold_temp_limit");
   emplace_sysfs_get<query::xmc_scaling_power_override_enable>  ("xmc", "scaling_threshold_power_override_en");
@@ -826,66 +976,82 @@ initialize_query_table()
   emplace_func0_request<query::xmc_qspi_status,                qspi_status>();
   emplace_func0_request<query::mac_addr_list,                  mac_addr_list>();
 
-  emplace_sysfs_get<query::firewall_detect_level>             ("firewall", "detected_level");
-  emplace_sysfs_get<query::firewall_detect_level_name>        ("firewall", "detected_level_name");
-  emplace_sysfs_get<query::firewall_status>                   ("firewall", "detected_status");
-  emplace_sysfs_get<query::firewall_time_sec>                 ("firewall", "detected_time");
+  emplace_sysfs_get<query::firewall_detect_level>              ("firewall", "detected_level");
+  emplace_sysfs_get<query::firewall_detect_level_name>         ("firewall", "detected_level_name");
+  emplace_sysfs_get<query::firewall_status>                    ("firewall", "detected_status");
+  emplace_sysfs_get<query::firewall_time_sec>                  ("firewall", "detected_time");
 
-  emplace_sysfs_get<query::power_microwatts>                  ("xmc", "xmc_power");
-  emplace_sysfs_get<query::power_warning>                     ("xmc", "xmc_power_warn");
-  emplace_sysfs_get<query::host_mem_size>                     ("address_translator", "host_mem_size");
-  emplace_sysfs_get<query::kds_numcdmas>                      ("mb_scheduler", "kds_numcdmas");
+  emplace_sysfs_get<query::power_microwatts>                   ("xmc", "xmc_power");
+  emplace_sysfs_get<query::power_warning>                      ("xmc", "xmc_power_warn");
+  emplace_sysfs_get<query::host_mem_size>                      ("address_translator", "host_mem_size");
 
-  //emplace_sysfs_get<query::mig_ecc_enabled>                ("mig", "ecc_enabled");
-  emplace_sysfs_get<query::mig_ecc_status>                   ("mig", "ecc_status");
-  emplace_sysfs_get<query::mig_ecc_ce_cnt>                   ("mig", "ecc_ce_cnt");
-  emplace_sysfs_get<query::mig_ecc_ue_cnt>                   ("mig", "ecc_ue_cnt");
-  emplace_sysfs_get<query::mig_ecc_ce_ffa>                   ("mig", "ecc_ce_ffa");
-  emplace_sysfs_get<query::mig_ecc_ue_ffa>                   ("mig", "ecc_ue_ffa");
-  emplace_sysfs_get<query::flash_bar_offset>                 ("flash", "bar_off");
-  emplace_sysfs_get<query::is_mfg>                           ("", "mfg");
-  emplace_sysfs_get<query::mfg_ver>                          ("", "mfg_ver");
-  emplace_sysfs_get<query::is_recovery>                      ("", "recovery");
-  emplace_sysfs_get<query::is_ready>                         ("", "ready");
-  emplace_sysfs_get<query::is_offline>                       ("", "dev_offline");
-  emplace_sysfs_get<query::f_flash_type>                     ("flash", "flash_type");
-  emplace_sysfs_get<query::flash_type>                       ("", "flash_type");
-  emplace_sysfs_get<query::board_name>                       ("", "board_name");
-  emplace_sysfs_get<query::logic_uuids>                      ("", "logic_uuids");
-  emplace_sysfs_get<query::interface_uuids>                  ("", "interface_uuids");
-  emplace_sysfs_getput<query::rp_program_status>             ("", "rp_program");
-  emplace_sysfs_get<query::shared_host_mem>                  ("", "host_mem_size");
-  emplace_sysfs_get<query::enabled_host_mem>                  ("address_translator", "host_mem_size");
-  emplace_sysfs_get<query::cpu_affinity>                     ("", "local_cpulist");
-  emplace_sysfs_get<query::mailbox_metrics>                  ("mailbox", "recv_metrics");
-  emplace_sysfs_get<query::clock_timestamp>                  ("ert_user", "clock_timestamp");
-  emplace_sysfs_getput<query::ert_sleep>                     ("ert_user", "mb_sleep");
-  emplace_sysfs_get<query::ert_cq_read>                      ("ert_user", "cq_read_cnt");
-  emplace_sysfs_get<query::ert_cq_write>                     ("ert_user", "cq_write_cnt");
-  emplace_sysfs_get<query::ert_cu_read>                      ("ert_user", "cu_read_cnt");
-  emplace_sysfs_get<query::ert_cu_write>                     ("ert_user", "cu_write_cnt");
-  emplace_sysfs_get<query::ert_data_integrity>               ("ert_user", "data_integrity");
-  emplace_sysfs_getput<query::config_mailbox_channel_disable> ("", "config_mailbox_channel_disable");
-  emplace_sysfs_getput<query::config_mailbox_channel_switch> ("", "config_mailbox_channel_switch");
-  emplace_sysfs_getput<query::config_xclbin_change>          ("", "config_xclbin_change");
-  emplace_sysfs_getput<query::cache_xclbin>                  ("", "cache_xclbin");
+  emplace_sysfs_get<query::mig_ecc_status>                     ("mig", "ecc_status");
+  emplace_sysfs_get<query::mig_ecc_ce_cnt>                     ("mig", "ecc_ce_cnt");
+  emplace_sysfs_get<query::mig_ecc_ue_cnt>                     ("mig", "ecc_ue_cnt");
+  emplace_sysfs_get<query::mig_ecc_ce_ffa>                     ("mig", "ecc_ce_ffa");
+  emplace_sysfs_get<query::mig_ecc_ue_ffa>                     ("mig", "ecc_ue_ffa");
+  emplace_sysfs_get<query::flash_bar_offset>                   ("flash", "bar_off");
+  emplace_sysfs_get<query::is_mfg>                             ("", "mfg");
+  emplace_sysfs_get<query::mfg_ver>                            ("", "mfg_ver");
+  emplace_sysfs_get<query::is_recovery>                        ("", "recovery");
+  emplace_sysfs_get<query::is_ready>                           ("", "ready");
+  emplace_sysfs_get<query::is_offline>                         ("", "dev_offline");
+  emplace_sysfs_get<query::f_flash_type>                       ("flash", "flash_type");
+  emplace_sysfs_get<query::flash_type>                         ("", "flash_type");
+  emplace_sysfs_get<query::flash_size>                         ("flash", "size");
+  emplace_sysfs_get<query::board_name>                         ("", "board_name");
+  emplace_sysfs_get<query::logic_uuids>                        ("", "logic_uuids");
+  emplace_sysfs_get<query::interface_uuids>                    ("", "interface_uuids");
+  emplace_sysfs_getput<query::rp_program_status>               ("", "rp_program");
+  emplace_sysfs_get<query::shared_host_mem>                    ("", "host_mem_size");
+  emplace_sysfs_get<query::enabled_host_mem>                   ("address_translator", "host_mem_size");
+  emplace_sysfs_get<query::cpu_affinity>                       ("", "local_cpulist");
+  emplace_sysfs_get<query::mailbox_metrics>                    ("mailbox", "recv_metrics");
+  emplace_sysfs_get<query::clock_timestamp>                    ("ert_ctrl", "clock_timestamp");
+  emplace_sysfs_getput<query::ert_sleep>                       ("ert_ctrl", "mb_sleep");
+  emplace_sysfs_get<query::ert_cq_read>                        ("ert_ctrl", "cq_read_cnt");
+  emplace_sysfs_get<query::ert_cq_write>                       ("ert_ctrl", "cq_write_cnt");
+  emplace_sysfs_get<query::ert_cu_read>                        ("ert_ctrl", "cu_read_cnt");
+  emplace_sysfs_get<query::ert_cu_write>                       ("ert_ctrl", "cu_write_cnt");
+  emplace_sysfs_get<query::ert_data_integrity>                 ("ert_ctrl", "data_integrity");
+  emplace_sysfs_getput<query::config_mailbox_channel_disable>  ("", "config_mailbox_channel_disable");
+  emplace_sysfs_getput<query::config_mailbox_channel_switch>   ("", "config_mailbox_channel_switch");
+  emplace_sysfs_getput<query::config_xclbin_change>            ("", "config_xclbin_change");
+  emplace_sysfs_getput<query::cache_xclbin>                    ("", "cache_xclbin");
 
-  emplace_sysfs_get<query::kds_mode>                         ("", "kds_mode");
-  emplace_func0_request<query::kds_cu_stat,                  kds_cu_stat>();
-  emplace_func0_request<query::kds_scu_stat,                 kds_scu_stat>();
-  emplace_sysfs_get<query::ps_kernel>                        ("icap", "ps_kernel");
-  emplace_sysfs_get<query::xocl_errors>                       ("", "xocl_errors");
+  emplace_sysfs_get<query::kds_numcdmas>                       ("", "kds_numcdmas");
+  emplace_func0_request<query::kds_cu_info,                    kds_cu_info>();
+  emplace_func0_request<query::kds_scu_info,                   kds_scu_info>();
+  emplace_sysfs_get<query::ps_kernel>                          ("icap", "ps_kernel");
+  emplace_sysfs_get<query::xocl_errors>                        ("", "xocl_errors");
 
-  emplace_func0_request<query::pcie_bdf,                     bdf>();
-  emplace_func0_request<query::kds_cu_info,                  kds_cu_info>();
-  emplace_func0_request<query::instance,                     instance>();
+  emplace_func0_request<query::pcie_bdf,                       bdf>();
+  emplace_func0_request<query::kds_cu_info,                    kds_cu_info>();
+  emplace_func0_request<query::instance,                       instance>();
+  emplace_func0_request<query::hotplug_offline,                hotplug_offline>();
 
-  emplace_func4_request<query::aim_counter,                  aim_counter>();
-  emplace_func4_request<query::am_counter,                   am_counter>();
-  emplace_func4_request<query::asm_counter,                  asm_counter>();
-  emplace_func4_request<query::lapc_status,                  lapc_status>();
-  emplace_func4_request<query::spc_status,                   spc_status>();
-  emplace_func4_request<query::accel_deadlock_status,        accel_deadlock_status>();
+  emplace_func4_request<query::aim_counter,                    aim_counter>();
+  emplace_func4_request<query::am_counter,                     am_counter>();
+  emplace_func4_request<query::asm_counter,                    asm_counter>();
+  emplace_func4_request<query::lapc_status,                    lapc_status>();
+  emplace_func4_request<query::spc_status,                     spc_status>();
+  emplace_func4_request<query::accel_deadlock_status,          accel_deadlock_status>();
+
+  emplace_sysfs_getput<query::boot_partition>                  ("xgq_vmr", "boot_from_backup");
+  emplace_sysfs_getput<query::flush_default_only>              ("xgq_vmr", "flush_default_only");
+  emplace_sysfs_getput<query::program_sc>                      ("xgq_vmr", "program_sc");
+  emplace_sysfs_get<query::vmr_status>                         ("xgq_vmr", "vmr_status");
+  emplace_sysfs_get<query::extended_vmr_status>                ("xgq_vmr", "vmr_verbose_info");
+
+  emplace_func4_request<query::sdm_sensor_info,                sdm_sensor_info>();
+  emplace_sysfs_get<query::hwmon_sdm_serial_num>               ("hwmon_sdm", "serial_num");
+  emplace_sysfs_get<query::hwmon_sdm_oem_id>                   ("hwmon_sdm", "oem_id");
+  emplace_sysfs_get<query::hwmon_sdm_board_name>               ("hwmon_sdm", "bd_name");
+  emplace_sysfs_get<query::hwmon_sdm_active_msp_ver>           ("hwmon_sdm", "active_msp_ver");
+  emplace_sysfs_get<query::hwmon_sdm_mac_addr0>                ("hwmon_sdm", "mac_addr0");
+  emplace_sysfs_get<query::hwmon_sdm_mac_addr1>                ("hwmon_sdm", "mac_addr1");
+  emplace_sysfs_get<query::hwmon_sdm_fan_presence>             ("hwmon_sdm", "fan_presence");
+  emplace_sysfs_get<query::hwmon_sdm_revision>                 ("hwmon_sdm", "revision");
 }
 
 struct X { X() { initialize_query_table(); }};
@@ -997,6 +1163,103 @@ xclmgmt_load_xclbin(const char* buffer) const {
   if(ret != 0) {
     throw error(ret, "Failed to download xclbin");
   }
+}
+
+////////////////////////////////////////////////////////////////
+// Custom ishim implementation
+// Redefined from xrt_core::ishim for functions that are not
+// universally implemented by all shims
+////////////////////////////////////////////////////////////////
+// User Managed IP Interrupt Handling
+xclInterruptNotifyHandle
+device_linux::
+open_ip_interrupt_notify(unsigned int ip_index)
+{
+  return xclOpenIPInterruptNotify(get_device_handle(), ip_index, 0);
+}
+  
+void
+device_linux::
+close_ip_interrupt_notify(xclInterruptNotifyHandle handle)
+{
+  xclCloseIPInterruptNotify(get_device_handle(), handle);
+}
+
+void
+device_linux::
+enable_ip_interrupt(xclInterruptNotifyHandle handle)
+{
+  int enable = 1;
+  if (::write(handle, &enable, sizeof(enable)) == -1)
+    throw error(errno, "enable_ip_interrupt failed POSIX write");
+}
+
+void
+device_linux::
+disable_ip_interrupt(xclInterruptNotifyHandle handle)
+{
+  int disable = 0;
+  if (::write(handle, &disable, sizeof(disable)) == -1)
+    throw error(errno, "disable_ip_interrupt failed POSIX write");
+}
+
+void
+device_linux::
+wait_ip_interrupt(xclInterruptNotifyHandle handle)
+{
+  int pending = 0;
+  if (::read(handle, &pending, sizeof(pending)) == -1)
+    throw error(errno, "wait_ip_interrupt failed POSIX read");
+}
+
+std::cv_status
+device_linux::
+wait_ip_interrupt(xclInterruptNotifyHandle handle, int32_t timeout)
+{
+  struct pollfd pfd = {.fd=handle, .events=POLLIN};
+  int32_t ret = 0;
+
+  //Checking for only one fd; Only of one CU
+  //Timeout value in milli seconds
+  ret = ::poll(&pfd, 1, timeout);
+  if (ret < 0)
+    throw error(errno, "wait_timeout: failed POSIX poll");
+
+  if (ret == 0) //Timeout occured
+    return std::cv_status::timeout;
+
+  if (pfd.revents & POLLIN) //Interrupt received
+    return std::cv_status::no_timeout;
+
+  throw error(-EINVAL, boost::str(boost::format("wait_timeout: POSIX poll unexpected event: %d")  % pfd.revents));
+}
+
+xclBufferHandle
+device_linux::
+import_bo(pid_t pid, xclBufferExportHandle ehdl)
+{
+  if (getpid() == pid)
+    return shim::import_bo(ehdl);
+
+#if defined(SYS_pidfd_open) && defined(SYS_pidfd_getfd)
+  auto pidfd = syscall(SYS_pidfd_open, pid, 0);
+  if (pidfd < 0)
+    throw xrt_core::system_error(errno, "pidfd_open failed");
+
+  auto bofd = syscall(SYS_pidfd_getfd, pidfd, ehdl, 0);
+  if (bofd < 0)
+    throw xrt_core::system_error
+      (errno, "pidfd_getfd failed, check that ptrace access mode "
+       "allows PTRACE_MODE_ATTACH_REALCREDS.  For more details please "
+       "check /etc/sysctl.d/10-ptrace.conf");
+
+  return shim::import_bo(bofd);
+#else
+  throw xrt_core::system_error
+    (std::errc::not_supported,
+     "Importing buffer object from different process requires XRT "
+     " built and installed on a system with 'pidfd' kernel support");
+#endif
 }
 
 } // xrt_core

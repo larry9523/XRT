@@ -25,13 +25,17 @@ if [[ $OSDIST == "centos" ]] || [[ $OSDIST == "redhat"* ]]; then
     fi
 fi
 
-XILINX_XRT=$(readlink -f $(dirname ${BASH_SOURCE[0]}))
+XILINX_XRT=$(readlink -f $(dirname ${BASH_SOURCE[0]:-${(%):-%x}}))
 
 if [[ $XILINX_XRT != *"/opt/xilinx/xrt" ]]; then
     echo "Invalid location: $XILINX_XRT"
     echo "This script must be sourced from XRT install directory"
     return 1
 fi
+
+# Enable autocompletion for the xbutil and xbmgmt commands
+source $XILINX_XRT/share/completions/xbutil-bash-completion
+source $XILINX_XRT/share/completions/xbmgmt-bash-completion
 
 # To use the newest version of the XRT tools, either uncomment or set 
 # the following environment variable in your profile:

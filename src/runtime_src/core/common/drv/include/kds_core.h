@@ -2,7 +2,7 @@
 /*
  * Xilinx Kernel Driver Scheduler
  *
- * Copyright (C) 2020-2021 Xilinx, Inc. All rights reserved.
+ * Copyright (C) 2020-2022 Xilinx, Inc. All rights reserved.
  *
  * Authors: min.ma@xilinx.com
  *
@@ -24,6 +24,7 @@
 #include "kds_command.h"
 #include "xrt_cu.h"
 #include "kds_stat.h"
+#include "xclbin.h"
 
 #define kds_info(client, fmt, args...)			\
 	dev_info(client->dev, " %llx %s: "fmt, (u64)client->dev, __func__, ##args)
@@ -36,6 +37,7 @@
 
 enum kds_type {
 	KDS_CU		= 0,
+	KDS_SCU,
 	KDS_ERT,
 	KDS_MAX_TYPE, // always the last one
 };
@@ -51,8 +53,10 @@ enum kds_type {
  */
 #define	CU_CTX_VIRT_CU		0xffffffff
 struct kds_ctx_info {
+	u32		  cu_domain;
 	u32		  cu_idx;
 	u32		  flags;
+	void		 *curr_ctx; // Holds the current context ptr for kds
 };
 
 /* TODO: PS kernel is very different with FPGA kernel.
@@ -123,11 +127,16 @@ struct cmdmem_info {
  * @cu_mgmt: hardware CUs management data structure
  * @ert: remote scheduler
  * @ert_disable: remote scheduler is disabled or not
+ * @xgq_enable: remote scheduler supports XGQ
  * @cu_intr_cap: capbility of CU interrupt support
  * @cu_intr: CU or ERT interrupt. 1 for CU, 0 for ERT.
  * @anon_client: driver own kds client used with driver generated command
  * @polling_thread: poll CUs when ERT is disabled
  */
+#define KDS_SYSFS_SETTING_BIT	(1 << 31)
+#define KDS_SET_SYSFS_BIT(val)	(val | KDS_SYSFS_SETTING_BIT)
+#define KDS_SYSFS_SETTING(val)	(val & KDS_SYSFS_SETTING_BIT)
+#define KDS_SETTING(val)	(val & ~KDS_SYSFS_SETTING_BIT)
 struct kds_sched {
 	struct list_head	clients;
 	int			num_client;
@@ -136,14 +145,18 @@ struct kds_sched {
 	struct kds_cu_mgmt	cu_mgmt;
 	struct kds_scu_mgmt	scu_mgmt;
 	struct kds_ert	       *ert;
-	bool			ini_disable;
-	bool			ert_disable;
+	bool			xgq_enable;
 	u32			cu_intr_cap;
-	u32			cu_intr;
 	struct cmdmem_info	cmdmem;
 	struct completion	comp;
 	struct kds_client      *anon_client;
 
+	/* Settings */
+	bool			ini_disable;
+	bool			ert_disable;
+	u32			cu_intr;
+
+	/* KDS polling thread */
 	struct task_struct     *polling_thread;
 	wait_queue_head_t	wait_queue;
 	int			polling_start;
@@ -185,10 +198,12 @@ int kds_submit_cmd_and_wait(struct kds_sched *kds, struct kds_command *xcmd);
 struct kds_command *kds_alloc_command(struct kds_client *client, u32 size);
 
 void kds_free_command(struct kds_command *xcmd);
+int kds_ip_layout2cu_info(struct ip_layout *ip_layout, struct xrt_cu_info cu_info[], int num_info);
+int kds_ip_layout2scu_info(struct ip_layout *ip_layout, struct xrt_cu_info cu_info[], int num_info);
 
 /* sysfs */
 int store_kds_echo(struct kds_sched *kds, const char *buf, size_t count,
-		   int kds_mode, u32 clients, int *echo);
+		   int *echo);
 ssize_t show_kds_stat(struct kds_sched *kds, char *buf);
 ssize_t show_kds_custat_raw(struct kds_sched *kds, char *buf);
 ssize_t show_kds_scustat_raw(struct kds_sched *kds, char *buf);

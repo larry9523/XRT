@@ -2,7 +2,7 @@
 /*
  * Xilinx Unify CU Model
  *
- * Copyright (C) 2020 Xilinx, Inc. All rights reserved.
+ * Copyright (C) 2020-2022 Xilinx, Inc. All rights reserved.
  *
  * Authors: min.ma@xilinx.com
  *
@@ -28,12 +28,14 @@
 #endif
 
 #define MAX_CUS 128
+#define MAX_SLOT 32
 
 /* Soft kernel indices are numbered from 0 to some MAX_CUS
  * but are in a distinct domain which is indiciated by the
  * first 16 bit of the index used to identify the soft kernel
  */
 #define SCU_DOMAIN 0x10000
+#define	SOFT_KERNEL_REG_SIZE	4096
 
 /* The normal CU in ip_layout would assign a interrupt
  * ID in range 0 to 127. Use 128 for m2m cu could ensure
@@ -76,11 +78,14 @@ enum xcu_model {
 	XCU_ACC,
 	XCU_PLRAM,
 	XCU_FA,
+	XCU_XGQ,
+	XCU_AUTO,
 };
 
 enum xcu_config_type {
 	CONSECUTIVE_T,
 	PAIRS_T,
+	XGQ_T,
 };
 
 enum xcu_process_result {
@@ -97,6 +102,7 @@ struct xcu_status {
 	u32	num_done;
 	u32	num_ready;
 	u32	new_status;
+	u32	rcode;
 };
 
 typedef void *xcu_core_t;
@@ -134,8 +140,9 @@ struct xcu_funcs {
 	 *
 	 * 1. CONSECUTIVE: Which is a blind copy from data to CU.
 	 * 2. PAIRS: The data contains {offset, val} pairs.
+	 * 3. XGQ: The data contains a XGQ command.
 	 */
-	void (*configure)(void *core, u32 *data, size_t sz, int type);
+	int (*configure)(void *core, u32 *data, size_t sz, int type);
 
 	/**
 	 * @start:
@@ -212,6 +219,7 @@ enum CU_PROTOCOL {
 struct xrt_cu_info {
 	u32			 model;
 	int			 cu_idx;
+	u32			 slot_idx;
 	int			 inst_idx;
 	u64			 addr;
 	size_t			 size;
@@ -223,8 +231,11 @@ struct xrt_cu_info {
 	bool			 sw_reset;
 	struct xrt_cu_arg	*args;
 	u32			 num_args;
-	char			 iname[32];
-	char			 kname[32];
+	char			 iname[64];
+	char			 kname[64];
+	void			*xgq;
+	int			 cu_domain;
+	unsigned char		 uuid[16];
 };
 
 struct per_custat {
@@ -283,6 +294,7 @@ struct xrt_cu {
 	u32			  done_cnt;
 	u32			  ready_cnt;
 	u32			  status;
+	u32			  rcode;
 	u64			  run_timeout;
 	int			  busy_threshold;
 	u32			  interval_min;
@@ -354,9 +366,9 @@ static u32 inline xrt_cu_clear_intr(struct xrt_cu *xcu)
 	return xcu->funcs ? xcu->funcs->clear_intr(xcu->core) : 0;
 }
 
-static inline void xrt_cu_config(struct xrt_cu *xcu, u32 *data, size_t sz, int type)
+static inline int xrt_cu_config(struct xrt_cu *xcu, u32 *data, size_t sz, int type)
 {
-	xcu->funcs->configure(xcu->core, data, sz, type);
+	return xcu->funcs->configure(xcu->core, data, sz, type);
 }
 
 static inline void xrt_cu_start(struct xrt_cu *xcu)
@@ -381,11 +393,13 @@ static inline void __xrt_cu_check(struct xrt_cu *xcu, bool force)
 	status.num_done = 0;
 	status.num_ready = 0;
 	status.new_status = 0;
+	status.rcode = 0;
 	xcu->funcs->check(xcu->core, &status, force);
 	/* XRT CU assume command finished in order */
 	xcu->done_cnt += status.num_done;
 	xcu->ready_cnt += status.num_ready;
 	xcu->status = status.new_status;
+	xcu->rcode  = status.rcode;
 }
 
 static inline void xrt_cu_check(struct xrt_cu *xcu)
@@ -445,6 +459,7 @@ int xrt_cu_cfg_update(struct xrt_cu *xcu, int intr);
 int xrt_fa_cfg_update(struct xrt_cu *xcu, u64 bar, u64 dev, void __iomem *vaddr, u32 num_slots);
 int xrt_is_fa(struct xrt_cu *xcu, u32 *size);
 int xrt_cu_get_protocol(struct xrt_cu *xcu);
+u32 xrt_cu_get_status(struct xrt_cu *xcu);
 int xrt_cu_regmap_size(struct xrt_cu *xcu);
 
 int  xrt_cu_init(struct xrt_cu *xcu);
@@ -508,6 +523,44 @@ struct xrt_cu_fa {
 
 int xrt_cu_fa_init(struct xrt_cu *xcu);
 void xrt_cu_fa_fini(struct xrt_cu *xcu);
+
+#define to_cu_scu(core) ((struct xrt_cu_scu *)(core))
+struct xrt_cu_scu {
+	u64			 paddr;
+	u32			 slot_sz;
+	u32			 num_slots;
+	u32			 head_slot;
+	u32			 desc_msw;
+	u32			 task_cnt;
+	int			 max_credits;
+	int			 credits;
+	int			 run_cnts;
+	u64			 check_count;
+	void			*vaddr;
+	struct drm_zocl_bo	*sc_bo;
+	spinlock_t		 cu_lock;
+
+	/*
+	 * This semaphore is used for each soft kernel
+	 * CU to wait for next command. When new command
+	 * for this CU comes in or we are told to abort
+	 * a CU, ert will up this semaphore.
+	 */
+	struct semaphore	sc_sem;
+
+	uint32_t		sc_flags;
+	uint64_t		usage;
+
+	/*
+	 * soft cu pid and parent pid. This can be used to identify if the
+	 * soft cu is still running or not. The parent should never crash
+	 */
+	uint32_t		sc_pid;
+	uint32_t		sc_parent_pid;
+};
+
+int xrt_cu_scu_init(struct xrt_cu *xcu);
+void xrt_cu_scu_fini(struct xrt_cu *xcu);
 
 /* PLRAM CU -- deprecated
  * TODO: Delete this type of CU once fast adapter is full supported

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2018 Xilinx, Inc
+ * Copyright (C) 2018, 2021, 2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -17,6 +17,7 @@
 #include "SectionMemTopology.h"
 
 #include "XclBinUtilities.h"
+
 namespace XUtil = XclBinUtilities;
 #include <iostream>
 
@@ -57,6 +58,8 @@ SectionMemTopology::getMemTypeStr(enum MEM_TYPE _memType) const {
       return "MEM_STREAMING_CONNECTION";
     case MEM_HOST:
       return "MEM_HOST";
+    case MEM_PS_KERNEL:
+      return "MEM_PS_KERNEL";
   }
 
   return XUtil::format("UNKNOWN (%d)", (unsigned int)_memType);
@@ -96,6 +99,9 @@ SectionMemTopology::getMemType(std::string& _sMemType) const {
 
   if (_sMemType == "MEM_HOST")
     return MEM_HOST;
+
+  if (_sMemType == "MEM_PS_KERNEL")
+    return MEM_PS_KERNEL;
 
   std::string errMsg = "ERROR: Unknown memory type: '" + _sMemType + "'";
   throw std::runtime_error(errMsg);
@@ -199,9 +205,10 @@ SectionMemTopology::marshalFromJSON(const boost::property_tree::ptree& _ptSectio
     memData.m_used = ptMemData.get<uint8_t>("m_used");
 
     std::string sm_tag = ptMemData.get<std::string>("m_tag");
-    if (sm_tag.length() >= sizeof(mem_data::m_tag)) {
-      std::string errMsg = XUtil::format("ERROR: The m_tag entry length (%d), exceeds the allocated space (%d).  Name: '%s'",
-                                         (unsigned int)sm_tag.length(), (unsigned int)sizeof(mem_data::m_tag), sm_tag.c_str());
+    size_t maxTagLength = sizeof(mem_data::m_tag) - 1;
+    if (sm_tag.length() > maxTagLength) {
+      std::string errMsg = XUtil::format("ERROR: The m_tag entry length (%d), exceeds the allocated space (%d) available.  Name: '%s'",
+                                         (unsigned int)sm_tag.length(), ((unsigned int)maxTagLength), sm_tag.c_str());
       throw std::runtime_error(errMsg);
     }
 

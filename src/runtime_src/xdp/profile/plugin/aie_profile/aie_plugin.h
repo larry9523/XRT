@@ -32,6 +32,7 @@
 
 extern "C" {
 #include <xaiengine.h>
+#include <xaiengine/xaiegbl_params.h>
 }
 
 namespace xdp {
@@ -49,6 +50,9 @@ namespace xdp {
     void updateAIEDevice(void* handle);
     XDP_EXPORT
     void endPollforDevice(void* handle);
+
+    XDP_EXPORT
+    static bool alive();
 
   private:
     void getPollingInterval();
@@ -78,11 +82,20 @@ namespace xdp {
                                  const XAie_LocType loc,
                                  const XAie_Events event,
                                  const std::string metricSet);
+    uint32_t getCounterPayload(XAie_DevInst* aieDevInst,
+                               const tile_type& tile,
+                               uint16_t column, 
+                               uint16_t row, 
+                               uint16_t startEvent);
 
     void pollAIECounters(uint32_t index, void* handle);
     void endPoll();
 
   private:
+
+    static bool live;
+
+    int16_t mChannelId = -1;
     uint32_t mIndex = 0;
     uint32_t mPollingInterval;
     std::string mCoreMetricSet;

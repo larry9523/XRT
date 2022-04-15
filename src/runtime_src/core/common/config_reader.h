@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2016-2020 Xilinx, Inc
+ * Copyright (C) 2016-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -205,6 +205,21 @@ get_aie_profile_interval_us()
 }
 
 inline bool
+get_aie_status()
+{
+  static bool value = detail::get_bool_value("Debug.aie_status", false);
+  return value;
+}
+
+inline unsigned int
+get_aie_status_interval_us()
+{
+  // NOLINTNEXTLINE
+  static unsigned int value = detail::get_uint_value("Debug.aie_status_interval_us", 1000);
+  return value;
+}
+
+inline bool
 get_noc_profile()
 {
   static bool value = detail::get_bool_value("Debug.noc_profile",false);
@@ -233,23 +248,21 @@ get_stall_trace()
 inline bool
 get_continuous_trace()
 {
-  static bool value = detail::get_bool_value("Debug.continuous_trace",false);
+  static bool value = detail::get_bool_value("Debug.continuous_trace", false);
   return value;
 }
 
 inline unsigned int
 get_trace_buffer_offload_interval_ms()
 {
-  // NOLINTNEXTLINE
-  static unsigned int value = detail::get_uint_value("Debug.trace_buffer_offload_interval_ms",10);
+  static unsigned int value = detail::get_uint_value("Debug.trace_buffer_offload_interval_ms", 10);
   return value;
 }
 
 inline unsigned int
 get_trace_file_dump_interval_s()
 {
-  // NOLINTNEXTLINE
-  static unsigned int value = detail::get_uint_value("Debug.trace_file_dump_interval_s",5);
+  static unsigned int value = detail::get_uint_value("Debug.trace_file_dump_interval_s", 5);
   return value;
 }
 
@@ -271,6 +284,18 @@ inline bool
 get_profile_api()
 {
   static bool value = detail::get_bool_value("Debug.profile_api", false);
+  return value;
+}
+
+inline bool
+get_host_trace()
+{
+  // The host_trace switch is intended to turn on only one layer of host trace,
+  // either OpenCL level, Native XRT level, or HAL level.  If the user
+  // sets host_trace=true in the xrt.ini file, then the level of trace that
+  // will be enabled is the level at which the host application is written.
+
+  static bool value = detail::get_bool_value("Debug.host_trace", false);
   return value;
 }
 
@@ -331,6 +356,13 @@ get_aie_trace_flush()
 }
 
 inline std::string
+get_aie_trace_counter_scheme()
+{
+  static std::string value = detail::get_string_value("Debug.aie_trace_counter_scheme", "es2");
+  return value;
+}
+
+inline std::string
 get_aie_trace_metrics()
 {
   static std::string value = detail::get_string_value("Debug.aie_trace_metrics", "functions");
@@ -338,16 +370,9 @@ get_aie_trace_metrics()
 }
 
 inline std::string
-get_aie_profile_core_metrics()
+get_aie_trace_start_time()
 {
-  static std::string value = detail::get_string_value("Debug.aie_profile_core_metrics", "heat_map");
-  return value;
-}
-
-inline std::string
-get_aie_trace_start_delay()
-{
-  static std::string value = detail::get_string_value("Debug.aie_trace_start_delay", "0");
+  static std::string value = detail::get_string_value("Debug.aie_trace_start_time", "0");
   return value;
 }
 
@@ -358,17 +383,45 @@ get_aie_trace_user_control()
   return value;
 }
 
-inline std::string
-get_aie_profile_memory_metrics()
+inline bool
+get_aie_trace_periodic_offload()
 {
-  static std::string value = detail::get_string_value("Debug.aie_profile_memory_metrics", "conflicts");
+  static bool value = detail::get_bool_value("Debug.aie_trace_periodic_offload", true);
+  return value;
+}
+
+inline unsigned int
+get_aie_trace_buffer_offload_interval_ms()
+{
+  static unsigned int value = detail::get_uint_value("Debug.aie_trace_buffer_offload_interval_ms", 10);
+  return value;
+}
+
+inline unsigned int
+get_aie_trace_file_dump_interval_s()
+{
+  static unsigned int value = detail::get_uint_value("Debug.aie_trace_file_dump_interval_s", 5);
   return value;
 }
 
 inline std::string
-get_aie_profile_shim_metrics()
+get_aie_profile_core_metrics()
 {
-  static std::string value = detail::get_string_value("Debug.aie_profile_shim_metrics", "bandwidths");
+  static std::string value = detail::get_string_value("Debug.aie_profile_core_metrics", "");
+  return value;
+}
+
+inline std::string
+get_aie_profile_memory_metrics()
+{
+  static std::string value = detail::get_string_value("Debug.aie_profile_memory_metrics", "");
+  return value;
+}
+
+inline std::string
+get_aie_profile_interface_metrics()
+{
+  static std::string value = detail::get_string_value("Debug.aie_profile_interface_metrics", "");
   return value;
 }
 
@@ -383,6 +436,13 @@ inline bool
 get_vitis_ai_profile()
 {
   static bool value = detail::get_bool_value("Debug.vitis_ai_profile", false);
+  return value;
+}
+
+inline bool
+get_pl_deadlock_detection()
+{
+  static bool value = detail::get_bool_value("Debug.pl_deadlock_detection", false);
   return value;
 }
 

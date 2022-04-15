@@ -42,6 +42,13 @@ struct tile_type
   uint16_t itr_mem_col;
   uint64_t itr_mem_addr;
   bool     is_trigger;
+
+  bool operator==(const tile_type &tile) const {
+    return (col == tile.col) && (row == tile.row);
+  }
+  bool operator<(const tile_type &tile) const {
+    return (col < tile.col) || ((col == tile.col) && (row < tile.row));
+  }
 };
 
 const int NON_EXIST_ID = -1;
@@ -177,6 +184,14 @@ struct gmio_type
   uint16_t        streamId;
   uint16_t        burstLength;
 };
+
+/**
+ * get_hw_gen - get aie hw_gen from xclbin AIE metadata
+ *
+ * @device: device with loaded meta data
+ */
+uint8_t
+get_hw_gen(const xrt_core::device* device);
 
 /**
  * get_trace_gmios() - get trace gmio data from xclbin AIE metadata

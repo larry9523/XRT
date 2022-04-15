@@ -204,7 +204,7 @@ def buildPackageWinVM(){
       }
   };
   windowsPath = windowsPath + "\\\"${BUILD_NUMBER}\""+ "\\\"build\""
-  return env.DRIVE + " & cd "+ windowsPath +" & C:\\\\msvsn2017\\VC\\Auxiliary\\Build\\vcvars64.bat & build.bat -release -package"
+  return env.DRIVE + " & cd "+ windowsPath +" & C:\\\\msvsn2019\\VC\\Auxiliary\\Build\\vcvars64.bat & build_ipu19.bat -release -package"
 }
 
 /**
@@ -330,7 +330,7 @@ node('xcoIPULinPool') {
         buildStages["Build Windows"] = {
           stage("Build on Windows") {
             try {
-              node("xcoIPUWinPool") {
+              node("xcoIPUWinVS2019Pool") {
                 withEnv(["XRT_VERSION_PATCH=${BUILD_NUMBER}", "MSVC_PARALLEL_JOBS=6"]){
                   if (!BUILD_XLNX && params.WS_NETWORK_DRIVE) {
                     bat """
@@ -429,6 +429,28 @@ node('xcoIPULinPool') {
         }
       }
       parallel(publishStages)
+    }
+    
+    if (prBuild) {
+      def dpuTestJob = build job: 'IPU/AIE-IPU/AIE_IPU_MASTER_BUILD_PIPELINE_DPU_TESTS', 
+      parameters: [string(name: 'XRT_PATH', value: "${env.NFSWORKSPACE}/${BUILD_NUMBER}/build/Release_centos76")],
+      wait: true
+
+      if (dpuTestJob.result != "SUCCESS") {
+        echo "DPU Tests for this XRT failed."
+        error("DPU TEST Job status: ${dpuTestJob.result}")
+      }
+    }
+
+    // On successful above runs, Trigger AIE-IPU build environment update
+    if (!prBuild && BUILD_XLNX) {
+        if (!params.DEV) {
+          build job: 'IPU/AIE-IPU/AIE_IPU_DOCKER_IMG',
+          wait: false
+        } else {
+          build job: 'IPU/AIE-IPU/dev/AIE_IPU_DOCKER_IMG',
+          wait: false
+        }
     }
   } catch (all) {
     if (prBuild) {

@@ -1,5 +1,5 @@
 /**
- *  Copyright (C) 2017-2021 Xilinx, Inc. All rights reserved.
+ *  Copyright (C) 2017-2022 Xilinx, Inc. All rights reserved.
  *  Author: Sonal Santan
  *  Code copied verbatim from SDAccel xcldma kernel mode driver
  *
@@ -31,12 +31,6 @@
 #include "../xocl_drm.h"
 #include "mgmt-ioctl.h"
 #include "ps_kernel.h"
-
-#if PF == MGMTPF
-int kds_mode = 0;
-#else
-extern int kds_mode;
-#endif
 
 #if defined(XOCL_UUID)
 static xuid_t uuid_null = NULL_UUID_LE;
@@ -1295,7 +1289,8 @@ static uint32_t convert_mem_type(const char *name)
 static uint16_t icap_get_memidx(struct mem_topology *mem_topo, enum IP_TYPE ecc_type,
 	int idx)
 {
-	uint16_t memidx = INVALID_MEM_IDX, i, mem_idx = 0;
+	uint16_t memidx = INVALID_MEM_IDX, mem_idx = 0;
+	uint32_t i;
 	enum MEM_TYPE m_type, target_m_type;
 
 	/*
@@ -1459,172 +1454,6 @@ static int icap_create_subdev_debugip(struct platform_device *pdev)
 			}
 		}
 	}
-	return err;
-}
-
-static int icap_create_subdev_cdma(struct platform_device *pdev, int inst_idx)
-{
-	struct icap *icap = platform_get_drvdata(pdev);
-	xdev_handle_t xdev = xocl_get_xdev(pdev);
-	u32 *cdma = xocl_rom_cdma_addr(xdev);
-	u32 num_cdma = 0;
-	int err = 0;
-	int i;
-
-	/* Some platforms doesn't support m2m CU */
-	if (!cdma)
-		return 0;
-
-	/* Maximum 4 m2m cus */
-	for (i = 0; i < 4; i++) {
-		struct xocl_subdev_info subdev_info = XOCL_DEVINFO_CU;
-		struct xrt_cu_info info;
-
-		if (!cdma[i])
-			break;
-
-		memset(&info, 0, sizeof(info));
-
-		num_cdma++;
-		sprintf(info.kname, "m2m");
-		info.kname[sizeof(info.kname)-1] = '\0';
-		sprintf(info.iname, "m2m_%d", i + 1);
-		info.iname[sizeof(info.kname)-1] = '\0';
-
-		info.inst_idx = i + inst_idx;
-		info.addr = cdma[i];
-		info.num_res = subdev_info.num_res;
-		info.protocol = CTRL_HS;
-		info.intr_id = M2M_CU_ID;
-		info.is_m2m = 1;
-
-		subdev_info.res[0].start += info.addr;
-		subdev_info.res[0].end += info.addr;
-		subdev_info.priv_data = &info;
-		subdev_info.data_len = sizeof(info);
-		subdev_info.override_idx = info.inst_idx;
-
-		err = xocl_subdev_create(xdev, &subdev_info);
-		if (err)
-			ICAP_ERR(icap, "Create CU %s:%s failed. Skip",
-				 info.kname, info.iname);
-	}
-
-	return 0;
-}
-
-static int icap_create_subdev_cu(struct platform_device *pdev)
-{
-	struct icap *icap = platform_get_drvdata(pdev);
-	xdev_handle_t xdev = xocl_get_xdev(pdev);
-	struct ip_layout *ip_layout = icap->ip_layout;
-	struct xrt_cu_info info;
-	char kname[64];
-	char *kname_p;
-	int err = 0, i;
-	int inst = 0;
-
-	/* Let CU controller know the dynamic resources */
-	for (i = 0; i < ip_layout->m_count; ++i) {
-		struct xocl_subdev_info subdev_info = XOCL_DEVINFO_CU;
-		struct ip_data *ip = &ip_layout->m_ip_data[i];
-		struct kernel_info *krnl_info;
-
-		if (ip->m_type != IP_KERNEL)
-			continue;
-
-		if ((~ip->m_base_address) == 0)
-			continue;
-
-		memset(&info, 0, sizeof(info));
-		/* NOTE: Only support 64 instences in subdev framework */
-
-		/* ip_data->m_name format "<kernel name>:<instance name>",
-		 * where instance name is so called CU name.
-		 */
-		strncpy(kname, ip->m_name, sizeof(kname));
-		kname[sizeof(kname)-1] = '\0';
-		kname_p = &kname[0];
-		strncpy(info.kname, strsep(&kname_p, ":"), sizeof(info.kname));
-		info.kname[sizeof(info.kname)-1] = '\0';
-		strncpy(info.iname, strsep(&kname_p, ":"), sizeof(info.iname));
-		info.iname[sizeof(info.kname)-1] = '\0';
-
-		krnl_info = xocl_query_kernel(xdev, info.kname);
-		if (!krnl_info) {
-			ICAP_WARN(icap, "%s has no metadata. try use default", kname);
-			/* Workaround for U30, maybe we can remove this in the future */
-			/*continue;*/
-		}
-
-		info.inst_idx = inst++;
-		info.addr = ip->m_base_address;
-		/* Workaround for U30, maybe we can remove this in the future */
-		info.size = (krnl_info) ? krnl_info->range : 0x1000;
-		if (krnl_info && (krnl_info->features & KRNL_SW_RESET))
-			info.sw_reset = true;
-		info.num_res = subdev_info.num_res;
-		info.intr_enable = ip->properties & IP_INT_ENABLE_MASK;
-		info.protocol = (ip->properties & IP_CONTROL_MASK) >> IP_CONTROL_SHIFT;
-		info.intr_id = (ip->properties & IP_INTERRUPT_ID_MASK) >> IP_INTERRUPT_ID_SHIFT;
-
-		subdev_info.res[0].start = ip->m_base_address;
-		subdev_info.res[0].end = ip->m_base_address + info.size - 1;
-		subdev_info.priv_data = &info;
-		subdev_info.data_len = sizeof(info);
-		subdev_info.override_idx = info.inst_idx;
-		err = xocl_subdev_create(xdev, &subdev_info);
-		if (err)
-			ICAP_ERR(icap, "Create CU %s failed. Skip", ip->m_name);
-	}
-
-	/* M2M CU (aka kdma/cdma) */
-	if (!M2M_CB(xdev))
-		icap_create_subdev_cdma(pdev, i);
-
-	return err;
-}
-
-// Create subdev for PS kernels
-static int icap_create_subdev_scu(struct platform_device *pdev)
-{
-	struct icap *icap = platform_get_drvdata(pdev);
-	xdev_handle_t xdev = xocl_get_xdev(pdev);
-	struct ps_kernel_node *ps_kernel = icap->ps_kernel;
-	struct ps_kernel_data *scu_data;
-	struct xrt_cu_info info;
-	int err = 0, i, j;
-	int inst = 0;
-
-	/* Let SCU controller know the dynamic resources */
-	for (i = 0; i < ps_kernel->pkn_count; ++i) {
-		scu_data = &ps_kernel->pkn_data[i];
-
-		for (j=0; j < scu_data->pkd_num_instances; ++j) {
-			struct xocl_subdev_info subdev_info = XOCL_DEVINFO_SCU;
-			
-			memset(&info, 0, sizeof(info));
-			strncpy(info.kname, scu_data->pkd_sym_name, sizeof(info.kname));
-			info.kname[sizeof(info.kname)-1] = '\0';
-			info.inst_idx = inst++;
-			sprintf(info.iname, "%d",info.inst_idx);
-			info.iname[sizeof(info.iname)-1] = '\0';
-			
-			/* PS kernel do not have base address */
-			info.addr = 0;
-			info.size = 0;
-			info.num_res = 0;
-			info.intr_enable = 0;
-			info.protocol = CTRL_HS;
-			info.intr_id = 0;
-			
-			subdev_info.override_idx = info.inst_idx;
-			err = xocl_subdev_create(xdev, &subdev_info);
-			if (err)
-				ICAP_ERR(icap, "Create SCU %s instance %d failed. Skip", scu_data->pkd_sym_name, info.inst_idx);
-		}
-	}
-
 	return err;
 }
 
@@ -2417,7 +2246,9 @@ static bool check_mem_topo_and_data_retention(struct icap *icap,
 
 	if ((size != sizeof_sect(mem_topo, m_mem_data)) ||
 		    memcmp(((char *)xclbin)+offset, mem_topo, size)) {
-		ICAP_WARN(icap, "Incoming mem_topology doesn't match, disable data retention");
+		ICAP_WARN(icap, "Data retention is enabled. "
+			"However, the incoming mem_topology doesn't match, "
+			"data in device memory can not be retained");
 		return false;
 	}
 
@@ -2459,19 +2290,14 @@ static int __icap_download_bitstream_user(struct platform_device *pdev,
 	struct icap *icap = platform_get_drvdata(pdev);
 	xdev_handle_t xdev = xocl_get_xdev(pdev);
 	int err = 0;
-	int count = 0;
+
+	/* TODO: Use slot handle to unregister CUs. CU subdev will be destroyed */
+	xocl_unregister_cus(xdev, 0);
 
 	xocl_subdev_destroy_by_level(xdev, XOCL_SUBDEV_LEVEL_URP);
 
 	err = __icap_peer_xclbin_download(icap, xclbin, force_download);
 
-	/* TODO: Remove this after new KDS replace the legacy one */
-	/*
-	 * xclbin download changes PR region, make sure next
-	 * ERT configure cmd will go through
-	 */
-	if (!kds_mode)
-		(void) xocl_exec_reconfig(xdev);
 	if (err)
 		goto done;
 
@@ -2484,12 +2310,12 @@ static int __icap_download_bitstream_user(struct platform_device *pdev,
 	icap_cache_clock_freq_topology(icap, xclbin);
 
 	icap_create_subdev_ip_layout(pdev);
-	icap_create_subdev_cu(pdev);
 
-	// Create scu subdev if SOFT_KERNEL section is found
-	count = xrt_xclbin_get_section_num(xclbin, SOFT_KERNEL);
-	if (count > 0)
-		icap_create_subdev_scu(pdev);
+	/* Create cu/scu subdev by slot */
+	err = xocl_register_cus(xdev, 0, &xclbin->m_header.uuid,
+				icap->ip_layout, icap->ps_kernel);
+	if (err)
+		goto done;
 
 	icap_create_subdev_debugip(pdev);
 
@@ -2623,6 +2449,8 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 	int err = 0;
 	xdev_handle_t xdev = xocl_get_xdev(pdev);
 	const struct axlf_section_header *header = NULL;
+	const void *bitstream = NULL;
+	const void *bitstream_part_pdi = NULL;
 
 	err = icap_xclbin_wr_lock(icap);
 	if (err)
@@ -2638,6 +2466,8 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 	}
 
 	header = xrt_xclbin_get_section_hdr(xclbin, PARTITION_METADATA);
+	bitstream = xrt_xclbin_get_section_hdr(xclbin, BITSTREAM);
+	bitstream_part_pdi = xrt_xclbin_get_section_hdr(xclbin, BITSTREAM_PARTIAL_PDI);
 	/*
 	 * don't check uuid if the xclbin is a lite one
 	 * the lite xclbin will not have BITSTREAM
@@ -2646,7 +2476,7 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 	 * The OBJ (soft kernel) is not needed, we can use xclbinutil to
 	 * add a temp small OBJ to reduce the lite xclbin size
 	 */
-	if (header && xrt_xclbin_get_section_hdr(xclbin, BITSTREAM)) {
+	if (header && (bitstream || bitstream_part_pdi)) {
 		ICAP_INFO(icap, "check interface uuid");
 		err = xocl_fdt_check_uuids(xdev,
 				(const void *)XDEV(xdev)->fdt_blob,
@@ -2793,12 +2623,6 @@ static int icap_lock_bitstream(struct platform_device *pdev, const xuid_t *id)
 	ICAP_INFO(icap, "bitstream %pUb locked, ref=%d", id,
 		icap->icap_bitstream_ref);
 
-	/* TODO: Remove this after new KDS replace the legacy one */
-	if (!kds_mode && ref == 0) {
-		/* reset on first reference */
-		xocl_exec_reset(xocl_get_xdev(pdev), id);
-	}
-
 done:
 	mutex_unlock(&icap->icap_lock);
 	icap_xclbin_rd_unlock(icap);
@@ -2839,10 +2663,6 @@ static int icap_unlock_bitstream(struct platform_device *pdev, const xuid_t *id)
 			id, &on_device_uuid);
 		goto done;
 	}
-
-	/* TODO: Remove this after new KDS replace the legacy one */
-	if (!kds_mode && icap->icap_bitstream_ref == 0 && !ICAP_PRIVILEGED(icap))
-		(void) xocl_exec_stop(xocl_get_xdev(pdev));
 
 done:
 	mutex_unlock(&icap->icap_lock);

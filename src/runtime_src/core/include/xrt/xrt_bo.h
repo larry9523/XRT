@@ -1,22 +1,9 @@
 /*
- * Copyright (C) 2020-2021, Xilinx Inc - All rights reserved
- * Xilinx Runtime (XRT) Experimental APIs
- *
- * Licensed under the Apache License, Version 2.0 (the "License"). You may
- * not use this file except in compliance with the License. A copy of the
- * License is located at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
+ * Copyright (C) 2020-2022 Xilinx, Inc
+ * SPDX-License-Identifier: Apache-2.0
  */
-
-#ifndef _XRT_BO_H_
-#define _XRT_BO_H_
+#ifndef XRT_BO_H_
+#define XRT_BO_H_
 
 #include "xrt.h"
 #include "xrt_mem.h"
@@ -34,7 +21,7 @@ typedef void* xrtDeviceHandle;
  * typedef xrtBufferHandle - opaque buffer handle
  */
 typedef void* xrtBufferHandle;
-  
+
 /**
  * typedef xrtBufferFlags - flags for BO
  *
@@ -47,17 +34,34 @@ typedef uint64_t xrtBufferFlags;
  */
 typedef uint32_t xrtMemoryGroup;
 
-/**
+/*!
+ * @struct xcl_buffer_handle
+ *
+ * @brief
  * Typed xclBufferHandle used to prevent ambiguity
+ *
+ * @details
  * Use when constructing xrt::bo from xclBufferHandle
  */
 struct xcl_buffer_handle { xclBufferHandle bhdl; };
-  
+
 #ifdef __cplusplus
 
 namespace xrt {
 
 using memory_group = xrtMemoryGroup;
+
+/*!
+ * @struct pid_type
+ *
+ * @brief
+ * Typed pid_t used to prevent ambiguity when contructing
+ * bo with a process id.
+ *
+ * @details
+ * Use xrt::bo bo{..., pid_type{pid}, ...};
+ */
+struct pid_type { pid_t pid; };
 
 class bo_impl;
 class bo
@@ -79,7 +83,7 @@ public:
    * @var svm
    *  Create a BO for SVM (supported on specific platforms only)
    *
-   * The flags used by xrt::bo are compatible with XCL style 
+   * The flags used by xrt::bo are compatible with XCL style
    * flags as define in ``xrt_mem.h``
    */
   enum class flags : uint32_t
@@ -91,7 +95,7 @@ public:
     p2p         = XRT_BO_FLAGS_P2P,
     svm         = XRT_BO_FLAGS_SVM,
   };
-  
+
   /**
    * bo() - Constructor for empty bo
    */
@@ -121,9 +125,9 @@ public:
     : bo(dhdl, userptr, sz, static_cast<bo::flags>(flags), grp)
   {}
   /// @endcond
-  
+
   /**
-   * bo() - Constructor with user host buffer 
+   * bo() - Constructor with user host buffer
    *
    * @param dhdl
    *  Device handle
@@ -190,14 +194,34 @@ public:
    *  Device that imports the exported buffer
    * @param ehdl
    *  Exported buffer handle, implementation specific type
-   * 
-   * If the exported buffer handle acquired by using the export() method is 
-   * from another process, then it must be transferred through proper IPC 
-   * mechanism translating the underlying file-descriptor asscociated with 
-   * the buffer 
+   *
+   * If the exported buffer handle acquired by using the export() method is
+   * from another process, then it must be transferred through proper IPC
+   * mechanism translating the underlying file-descriptor asscociated with
+   * the buffer, see also constructor taking process id as argument.
    */
   XCL_DRIVER_DLLESPEC
   bo(xclDeviceHandle dhdl, xclBufferExportHandle ehdl);
+
+  /**
+   * bo() - Constructor to import an exported buffer from another process
+   *
+   * @param dhdl
+   *  Device that imports the exported buffer
+   * @param pid
+   *  Process id of exporting process
+   * @param ehdl
+   *  Exported buffer handle, implementation specific type
+   *
+   * The exported buffer handle is obtained from exporting process by
+   * calling `export()`. This contructor requires that XRT is built on
+   * and running on a system with pidfd support.  Also the importing
+   * process must have permission to duplicate the exporting process'
+   * file descriptor.  This permission is controlled by ptrace access
+   * mode PTRACE_MODE_ATTACH_REALCREDS check (see ptrace(2)).
+   */
+  XCL_DRIVER_DLLESPEC
+  bo(xclDeviceHandle dhdl, pid_type pid, xclBufferExportHandle ehdl);
 
   /**
    * bo() - Constructor for sub-buffer
@@ -224,7 +248,7 @@ public:
    * This function allows construction of xrt::bo object from an
    * xclBufferHandle supposedly allocated using deprecated xcl APIs.
    * The buffer handle is allocated with xclAllocBO and must be
-   * freed with xclFreeBO. 
+   * freed with xclFreeBO.
    *
    * Note that argument xclBufferHandle must be wrapped as
    * an xcl_buffer_handle in order to disambiguate the untyped
@@ -280,7 +304,7 @@ public:
   /**
    * size() - Get the size of this buffer
    *
-   * @return 
+   * @return
    *  Size of buffer in bytes
    */
   XCL_DRIVER_DLLESPEC
@@ -290,7 +314,7 @@ public:
   /**
    * address() - Get the device address of this buffer
    *
-   * @return 
+   * @return
    *  Device address of buffer
    */
   XCL_DRIVER_DLLESPEC
@@ -298,22 +322,49 @@ public:
   address() const;
 
   /**
+   * get_memory_group() - Get the memory group in which this buffer is allocated
+   *
+   * @return
+   *  Memory group index with which the buffer was constructed
+   */
+  XCL_DRIVER_DLLESPEC
+  memory_group
+  get_memory_group() const;
+
+  /**
+   * get_flags() - Get the flags with which this buffer was constructed
+   *
+   * @return
+   *  The xrt::bo::Flgas used when the buffer was contructed
+   */
+  XCL_DRIVER_DLLESPEC
+  flags
+  get_flags() const;
+
+  /**
    * buffer_export() - Export this buffer
    *
-   * @return 
+   * @return
    *  Exported buffer handle
    *
    * An exported buffer can be imported on another device by this
    * process or another process. For multiprocess transfer, the exported
    * buffer must be transferred through a proper IPC facility to translate
-   * the underlying file-descriptor properly into another process. 
+   * the underlying file-descriptor properly into another process.
+   *
+   * The lifetime of the exported buffer handle is associated with the
+   * exporting buffer (this).  The handle is disposed of when the
+   * exporting buffer is destructed.
+   *
+   * It is undefined behavior to use the export handle after the
+   * exporting buffer object has gone out of scope.
    */
   XCL_DRIVER_DLLESPEC
   xclBufferExportHandle
   export_buffer();
 
   /**
-   * sync() - Synchronize buffer content with device side 
+   * sync() - Synchronize buffer content with device side
    *
    * @param dir
    *  To device or from device
@@ -329,7 +380,7 @@ public:
   sync(xclBOSyncDirection dir, size_t sz, size_t offset);
 
   /**
-   * sync() - Synchronize buffer content with device side 
+   * sync() - Synchronize buffer content with device side
    *
    * @param dir
    *  To device or from device
@@ -359,7 +410,7 @@ public:
    *
    * @tparam MapType
    *  Type of mapped data
-   * @return 
+   * @return
    *  Memory mapped buffer
    */
   template<typename MapType>
@@ -384,7 +435,7 @@ public:
    * of the BO before copying-in ``size`` bytes to host buffer.
    */
   XCL_DRIVER_DLLESPEC
-  void 
+  void
   write(const void* src, size_t size, size_t seek);
 
   /**
@@ -450,7 +501,7 @@ public:
    * Throws if copy size is 0 or sz + src/dst_offset is out of bounds.
    */
   XCL_DRIVER_DLLESPEC
-  void    
+  void
   copy(const bo& src, size_t sz, size_t src_offset=0, size_t dst_offset=0);
 
   /**
@@ -479,6 +530,10 @@ public:
   // Throws if argument handle is not from xrtBOAlloc variant
   XCL_DRIVER_DLLESPEC
   bo(xrtBufferHandle);
+
+  bo(std::shared_ptr<bo_impl> impl)
+    : handle(std::move(impl))
+  {}
   /// @endcond
 private:
   std::shared_ptr<bo_impl> handle;
@@ -522,10 +577,10 @@ xrtBOAlloc(xrtDeviceHandle dhdl, size_t size, xrtBufferFlags flags, xrtMemoryGro
  *
  * @dhdl:     Device that imports the exported buffer
  * @ehdl:     Exported buffer handle, implementation specific type
- * 
+ *
  * The exported buffer handle is acquired by using the export() method
- * and can be passed to another process.  
- */  
+ * and can be passed to another process.
+ */
 XCL_DRIVER_DLLESPEC
 xrtBufferHandle
 xrtBOImport(xrtDeviceHandle dhdl, xclBufferExportHandle ehdl);
@@ -547,7 +602,7 @@ xrtBOExport(xrtBufferHandle bhdl);
  * xrtBOSubAlloc() - Allocate a sub buffer from a parent buffer
  *
  * @parent:        Parent buffer handle
- * @size:          Size of sub buffer 
+ * @size:          Size of sub buffer
  * @offset:        Offset into parent buffer
  * Return:         xrtBufferHandle on success or NULL
  */
@@ -555,7 +610,7 @@ XCL_DRIVER_DLLESPEC
 xrtBufferHandle
 xrtBOSubAlloc(xrtBufferHandle parent, size_t size, size_t offset);
 
-/* 
+/*
  * xrtBOAllocFromXcl() - Undocumented allocation from an xclBufferHandle
  *
  * @dhdl:  XRT device handle on which the buffer is residing.
@@ -567,7 +622,7 @@ xrtBOSubAlloc(xrtBufferHandle parent, size_t size, size_t offset);
  * xclBufferHandle.
  *
  * Please note that the device is an xrtDeviceHandle.  It is the
- * responsibility of the user to convert an xclDeviceHandle to 
+ * responsibility of the user to convert an xclDeviceHandle to
  * an xrtDeviceHandle before calling this API.
  *
  * The xrtBufferHandle returned by this API
@@ -691,7 +746,7 @@ XCL_DRIVER_DLLESPEC
 int
 xrtBOCopy(xrtBufferHandle dst, xrtBufferHandle src, size_t sz, size_t dst_offset, size_t src_offset);
 
-/// @endcond  
+/// @endcond
 #ifdef __cplusplus
 }
 #endif

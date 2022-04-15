@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2019 Xilinx, Inc
+ * Copyright (C) 2019-2022 Xilinx, Inc
  *
  * Licensed under the Apache License, Version 2.0 (the "License"). You may
  * not use this file except in compliance with the License. A copy of the
@@ -32,17 +32,45 @@ public:
   // query functions
   virtual void read_dma_stats(boost::property_tree::ptree& pt) const;
 
-  virtual void read(uint64_t addr, void* buf, uint64_t len) const;
-  virtual void write(uint64_t addr, const void* buf, uint64_t len) const;
-  virtual int  open(const std::string& subdev, int flag) const;
-  virtual void close(int dev_handle) const;
-  virtual void reset(query::reset_type&) const;
-  virtual void xclmgmt_load_xclbin(const char* buffer) const;
+  virtual void read(uint64_t addr, void* buf, uint64_t len) const override;
+  virtual void write(uint64_t addr, const void* buf, uint64_t len) const override;
+  virtual int  open(const std::string& subdev, int flag) const override;
+  virtual void close(int dev_handle) const override;
+  virtual void reset(query::reset_type&) const override;
+  virtual void xclmgmt_load_xclbin(const char* buffer) const override;
+
+public:
+  ////////////////////////////////////////////////////////////////
+  // Custom ishim implementation
+  // Redefined from xrt_core::ishim for functions that are not
+  // universally implemented by all shims
+  ////////////////////////////////////////////////////////////////
+  xclInterruptNotifyHandle
+  open_ip_interrupt_notify(unsigned int ip_index) override;
+  
+  void
+  close_ip_interrupt_notify(xclInterruptNotifyHandle handle) override;
+
+  void
+  enable_ip_interrupt(xclInterruptNotifyHandle) override;
+
+  void
+  disable_ip_interrupt(xclInterruptNotifyHandle) override;
+
+  void
+  wait_ip_interrupt(xclInterruptNotifyHandle) override;
+
+  std::cv_status
+  wait_ip_interrupt(xclInterruptNotifyHandle, int32_t timeout) override;
+
+  xclBufferHandle
+  import_bo(pid_t pid, xclBufferExportHandle ehdl) override;
+  ////////////////////////////////////////////////////////////////
 
 private:
   // Private look up function for concrete query::request
   virtual const query::request&
-  lookup_query(query::key_type query_key) const;
+  lookup_query(query::key_type query_key) const override;
 };
 
 } // xrt_core
