@@ -937,6 +937,53 @@ done:
 
       return vec;
   }
+  void
+  get_errors(char* buffer)
+  {
+      DWORD bytes = 0;
+      auto err = reinterpret_cast<struct xcl_errors*>(buffer);
+
+      bool status = DeviceIoControl(m_dev,
+          IOCTL_KIPUDRV_ERROR_INFO,
+          nullptr,
+          0,
+          err,
+          sizeof(xcl_errors),
+          &bytes,
+          nullptr);
+
+      if (!status || bytes != sizeof(xcl_errors))
+          throw std::runtime_error("DeviceIoControl IOCTL_KIPUDRV_ERROR_INFO (errors) failed");
+
+  }
+
+  int
+  ErrorInject(uint16_t num, uint16_t driver, uint16_t severity, uint16_t module, uint16_t eclass)
+  {
+      DWORD bytes = 0;
+      XOCL_ERROR_INJECT_ARGS errorinject = { XOCL_ERROR_OP_INJECT, num, driver, severity, module, eclass };
+
+      bool status = DeviceIoControl(m_dev,
+          IOCTL_KIPUDRV_ERROR_INJECT,
+          &errorinject,
+          sizeof(errorinject),
+          nullptr,
+          0,
+          &bytes,
+          nullptr);
+
+      if (status) {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::debug, "XRT", "OK");
+      }
+      else {
+          xrt_core::message::
+              send(xrt_core::message::severity_level::error, "XRT", "DeviceIoControl IOCTL_KIPUDRV_ERROR_INJECT failed ");
+          return 1;
+      }
+
+      return 0;
+  }
 
 }; // struct shim
 
@@ -1113,6 +1160,15 @@ get_kds_custat(xclDeviceHandle hdl, char* buffer, DWORD size, int* size_ret)
     send(xrt_core::message::severity_level::debug, "XRT", "get_kds_custat()");
   //shim* shim = get_shim_object(hdl);
   //shim->get_kds_custat(buffer, size, size_ret);
+}
+
+void
+get_errors(xclDeviceHandle hdl, char* buffer)
+{
+    xrt_core::message::
+        send(xrt_core::message::severity_level::debug, "XRT", "xocl errors()");
+    shim* shim = get_shim_object(hdl);
+    shim->get_errors(buffer);
 }
 } // namespace userpf
 
@@ -1448,11 +1504,11 @@ xclUnmgdPread(xclDeviceHandle handle, unsigned int flags, void *buf, size_t coun
 
 size_t xclReadBO(xclDeviceHandle handle, xclBufferHandle boHandle, void *dst, size_t size, size_t skip)
 {
-    xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "xclReadBO()");
-    //auto shim = get_shim_object(handle);
-    //return shim->read_bo(boHandle, dst, size, skip);
-	return 1;
+  xrt_core::message::
+    send(xrt_core::message::severity_level::debug, "XRT", "xclReadBO()");
+  //auto shim = get_shim_object(handle);
+  //return shim->read_bo(boHandle, dst, size, skip);
+    return 1;
 }
 
 void
@@ -1460,6 +1516,16 @@ xclGetDebugIpLayout(xclDeviceHandle hdl, char* buffer, size_t size, size_t* size
 {
   //userpf::get_debug_ip_layout(hdl, buffer, size, size_ret);
 }
+
+int
+xclErrorInject(xclDeviceHandle handle, uint16_t num, uint16_t driver, uint16_t severity, uint16_t module, uint16_t eclass)
+{
+  xrt_core::message::
+      send(xrt_core::message::severity_level::debug, "XRT", "xclExecBuf()");
+  auto shim = get_shim_object(handle);
+  return shim->ErrorInject(num, driver, severity, module, eclass);
+}
+
 
 // Deprecated APIs
 size_t

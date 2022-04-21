@@ -4,6 +4,7 @@
 #define XRT_CORE_PCIE_WINDOWS_IPU_SHIM_H
 
 #include "xrt.h"
+#include "xclerr_int.h"
 #include "core/common/device.h"
 #include "core/common/query_requests.h"
 #include "core/pcie/driver/windows/ipu/include/xrt-intf.hpp"
@@ -96,6 +97,9 @@ get_group_mem_topology(xclDeviceHandle hdl, char* buffer, size_t size, size_t* s
 
 void
 get_memstat(xclDeviceHandle hdl, char* buffer, size_t size, size_t* size_ret, bool raw);
+
+void
+get_errors(xclDeviceHandle hdl, char* buffer);
 } // userpf
 
 
