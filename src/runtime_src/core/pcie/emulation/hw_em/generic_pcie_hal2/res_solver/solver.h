@@ -15,7 +15,7 @@
 struct solver_node {
 	uuid_t 		xclbin_uuid;
 	uuid_t		cdo_uuid;
-	uint32_t	pasid;
+	uint32_t	pid;
 	uint32_t	noly;			/* # overlay */
 	uint32_t	ncol;			/* # columns */
 	uint32_t	*oly;			/* start column array */
@@ -24,12 +24,22 @@ struct solver_node {
 	struct solver_node *next;
 };
 
+struct solver_partition_node {
+	uint32_t	nshared;
+	uint32_t	start_col;
+	uint32_t	ncol;
+	struct solver_partition_node *next;
+};
+
 struct solver_state {
 	uint32_t		total_col;
 	uint32_t		allocated;
 	uint32_t		nnode;
+	uint32_t		npartition_node;
+	enum xrs_mode		mode;
 	struct xrs_bitmap 	*resbit;
 	struct solver_node	*node_head;
+	struct solver_partition_node	*partition_node_head;
 
 	struct xrs_helper_func	*func;
 };

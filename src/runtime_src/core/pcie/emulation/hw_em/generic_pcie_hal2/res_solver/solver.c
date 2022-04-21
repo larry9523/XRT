@@ -19,11 +19,37 @@
 extern "C" {
 #endif
 
+static void insert_partition_node(struct solver_state *xrs,
+	struct solver_partition_node *pt_node)
+{
+	struct solver_partition_node *cnode = xrs->partition_node_head;
+	struct solver_partition_node *pnode = xrs->partition_node_head;
+	uint32_t i;
+
+	if (!xrs->partition_node_head) {
+		xrs->partition_node_head = pt_node;
+		goto done;
+	}
+
+	while (cnode != NULL) {
+		pnode = cnode;
+		cnode = cnode->next;
+	}
+
+	pnode->next = pt_node;
+
+done:
+	xrs->npartition_node++;
+	xrs->allocated += pt_node->ncol;
+	for (i = 0; i < pt_node->ncol; i ++)
+		xrs_bitmap_set(xrs->func, xrs->resbit, pt_node->start_col
+		    + i);
+}
+
 static void insert_node(struct solver_state *xrs, struct solver_node *node)
 {
 	struct solver_node *cnode = xrs->node_head;
 	struct solver_node *pnode = xrs->node_head;
-	int i;
 
 	if (!xrs->node_head) {
 		xrs->node_head = node;
@@ -39,14 +65,48 @@ static void insert_node(struct solver_state *xrs, struct solver_node *node)
 
 done:
 	xrs->nnode++;
-	if (node->part < 0) {
-		/* This CDO is not allocated */
-		return;
+}
+
+static void remove_partition_node(struct solver_state *xrs,
+	struct solver_partition_node *pt_node)
+{
+	struct solver_partition_node *cnode = xrs->partition_node_head;
+	struct solver_partition_node *pnode = NULL;
+	uint32_t i;
+
+	while (cnode != NULL && cnode != pt_node) {
+		pnode = cnode;
+		cnode = cnode->next;
 	}
-	xrs->allocated += node->ncol;
-	for (i = 0; i < node->ncol; i ++)
-		xrs_bitmap_set(xrs->func, xrs->resbit, node->oly[node->part]
-		    + i);
+
+	if (cnode != NULL) {
+		if (pnode != NULL)
+			pnode->next = cnode->next;
+		else
+			xrs->partition_node_head = cnode->next;
+
+		xrs->npartition_node--;
+		xrs->allocated -= pt_node->ncol;
+		for (i = 0; i < pt_node->ncol; i++) {
+			xrs_bitmap_clear(xrs->func, xrs->resbit,
+			    pt_node->start_col + i);
+		}
+	}
+}
+
+static struct solver_partition_node *search_partition_node(
+	struct solver_state *xrs, uint32_t start_col, uint32_t ncol)
+{
+	struct solver_partition_node *cnode = xrs->partition_node_head;
+
+	while (cnode != NULL) {
+		if (cnode->start_col == start_col &&
+		    cnode->ncol == ncol)
+			break;
+		cnode = cnode->next;
+	}
+
+	return cnode;
 }
 
 static void remove_node(struct solver_state *xrs, struct solver_node *node)
@@ -64,25 +124,18 @@ static void remove_node(struct solver_state *xrs, struct solver_node *node)
 			pnode->next = cnode->next;
 		else
 			xrs->node_head = cnode->next;
-		if (node->part < 0)
-			return;
 
 		xrs->nnode--;
-		xrs->allocated -= node->ncol;
-		for (int i = 0; i < node->ncol; i ++)
-			xrs_bitmap_clear(xrs->func, xrs->resbit,
-			    node->oly[node->part] + i);
-
 	}
 }
 
-static struct solver_node *search_node_by_pasid(struct solver_state *xrs,
-		uint32_t pasid)
+static struct solver_node *search_node_by_pid(struct solver_state *xrs,
+		uint32_t pid)
 {
 	struct solver_node *cnode = xrs->node_head;
 
 	while (cnode != NULL) {
-		if (cnode->pasid == pasid)
+		if (cnode->pid == pid)
 			break;
 		cnode = cnode->next;
 	}
@@ -98,7 +151,7 @@ static int get_nnodes_by_xclbin_uuid(struct solver_state *xrs,
 
 	while (cnode != NULL) {
 		if (!uuid_compare(cnode->xclbin_uuid, *xclbin_uuid) &&
-		    cnode->part >=0)
+		    cnode->part >= 0)
 			n++;
 		cnode = cnode->next;
 	}
@@ -109,19 +162,19 @@ static int get_nnodes_by_xclbin_uuid(struct solver_state *xrs,
 
 /*
  * The caller needs to guarantee
- *     1. npasid is not 0
- *     2. enough memory is allocated for pasids (array)
+ *     1. npid is not 0
+ *     2. enough memory is allocated for pids (array)
  */
-static void get_pasids_by_xclbin_uuid(struct solver_state *xrs,
-		uuid_t *xclbin_uuid, uint32_t npasid, uint32_t *pasids)
+static void get_pids_by_xclbin_uuid(struct solver_state *xrs,
+		uuid_t *xclbin_uuid, uint32_t npid, uint32_t *pids)
 {
 	struct solver_node *cnode = xrs->node_head;
-	int n = 0;
+	uint32_t n = 0;
 
-	while (cnode != NULL && n < npasid) {
+	while (cnode != NULL && n < npid) {
 		if (!uuid_compare(cnode->xclbin_uuid, *xclbin_uuid) &&
 		    cnode->part >=0) {
-			pasids[n] = cnode->pasid;
+			pids[n] = cnode->pid;
 			n++;
 		}
 		cnode = cnode->next;
@@ -141,6 +194,57 @@ static void xrs_action_callback(xrs_handle_t hdl, struct xrs_actions *acts)
 }
 
 /**
+ * allocate_partition_share() - Allocate partition shared with other processes
+ *
+ * @xrs:   	Softstate of xrs
+ * @pmp:	Input partition metadata (for Fat-XCLBIN)
+ * @cdo:	Output of which CDO in Fat-XCLBIN is selected
+ * @part:	Output of which overlay in the CDO is selected
+ *
+ * Return:	partition node successful or NULL if not found
+ */
+static struct solver_partition_node *allocate_partition_share(
+	struct solver_state *xrs, struct part_meta *pmp,
+	uint32_t *cdo, uint32_t *part)
+{
+	struct solver_partition_node *rpt_node = NULL;
+	uint32_t i;
+
+	for (i = 0; i < pmp->ncdos; i++) {
+		struct cdo_parts *cdop = pmp->cdo + i;
+		uint32_t j;
+
+		for (j = 0; j < cdop->nparts; j++) {
+			struct solver_partition_node *pt_node =
+			    xrs->partition_node_head;
+			uint32_t start_col = cdop->start_col_list[j];
+
+			while (pt_node != NULL) {
+				if (start_col != pt_node->start_col ||
+				    cdop->ncols != pt_node->ncol) {
+					pt_node = pt_node->next;
+					continue;
+				}
+
+				if (rpt_node && rpt_node->nshared <=
+				    pt_node->nshared) {
+					pt_node = pt_node->next;
+					continue;
+				}
+
+				rpt_node = pt_node;
+				*cdo = i;
+				*part = j;
+
+				pt_node = pt_node->next;
+			}
+		}
+	}
+
+	return rpt_node;
+}
+
+/**
  * allocate_partition() - Allocate partition
  *
  * @xrs:   	Softstate of xrs
@@ -153,18 +257,18 @@ static void xrs_action_callback(xrs_handle_t hdl, struct xrs_actions *acts)
 static int allocate_partition(struct solver_state *xrs, struct part_meta *pmp,
 	uint32_t *cdo, uint32_t *part)
 {
-	int i;
+	uint32_t i;
 
 	for (i = 0; i < pmp->ncdos; i++) {
 		struct cdo_parts *cdop = pmp->cdo + i;
-		int j, k;
+		uint32_t j, k;
 
 		if (xrs->total_col - xrs->allocated < cdop->ncols)
 			continue;
 
 		for (j = 0; j < cdop->nparts; j++) {
 			for (k = 0; k < cdop->ncols; k++) {
-				uint32_t start_col = cdop->start_col[j];
+				uint32_t start_col = cdop->start_col_list[j];
 				if (xrs_bitmap_get(xrs->func, xrs->resbit,
 				    start_col + k))
 					break;
@@ -177,15 +281,14 @@ static int allocate_partition(struct solver_state *xrs, struct part_meta *pmp,
 		}
 	}
 
-	if (i == pmp->ncdos) {
-		xrs->func->xrs_log("Solver: available columns %d less than requested\n", xrs->total_col - xrs->allocated);
+	if (i == pmp->ncdos)
 		return -EBUSY;
-	}
 
 	return 0;
 }
 
-xrs_handle_t xrs_init(uint32_t ncol, enum xrs_mode mode, struct xrs_helper_func *func)
+xrs_handle_t xrs_init(uint32_t ncol, enum xrs_mode mode,
+		struct xrs_helper_func *func)
 {
 	struct solver_state *xrs;
 
@@ -200,6 +303,7 @@ xrs_handle_t xrs_init(uint32_t ncol, enum xrs_mode mode, struct xrs_helper_func 
 	xrs->func = func;
 	xrs->total_col = ncol;
 	xrs->resbit = xrs_bitmap_init(func, ncol);
+	xrs->mode = mode;
 	if (!xrs->resbit) {
 		func->xrs_log("Solver: in %s: allocate xrs bitmap failed\n",
 		    __func__);
@@ -224,14 +328,17 @@ int xrs_fini(xrs_handle_t hdl)
 	return 0;
 }
 
-int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
+int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 		struct xrs_actions **actions,
 		void (**action_cb)(xrs_handle_t hdl, struct xrs_actions *acts))
 {
 	struct solver_state *xrs;
 	struct solver_node *node;
+	struct solver_partition_node *pt_node = NULL;
 	uint32_t cdo = 0, part = 0, nact;
-	int i;
+	uint32_t pid = req->pid;
+	struct part_meta *pmp = req->pmp;
+	uint32_t i;
 	int rval;
 
 	if (!hdl)
@@ -239,20 +346,31 @@ int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
 	xrs = (struct solver_state *)hdl;
 
 	/*
-	 * Currently, one thread can only load one xclbin.
-	 * TODO add support for one thread to load multiple xclbins.
+	 * Currently, one process can only load one xclbin.
 	 */
-	if (search_node_by_pasid(xrs, pasid)) {
-		xrs->func->xrs_log("Solver: pasid %d exists\n", pasid);
+	if (search_node_by_pid(xrs, pid)) {
+		xrs->func->xrs_log("Solver: pid %d exists\n", pid);
 		return -EEXIST;
 	}
 
 	rval = allocate_partition(xrs, pmp, &cdo, &part);
+
 	if (rval) {
-		xrs->func->xrs_log("Solver: no available partition\n");
-		actions = NULL;
-		action_cb = NULL;
-		return rval;
+		if (xrs->mode != XRS_MODE_TEMPORAL_BEST) {
+			xrs->func->xrs_log("Solver: no available partition\n");
+			actions = NULL;
+			action_cb = NULL;
+			return rval;
+		}
+		xrs->func->xrs_log("Solver: no unused cols available, try sharing...\n");
+		pt_node = allocate_partition_share(xrs, pmp, &cdo, &part);
+		if (!pt_node) {
+			xrs->func->xrs_log("Solver: no available partition\n");
+			actions = NULL;
+			action_cb = NULL;
+			return -EBUSY;
+		}
+		rval = 0;
 	}
 
 	for (i = 0; i < pmp->ncdos; i++) {
@@ -273,15 +391,14 @@ int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
 			/* TODO release previous allocated node */
 			return -ENOMEM;
 		}
-		memset(node->oly, 0,
-		    sizeof (cpart->nparts * sizeof (uint32_t)));
+		memset(node->oly, 0, cpart->nparts * sizeof (uint32_t));
 
 		uuid_copy(node->xclbin_uuid, *(pmp->xclbin_uuid));
 		uuid_copy(node->cdo_uuid, *(cpart->cdo_uuid));
-		node->pasid = pasid;
+		node->pid = pid;
 		node->noly = cpart->nparts;
 		node->ncol = cpart->ncols;
-		memcpy(node->oly, cpart->start_col, cpart->nparts *
+		memcpy(node->oly, cpart->start_col_list, cpart->nparts *
 		    sizeof(uint32_t));
 		if (i == cdo)
 			node->part = part;
@@ -293,6 +410,23 @@ int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
 		if (i != cdo)
 			continue;
 
+		if (pt_node == NULL) {
+			pt_node = xrs->func->xrs_mem_alloc(sizeof
+			    (struct solver_partition_node));
+			if (!pt_node) {
+				xrs->func->xrs_log("Solver: in %s, fail to allocate partition node\n", __func__);
+				/* TODO release previous allocated node */
+				return -ENOMEM;
+			}
+			memset(pt_node, 0,
+			    sizeof (struct solver_partition_node));
+			pt_node->nshared = 1;
+			pt_node->start_col = node->oly[part];
+			pt_node->ncol = node->ncol;
+			insert_partition_node(xrs, pt_node);
+		} else
+			pt_node->nshared++;
+
 		/*
 		 * Fill up action list.
 		 *
@@ -301,8 +435,8 @@ int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
 		 * e.g. unload/reload to different partition.
 		 */
 		nact = 1;
-		*actions = xrs->func->xrs_mem_alloc(sizeof (uint32_t) +
-		    nact * sizeof (struct xrs_action));
+		*actions = xrs->func->xrs_mem_alloc(sizeof(struct xrs_actions) +
+		    (nact - 1) * sizeof (struct xrs_action));
 		if (!(*actions)) {
 			xrs->func->xrs_log("Solver: in %s, fail to allocate action memory\n", __func__);
 			/* TODO release previous allocated node */
@@ -310,68 +444,89 @@ int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
 		}
 
 		(*actions)->nactions = nact;
-		(*actions)->actions[0].pasid = node->pasid;
+		(*actions)->actions[0].pid = node->pid;
 		(*actions)->actions[0].xclbin_uuid = &node->xclbin_uuid;
 		(*actions)->actions[0].cdo_uuid = &node->cdo_uuid;
-		(*actions)->actions[0].pasid = node->pasid;
+		(*actions)->actions[0].pid = node->pid;
 		(*actions)->actions[0].part.start_col = node->oly[part];
 		(*actions)->actions[0].part.ncol = node->ncol;
-		(*actions)->actions[0].action = XRS_LOAD_ACTION_LOAD;
-
+		(*actions)->actions[0].action = pt_node->nshared == 1 ?
+		    XRS_LOAD_ACTION_LOAD : XRS_LOAD_ACTION_NONE;
 		*action_cb = xrs_action_callback;
 	}
 
 	return rval;
 }
 
-int xrs_unload_xclbin(xrs_handle_t hdl, uint32_t pasid)
+int xrs_release_resource(xrs_handle_t hdl, uint32_t pid)
 {
+	struct solver_partition_node *pt_node;
 	struct solver_state *xrs;
 	struct solver_node *node;
+	int found = 0;
 
 	if (!hdl)
 		return -ENODEV;
 	xrs = (struct solver_state *)hdl;
 
 	while (1) {
-		node = search_node_by_pasid(xrs, pasid);
+		node = search_node_by_pid(xrs, pid);
 		if (!node)
 			break;
+
+		found = 1;
+		if (node->part >= 0) {
+			pt_node = search_partition_node(xrs,
+			    node->oly[node->part],
+			    node->ncol);
+			if (!pt_node) {
+				xrs->func->xrs_log("Solver: in %s fatal error, can not find partition node!",
+				    __func__);
+				return -ENODEV;
+			}
+
+			pt_node->nshared--;
+			if (pt_node->nshared == 0) {
+				remove_partition_node(xrs, pt_node);
+				xrs->func->xrs_mem_free(pt_node);
+			}
+		}
+
 		remove_node(xrs, node);
 		xrs->func->xrs_mem_free(node->oly);
 		xrs->func->xrs_mem_free(node);
 	}
 
-	return 0;
+	return found ? 0 : -ENODEV;
 }
 
-int xrs_query_npasid(xrs_handle_t hdl, uuid_t *xclbin_uuid)
+int xrs_query_npid(xrs_handle_t hdl, uuid_t *xclbin_uuid)
 {
 	struct solver_state *xrs;
-	int npasid;
+	int npid;
 
 	if (!hdl)
 		return -ENODEV;
 
 	xrs = (struct solver_state *)hdl;
-	npasid = get_nnodes_by_xclbin_uuid(xrs, xclbin_uuid);
+	npid = get_nnodes_by_xclbin_uuid(xrs, xclbin_uuid);
 
-	return npasid;
+	return npid;
 }
 
-int xrs_query_pasids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t npasid,
-		uint32_t *pasids)
+int xrs_query_pids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t npid,
+		uint32_t *pids)
 {
 	struct solver_state *xrs;
 
-	if (npasid == 0)
+	if (npid == 0)
 		return -EINVAL;
 
 	if (!hdl)
 		return -ENODEV;
 	xrs = (struct solver_state *)hdl;
 
-	get_pasids_by_xclbin_uuid(xrs, xclbin_uuid, npasid, pasids);
+	get_pids_by_xclbin_uuid(xrs, xclbin_uuid, npid, pids);
 
 	return 0;
 }

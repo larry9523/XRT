@@ -28,7 +28,7 @@ uuid_compare(const uuid_t uuid1, const uuid_t uuid2)
 inline void
 uuid_copy(uuid_t dst, const uuid_t src)
 {
-	RtlCopyMemory(dst, src sizeof(uuid_t));
+	RtlCopyMemory(dst, src, sizeof(uuid_t));
 }
 
 #else
@@ -66,10 +66,18 @@ typedef void * xrs_handle_t;
  *     best effort of the current request and allocated requests. Allocated
  *     partions can be moved around to fit all requests. If no overlays meet
  *     the requests, allocation will fail.
+ *
+ * XRS_MODE_TEMPORAL_BEST:
+ *     Partitions can be shared temporally. Firstly, we try to allocate
+ *     partition on unused columns. If no available columns meet the
+ *     requested overlays, we will share the already allocated partition
+ *     to other processes. We will try our best to load balance of processes
+ *     on partitions.
  */
 enum xrs_mode {
-	XRS_MODE_SPACIAL_STATIC		= 0x0,
-	XRS_MODE_SPACIAL_DYNAMIC	= 0x1,
+	XRS_MODE_SPATIAL_STATIC		= 0x0,
+	XRS_MODE_SPATIAL_DYNAMIC	= 0x1,
+	XRS_MODE_TEMPORAL_BEST		= 0x2,
 };
 
 /**
@@ -77,7 +85,7 @@ enum xrs_mode {
  *
  * XRS_LOAD_ACTION_NONE:
  *     Partition allocated successfully but no action is required. This is
- *     normally used in tempal sharing mode that same CDO has been loaded
+ *     normally used in temporal sharing mode that same CDO has been loaded
  *     by other client.
  *
  * XRS_LOAD_ACTION_LOAD
@@ -110,16 +118,16 @@ struct aie_part {
  */
 struct cdo_parts {
 	uuid_t		*cdo_uuid;
-	uint32_t	nparts;		/* # of partition overlays */
-	uint32_t	ncols;		/* # of columns */
-	uint32_t	*start_col;	/* Start column array */
+	uint32_t	nparts;			/* # of partition overlays */
+	uint32_t	ncols;			/* # of columns */
+	uint32_t	*start_col_list;	/* Start column array */
 };
 
 /**
- * Structure used to describe a request to allocate. This is the
- * input to resource resolver for a load request with a given XCLBIN
- * identified by XCLBIN UUID. It also contains the number of relocatable
- * CDOs and the pointer to relocatable CDO array.
+ * Structure used to describe the partition metadata as part of the
+ * allocation requests.This is one of the inputs to resource resolver
+ * with a given XCLBIN identified by XCLBIN UUID. It also contains the
+ * number of relocatable CDOs and the pointer to relocatable CDO array.
  */
 struct part_meta {
 	uuid_t			*xclbin_uuid;
@@ -128,14 +136,25 @@ struct part_meta {
 };
 
 /**
+ * Structure used to describe a request to allocate. This is the
+ * input to resource resolver for a allocation request. It contains
+ * process id and partition metadata. And this can be extended to include
+ * other inputs for the allocation like QoS and Priority.
+ */
+struct alloc_requests {
+	uint32_t		pid;
+	struct part_meta	*pmp;
+};
+
+/**
  * Structure used to describe an action after allocation. The action
- * is identified by XCLBIN UUID, CDO UUID, pasid, partition and the
+ * is identified by XCLBIN UUID, CDO UUID, pid, partition and the
  * action (Load/Unload/None)
  */
 struct xrs_action {
 	uuid_t			*xclbin_uuid;
 	uuid_t			*cdo_uuid;
-	uint32_t		pasid;
+	uint32_t		pid;
 	struct aie_part		part;
 	enum xrs_load_actions	action;
 };
@@ -152,6 +171,7 @@ struct xrs_action {
  */
 struct xrs_actions {
 	uint32_t		nactions;
+	uint8_t			rsvd[4];
 	struct xrs_action	actions[1];
 };
 
@@ -203,13 +223,13 @@ xrs_handle_t xrs_init(uint32_t ncol, enum xrs_mode mode, struct xrs_helper_func 
 int xrs_fini(xrs_handle_t hdl);
 
 /**
- * xrs_load_xclbin() - Requst to allocate resources for a given context
- *                     and a partition metadata. (See struct part_meta)
+ * xrs_allocate_resource() - Requst to allocate resources for a given context
+ *                           and a partition metadata. (See struct part_meta)
  *
  * @hdl:	Resource solver handle obtained from xrs_init()
- * @pasid:	The Pasid to identify the requesting context
- * @pmp:	Pointer to requesting partition metadata
- * @actions:	Pointer to the actions list
+ * @req:	Input to the Resource solver including process id
+ * 		and partition metadata.
+ * @actions:	Pointer to the actions list (output)
  * @action_cb:	Callback function when the actions are done. The arg for
  *		this callback function should be the pointer of actions.
  *		TODO the arg needs to be extended to have
@@ -226,9 +246,10 @@ int xrs_fini(xrs_handle_t hdl);
  *        the caller's responsiblity to lock down XCLBINs and grab
  *        necessary lock.
  *     3. TODO Recover processes if any action is failed.
- *     4. TODO QoS is missing in this interface.
+ *     4. TODO QoS is missing in this interface, which can be added
+ *             to alloc_requests structure.
  */
-int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
+int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 		struct xrs_actions **actions,
 		void (**action_cb)(xrs_handle_t hdl, struct xrs_actions *acts));
 
@@ -236,43 +257,43 @@ int xrs_load_xclbin(xrs_handle_t hdl, uint32_t pasid, struct part_meta *pmp,
  * xrs_unload_xclbin() - Requst to free resources for a given context.
  *
  * @hdl:	Resource solver handle obtained from xrs_init()
- * @pasid:	The Pasid to identify the requesting context
+ * @pid:	The Process ID to identify the requesting context
  *
  * Return:	0 when successful
  * 		Or standard error number when failing
  */
-int xrs_unload_xclbin(xrs_handle_t hdl, uint32_t pasid);
+int xrs_release_resource(xrs_handle_t hdl, uint32_t pid);
 
 /**
- * xrs_query_npasid() - Query the number of pasid that uses a given xclbin.
+ * xrs_query_npid() - Query the number of pid that uses a given xclbin.
  *
  * @hdl:		Resource solver handle obtained from xrs_init()
  * @xclbin_uuid:	The XCLBIN UUID which is used
  *
- * Return:		Number of pasids when successful
+ * Return:		Number of pids when successful
  * 			Or standard error number when failing
  */
-int xrs_query_npasid(xrs_handle_t hdl, uuid_t *xclbin_uuid);
+int xrs_query_npid(xrs_handle_t hdl, uuid_t *xclbin_uuid);
 
 /**
- * xrs_query_pasids() - Query the pasids that uses a given xclbin.
+ * xrs_query_pids() - Query the pids that uses a given xclbin.
  *
  * @hdl:		Resource solver handle obtained from xrs_init()
  * @xclbin_uuid:	The XCLBIN UUID which is used
- * @npasid:		Max number of pasids to fill into passid array
- * @pasids:		Pasid array
+ * @npid:		Max number of pids to fill into passid array
+ * @pids:		Pid array
  *
  * Return:		0 when successful
  * 			Or standard error number when failing
  *
  * Note:
  *     1. Caller of this function needs to make sure enough memory is allocated
- *        to fill in npasid.
- *     2. If there are only m pasids are using this uuid, soolver will fill the
+ *        to fill in npid.
+ *     2. If there are only m pids are using this uuid, soolver will fill the
  *        first m elements of n passids array.
  */
-int xrs_query_pasids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t npasid,
-		uint32_t *pasids);
+int xrs_query_pids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t npid,
+		uint32_t *pids);
 
 
 #ifdef __cplusplus

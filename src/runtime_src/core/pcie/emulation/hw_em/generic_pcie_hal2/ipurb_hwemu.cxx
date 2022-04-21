@@ -329,7 +329,7 @@ namespace hwemu {
     nctx = 0;
     pid = getpid();
 
-    xrs_hdl = xrs_init(5, XRS_MODE_SPACIAL_STATIC, &ipurb_xrs_func);
+    xrs_hdl = xrs_init(5, XRS_MODE_TEMPORAL_BEST, &ipurb_xrs_func);
   }
 
   xocl_ipurb::~xocl_ipurb()
@@ -339,36 +339,134 @@ namespace hwemu {
 
   int xocl_ipurb::load_xclbin(char *buf, size_t size, const uuid_t uuid)
   {
+#if 0
     // Test code to verify the resource solver interfaces
     struct xrs_actions *act = nullptr;
     void (*action_cb)(xrs_handle_t hdl, struct xrs_actions *acts) = nullptr;
 
-    uint32_t start_col = 0;
+    uint32_t start_col[4] = {1, 2, 3, 4};
 
     struct cdo_parts cp;
     cp.cdo_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(uuid)); // use XCLBIN uuid for now
-    cp.nparts = 1;
-    cp.ncols = 5;
-    cp.start_col = &start_col;
+    cp.nparts = 4;
+    cp.ncols = 1;
+    cp.start_col_list = start_col;
 
     struct part_meta pm;
     pm.xclbin_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(uuid));
     pm.ncdos = 1;
     pm.cdo = &cp;
 
-    int rval = xrs_load_xclbin(xrs_hdl, pid, &pm, &act, &action_cb);
+    struct alloc_requests req;
+    req.pid = 1;
+    req.pmp = &pm;
+    int rval = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+    printf("\nIn %s, xrs_load_xclbin 1 returns: %d, act is %p\n", __func__, rval, act);
+    if (act) {
+      printf("In %s, action naction is %d\n", __func__, act->nactions);
+      printf("In %s, action pid is %d\n", __func__, act->actions[0].pid);
+      printf("In %s, action action is %d\n", __func__, act->actions[0].action);
+      printf("In %s, action start_col is %d\n", __func__, act->actions[0].part.start_col);
+      printf("In %s, action ncol is %d\n", __func__, act->actions[0].part.ncol);
+    }
+
     if (action_cb != nullptr)
       action_cb(xrs_hdl, act);
+    act = nullptr;
 
-    int npasid = xrs_query_npasid(xrs_hdl, pm.xclbin_uuid);
-    uint32_t pasids[npasid];
-    xrs_query_pasids(xrs_hdl, pm.xclbin_uuid, npasid, (reinterpret_cast<uint32_t *>(pasids)));
-    for (int i = 0; i < npasid; i++)
-      printf("In %s, npasid[%d]: %d\n", __func__, i, pasids[i]);
+    req.pid = 2;
+    rval = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+    printf("\nIn %s, xrs_load_xclbin 2 returns: %d, act is %p\n", __func__, rval, act);
+    if (act) {
+      printf("In %s, action naction is %d\n", __func__, act->nactions);
+      printf("In %s, action pid is %d\n", __func__, act->actions[0].pid);
+      printf("In %s, action action is %d\n", __func__, act->actions[0].action);
+      printf("In %s, action start_col is %d\n", __func__, act->actions[0].part.start_col);
+      printf("In %s, action ncol is %d\n", __func__, act->actions[0].part.ncol);
+    }
 
-    xrs_unload_xclbin(xrs_hdl, pid);
+    if (action_cb != nullptr)
+      action_cb(xrs_hdl, act);
+    act = nullptr;
+
+    req.pid = 3;
+    rval = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+    printf("\nIn %s, xrs_load_xclbin 3 returns: %d, act is %p\n", __func__, rval, act);
+    if (act) {
+      printf("In %s, action naction is %d\n", __func__, act->nactions);
+      printf("In %s, action pid is %d\n", __func__, act->actions[0].pid);
+      printf("In %s, action action is %d\n", __func__, act->actions[0].action);
+      printf("In %s, action start_col is %d\n", __func__, act->actions[0].part.start_col);
+      printf("In %s, action ncol is %d\n", __func__, act->actions[0].part.ncol);
+    }
+
+    if (action_cb != nullptr)
+      action_cb(xrs_hdl, act);
+    act = nullptr;
+
+    req.pid = 4;
+    rval = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+    printf("\nIn %s, xrs_load_xclbin 4 returns: %d, act is %p\n", __func__, rval, act);
+    if (act) {
+      printf("In %s, action naction is %d\n", __func__, act->nactions);
+      printf("In %s, action pid is %d\n", __func__, act->actions[0].pid);
+      printf("In %s, action action is %d\n", __func__, act->actions[0].action);
+      printf("In %s, action start_col is %d\n", __func__, act->actions[0].part.start_col);
+      printf("In %s, action ncol is %d\n", __func__, act->actions[0].part.ncol);
+    }
+
+    if (action_cb != nullptr)
+      action_cb(xrs_hdl, act);
+    act = nullptr;
+
+    printf("\nIn %s, unload xclbin 3\n", __func__);
+    xrs_release_resource(xrs_hdl, 3);
+
+    req.pid = 5;
+    rval = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+    printf("\nIn %s, xrs_load_xclbin 5 returns: %d, act is %p\n", __func__, rval, act);
+    if (act) {
+      printf("In %s, action naction is %d\n", __func__, act->nactions);
+      printf("In %s, action pid is %d\n", __func__, act->actions[0].pid);
+      printf("In %s, action action is %d\n", __func__, act->actions[0].action);
+      printf("In %s, action start_col is %d\n", __func__, act->actions[0].part.start_col);
+      printf("In %s, action ncol is %d\n", __func__, act->actions[0].part.ncol);
+    }
+
+    if (action_cb != nullptr)
+      action_cb(xrs_hdl, act);
+    act = nullptr;
+
+    req.pid = 6;
+    rval = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+    printf("\nIn %s, xrs_load_xclbin 6 returns: %d, act is %p\n", __func__, rval, act);
+    if (act) {
+      printf("In %s, action naction is %d\n", __func__, act->nactions);
+      printf("In %s, action pid is %d\n", __func__, act->actions[0].pid);
+      printf("In %s, action action is %d\n", __func__, act->actions[0].action);
+      printf("In %s, action start_col is %d\n", __func__, act->actions[0].part.start_col);
+      printf("In %s, action ncol is %d\n", __func__, act->actions[0].part.ncol);
+    }
+
+    if (action_cb != nullptr)
+      action_cb(xrs_hdl, act);
+    act = nullptr;
+
+    int npid = xrs_query_npid(xrs_hdl, pm.xclbin_uuid);
+    uint32_t pids[npid];
+    xrs_query_pids(xrs_hdl, pm.xclbin_uuid, npid, (reinterpret_cast<uint32_t *>(pids)));
+    printf("\n");
+    for (int i = 0; i < npid; i++)
+      printf("In %s, npid[%d]: %d\n", __func__, i, pids[i]);
+
+    xrs_release_resource(xrs_hdl, 1);
+    xrs_release_resource(xrs_hdl, 2);
+    xrs_release_resource(xrs_hdl, 4);
+    xrs_release_resource(xrs_hdl, 5);
+    xrs_release_resource(xrs_hdl, 6);
 
     // End of resource solver test code
+#endif
 
     xrt::device xdev(device->getMCoreDevice());
     xrt::bo xbo(xdev, size, xrt::bo::flags::host_only, 0);
@@ -377,13 +475,13 @@ namespace hwemu {
     if (!xcmd)
       return 1;
 
-    rval = 0;
+    int ret = 0;
     if (xcmd->load_xclbin(xbo, buf, size, uuid))
-      rval = 1;
+      ret = 1;
 
     cmd_pool.destroy(xcmd);
 
-    return rval;
+    return ret;
   }
 
   int xocl_ipurb::open_context(const uuid_t uuid, unsigned int ip_index)
