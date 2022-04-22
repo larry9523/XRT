@@ -2807,8 +2807,9 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
   }
   else if((sBO->fd >=0) && (dBO->fd >= 0)) {  //Both source & destination P2P buffer
     // CR-1113695 Copy data from source P2P to Dest P2P
-    unsigned char temp_buffer[size];
-    int bytes_read = read(sBO->fd, temp_buffer, size);
+    std::vector<char> temp_buffer(size);
+    lseek(sBO->fd, src_offset, SEEK_SET);
+    int bytes_read = read(sBO->fd, temp_buffer.data(), size);
     if (bytes_read) {
       if (mLogStream.is_open())
       {
@@ -2816,23 +2817,24 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
       }
     }
 
-    int bytes_write = write(dBO->fd, temp_buffer, size);
+    lseek(dBO->fd, dst_offset, SEEK_SET);
+    int bytes_write = write(dBO->fd, temp_buffer.data(), size);
     if (bytes_write) {
       if (mLogStream.is_open())
       {
         mLogStream << __func__ << ", data written successfully from local buffer to dest fd." << std::endl;
       }
     }
-
   }
   else if(dBO->fd >= 0){  //destination p2p buffer
     // CR-1113695 Copy data from temp buffer to exported fd
-    unsigned char temp_buffer[size];
-    if (xclCopyBufferDevice2Host((void*)temp_buffer, sBO->base, size, src_offset, sBO->topology) != size) {
+    std::vector<char> temp_buffer(size);
+    if (xclCopyBufferDevice2Host((void*)temp_buffer.data(), sBO->base, size, src_offset, sBO->topology) != size) {
       std::cerr << "ERROR: copy buffer from device to host failed " << std::endl;
       return -1;
     }
-    int bytes_write = write(dBO->fd, temp_buffer, size);
+    lseek(dBO->fd, dst_offset, SEEK_SET);
+    int bytes_write = write(dBO->fd, temp_buffer.data(), size);
 
     if (bytes_write) {
       if (mLogStream.is_open())
@@ -2843,8 +2845,9 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
   }
   else if (sBO->fd >= 0) {  //source p2p buffer
     // CR-1112934 Copy data from exported fd to temp buffer using read API
-    unsigned char temp_buffer[size];
-    int bytes_read = read(sBO->fd, temp_buffer, size);
+    std::vector<char> temp_buffer(size);
+    lseek(sBO->fd, src_offset, SEEK_SET);
+    int bytes_read = read(sBO->fd, temp_buffer.data(), size);
 
     if (bytes_read) {
       if (mLogStream.is_open())
@@ -2854,7 +2857,7 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
     }
 
     // copy data from temp buffer to destination buffer
-    if (xclCopyBufferHost2Device(dBO->base, (void*)temp_buffer, size, dst_offset, dBO->topology) != size) {
+    if (xclCopyBufferHost2Device(dBO->base, (void*)temp_buffer.data(), size, dst_offset, dBO->topology) != size) {
       std::cerr << "ERROR: copy buffer from host to device failed " << std::endl;
       return -1;
     }
