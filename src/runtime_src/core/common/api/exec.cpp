@@ -13,17 +13,6 @@
 
 namespace {
 
-#if 0
-static bool
-is_windows()
-{
-#ifdef _WIN32
-    return true;
-#else
-    return false;
-#endif
-}
-#endif
 static bool
 is_sw_emulation()
 {
@@ -39,7 +28,6 @@ kds_enabled(bool forceoff=false)
   static bool enabled = iskdsemu
     &&  xrt_core::config::get_kds()
     && !xrt_core::config::get_feature_toggle("Runtime.sws");
-    //&& !is_windows();
 
   if (forceoff)
     enabled = false;
