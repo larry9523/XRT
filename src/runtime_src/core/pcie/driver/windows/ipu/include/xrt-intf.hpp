@@ -187,7 +187,8 @@ typedef enum _XRT_STAT_CLASS {
     XrtStatGroupTopology,
     XrtStatMemStatRaw,
     XrtStatMemStat,
-    XrtStatXclinSlots
+    XrtStatXclinSlots,
+    XrtStatSlotInfo
 } XRT_STAT_CLASS, * PXRT_STAT_CLASS;
 
 typedef struct _XRT_STAT_CLASS_ARGS {

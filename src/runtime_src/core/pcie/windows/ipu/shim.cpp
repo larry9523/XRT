@@ -803,7 +803,7 @@ done:
       }
 
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
-      bytesRequired += (slotInfo.SlotCount * sizeof(XRT_KDS_CU));
+      bytesRequired += (slotInfo.CuCount * sizeof(XRT_KDS_CU));
 
       std::vector<char> kdsCuInfo_vec(bytesRequired);
       kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
@@ -892,7 +892,7 @@ done:
       }
 
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
-      bytesRequired += (slotInfo.CuCount * sizeof(XRT_KDS_CU));
+      bytesRequired += (slotInfo.SlotCount * sizeof(XRT_KDS_CU));
 
       std::vector<char> kdsCuInfo_vec(bytesRequired);
       kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
@@ -900,7 +900,7 @@ done:
       xrt_core::message::
           send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv kds_cu_info)... ");
 
-      statClass.StatClass = XrtStatKdsCU;
+      statClass.StatClass = XrtStatSlotInfo;
 
       succeeded = DeviceIoControl(m_dev,
           IOCTL_KIPUDRV_STAT,
