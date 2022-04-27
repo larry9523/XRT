@@ -80,9 +80,9 @@ namespace hwemu {
       xocl_ipurb*              ipurbp;
 
       uint16_t                qid;
-      uuid_t                  m_uuid;
       IpuHenvRing*            mng_buff;
       IpuHenvRing*            usr_buff;
+      uint32_t                context_id;
   };
 
   /**

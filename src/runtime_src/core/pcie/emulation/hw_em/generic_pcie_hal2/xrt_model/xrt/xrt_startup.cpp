@@ -200,7 +200,6 @@ void printRespStatus(const char *name, const ipu_status_e status)
         // MGMT ERT Error Codes
         //
 
-        CASE_RESP(name,IPU_STATUS_MGMT_ERT_FIRST_ERROR);
         CASE_RESP(name,IPU_STATUS_MGMT_ERT_SELF_TEST_FAILURE);
         CASE_RESP(name,IPU_STATUS_MGMT_ERT_HASH_MISMATCH);
         CASE_RESP(name,IPU_STATUS_MGMT_ERT_NOAVAIL);
@@ -220,7 +219,6 @@ void printRespStatus(const char *name, const ipu_status_e status)
         // RTOS Error Codes
         //
 
-        CASE_RESP(name,IPU_STATUS_RTOS_FIRST_ERROR);
         CASE_RESP(name,IPU_STATUS_MAX_RTOS_STATUS_CODE);
 
         CASE_RESP(name,IPU_STATUS_MAX_IPU_STATUS_CODE);
@@ -385,11 +383,17 @@ void TEST_DPUUserSelfTest(IpuHenvRing *pMngBuff)
     TEST_FN_HEADER;
 
 /* create context */
-    create_context_req_t create_context_req = { 0 };
+    create_context_req_t create_context_req;
     create_context_resp_t create_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    create_context_req.uuid.uuid_low = 0x1234567800ABCDEF;
-    create_context_req.uuid.uuid_high = 0xFEDCBA9876543210;
+    create_context_req.part_info.aie_type = IPU_AIE2;
+    create_context_req.part_info.start_column = 0x0;
+    create_context_req.part_info.total_columns = 0x5;
+
+    create_context_req.num_xcl_bin_uuids = 0x1;
+    create_context_req.xcl_bin_uuid[0].uuid_low = 0x1234567800ABCDEF;
+    create_context_req.xcl_bin_uuid[0].uuid_high = 0xFEDCBA9876543210;
+
     create_context_req.pasid = 0xFFFF;
     create_context_req.num_command_queue_pairs_requested = 0x1;
 
@@ -401,7 +405,7 @@ void TEST_DPUUserSelfTest(IpuHenvRing *pMngBuff)
     }
 
     ipu_command_queue_pair_t *qPair = &create_context_resp.command_queue_pair[0];
-
+    uint32_t context_id = create_context_resp.context_id;
     printf("create_context_resp.msi_id=0x%X\n", create_context_resp.msi_id);
     printf("create_context_resp.num_command_queue_pairs_allocated=0x%X\n"
            , create_context_resp.num_command_queue_pairs_allocated);
@@ -438,8 +442,8 @@ void TEST_DPUUserSelfTest(IpuHenvRing *pMngBuff)
 
     for (int i = 0; i < 16; i ++)
         printf("%x: %x\n", 150 * 1024 + i, ((char *)(buffer))[150 * 1024 + i]);
-    map_host_buffer_req.uuid.uuid_low = 0x1234567800ABCDEF;
-    map_host_buffer_req.uuid.uuid_high = 0xFEDCBA9876543210;
+
+    map_host_buffer_req.context_id = context_id;
     map_host_buffer_req.buffer_address = TEST_DRAM_BASE_ADDR;
     map_host_buffer_req.buffer_size = size;
 
@@ -476,8 +480,8 @@ void TEST_DPUUserSelfTest(IpuHenvRing *pMngBuff)
 void TEST_DPULoadXclBin(IpuHenvRing *pMngBuff)
 {
     TEST_FN_HEADER;
-    load_xcl_bin_req_t xcl_req = { 0 };
-    load_xcl_bin_resp_t xcl_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+    register_xcl_bin_req_t xcl_req = { 0 };
+    register_xcl_bin_resp_t xcl_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
     std::string binaryFile = "./4cmt_simnow_interpreter_0916.pdi";
     const char* bit = binaryFile.c_str();
@@ -492,17 +496,23 @@ void TEST_DPULoadXclBin(IpuHenvRing *pMngBuff)
 
     // XCLBIN has to be in DRAM (model) not in this fsdl libarary address space
     WR_SYSHUB(TEST_DRAM_BASE_ADDR + 0x4000, header, size);
+
+    xcl_req.num_xcl_bin_infos = 1;
+    xcl_req.xcl_bin_info[0].xcl_bin_address = (uint64_t)(TEST_DRAM_BASE_ADDR + 0x4000);
+    xcl_req.xcl_bin_info[0].xcl_bin_size = size;
+    xcl_req.xcl_bin_info[0].xcl_bin_uuid.uuid_low = 0x1234567800ABCDEF;
+    xcl_req.xcl_bin_info[0].xcl_bin_uuid.uuid_high = 0xFEDCBA9876543210;
+
+
+/*
     xcl_req.XclBinAddress = (uint64_t)TEST_DRAM_BASE_ADDR + 0x4000;
     xcl_req.XclBinSize = size;
-
-    xcl_req.part_info.uuid.uuid_low = 0x1234567800ABCDEF;
-    xcl_req.part_info.uuid.uuid_high = 0xFEDCBA9876543210;
     xcl_req.part_info.startColumn = 0;
     xcl_req.part_info.totalColumn = 5;
     xcl_req.part_info.aieType = IPU_AIE2;
-
-    bool passed = RINGB_Command(xcl_req, &xcl_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_LOAD_XCL_BIN
-        , "IPU_MSG_LOAD_XCL_BIN", __FUNCTION__);
+*/
+    bool passed = RINGB_Command(xcl_req, &xcl_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_REGISTER_XCL_BIN
+        , "IPU_MSG_REGISTER_XCL_BIN", __FUNCTION__);
 
     TEST_FN_RESULT(passed);
 }
@@ -510,8 +520,8 @@ void TEST_DPULoadXclBin(IpuHenvRing *pMngBuff)
 void TEST_IpuLoadXclBin(IpuHenvRing *pMngBuff)
 {
     TEST_FN_HEADER;
-    load_xcl_bin_req_t xcl_req = { 0 };
-    load_xcl_bin_resp_t xcl_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+    register_xcl_bin_req_t xcl_req = { 0 };
+    register_xcl_bin_resp_t xcl_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
     // simple pattern for sanity checks
     for(size_t i=0; i<sizeof(xcl_bin_data); i++)
@@ -520,6 +530,15 @@ void TEST_IpuLoadXclBin(IpuHenvRing *pMngBuff)
 
     // XCLBIN has to be in DRAM (model) not in this fsdl libarary address space
     WR_SYSHUB(TEST_DRAM_BASE_ADDR + 0x4000, xcl_bin_data, sizeof(xcl_bin_data));
+
+    xcl_req.num_xcl_bin_infos = 1;
+    xcl_req.xcl_bin_info[0].xcl_bin_address = (uint64_t)(TEST_DRAM_BASE_ADDR + 0x4000);
+    xcl_req.xcl_bin_info[0].xcl_bin_size = sizeof(xcl_bin_data);
+    xcl_req.xcl_bin_info[0].xcl_bin_uuid.uuid_low = 0x1234567800ABCDEF;
+    xcl_req.xcl_bin_info[0].xcl_bin_uuid.uuid_high = 0xFEDCBA9876543210;
+
+/*
+
     xcl_req.XclBinAddress = (uint64_t)TEST_DRAM_BASE_ADDR + 0x4000;
     xcl_req.XclBinSize = sizeof(xcl_bin_data);
 
@@ -528,9 +547,9 @@ void TEST_IpuLoadXclBin(IpuHenvRing *pMngBuff)
     xcl_req.part_info.startColumn = 1;
     xcl_req.part_info.totalColumn = 3;
     xcl_req.part_info.aieType = IPU_AIE2;
-
-    bool passed = RINGB_Command(xcl_req, &xcl_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_LOAD_XCL_BIN
-                                , "IPU_MSG_LOAD_XCL_BIN", __FUNCTION__);
+*/
+    bool passed = RINGB_Command(xcl_req, &xcl_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_REGISTER_XCL_BIN
+                                , "IPU_MSG_REGISTER_XCL_BIN", __FUNCTION__);
 
     TEST_FN_RESULT(passed);
 }
@@ -552,14 +571,24 @@ void TEST_IpuExecuteBuffer(IpuHenvRing *pAppCtxBuff)
     TEST_FN_RESULT(passed);
 }
 
-static void TEST_IpuCreateContext(IpuHenvRing *pMngBuff)
+static void TEST_IpuCreateContext(IpuHenvRing *pMngBuff, uint32_t *context_id)
 {
     TEST_FN_HEADER;
-    create_context_req_t create_context_req = { 0 };
+    create_context_req_t create_context_req;
     create_context_resp_t create_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    create_context_req.uuid.uuid_low = 0x1234567800ABCDEF;
-    create_context_req.uuid.uuid_high = 0xFEDCBA9876543210;
+
+
+    create_context_req.part_info.aie_type = IPU_AIE2;
+    create_context_req.part_info.start_column = 0x0;
+    create_context_req.part_info.total_columns = 0x5;
+
+    create_context_req.num_xcl_bin_uuids = 0x1;
+    create_context_req.xcl_bin_uuid[0].uuid_low = 0x1234567800ABCDEF;
+    create_context_req.xcl_bin_uuid[0].uuid_high = 0xFEDCBA9876543210;
+
+    //create_context_req.uuid.uuid_low = 0x1234567800ABCDEF;
+    //create_context_req.uuid.uuid_high = 0xFEDCBA9876543210;
     create_context_req.pasid = 0xFFFF;
     create_context_req.num_command_queue_pairs_requested = 0x1;
 
@@ -596,7 +625,7 @@ static void TEST_IpuCreateContext(IpuHenvRing *pMngBuff)
     TEST_FN_RESULT(passed);
 }
 
-void TEST_IpuMapHostBuffer(IpuHenvRing *pMngBuff)
+void TEST_IpuMapHostBuffer(IpuHenvRing *pMngBuff, uint32_t context_id)
 {
     TEST_FN_HEADER;
     map_host_buffer_req_t map_host_buffer_req = { 0 };
@@ -609,8 +638,7 @@ void TEST_IpuMapHostBuffer(IpuHenvRing *pMngBuff)
     // Dummy test data for the buffer access test
     WR_SYSHUB(TEST_DRAM_BASE_ADDR + 0x8000, xcl_bin_data, sizeof(xcl_bin_data));
 
-    map_host_buffer_req.uuid.uuid_low = 0x1234567800ABCDEF;
-    map_host_buffer_req.uuid.uuid_high = 0xFEDCBA9876543210;
+    map_host_buffer_req.context_id = context_id;
     map_host_buffer_req.buffer_address = TEST_DRAM_BASE_ADDR + 0x8000;
     map_host_buffer_req.buffer_size = sizeof(xcl_bin_data);
 
@@ -620,30 +648,26 @@ void TEST_IpuMapHostBuffer(IpuHenvRing *pMngBuff)
     TEST_FN_RESULT(passed);
 }
 
-void TEST_IpuDeleteContextNegative(IpuHenvRing *pMngBuff)
+void TEST_IpuDeleteContextNegative(IpuHenvRing *pMngBuff, uint32_t context_id)
 {
     TEST_FN_HEADER;
-    delete_context_req_t delete_context_req = { 0 };
+    delete_context_req_t delete_context_req;
     delete_context_resp_t delete_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    delete_context_req.uuid.uuid_low = 0xFFFFFFFFFFFFFFFF;
-    delete_context_req.uuid.uuid_high = 0xFFFFFFFFFFFFFFFF;
-    delete_context_req.pasid = 0xFFFF;
+    delete_context_req.context_id = 8;
 
     bool passed = RINGB_Command(delete_context_req, &delete_context_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_DELETE_CONTEXT
                                 , "IPU_MSG_DELETE_CONTEXT", __FUNCTION__, false);
     TEST_FN_RESULT(passed);
 }
 
-void TEST_IpuDeleteContext(IpuHenvRing *pMngBuff)
+void TEST_IpuDeleteContext(IpuHenvRing *pMngBuff, uint32_t context_id)
 {
     TEST_FN_HEADER;
     delete_context_req_t delete_context_req = { 0 };
     delete_context_resp_t delete_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    delete_context_req.uuid.uuid_low = 0x1234567800ABCDEF;
-    delete_context_req.uuid.uuid_low = 0xFEDCBA9876543210;
-    delete_context_req.pasid = 0xFFFF;
+    delete_context_req.context_id = context_id;
 
     bool passed = RINGB_Command(delete_context_req, &delete_context_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_DELETE_CONTEXT
                                 , "IPU_MSG_DELETE_CONTEXT", __FUNCTION__);
@@ -663,8 +687,12 @@ void TEST_IpuGetTelemetry(IpuHenvRing *pMngBuff)
 void TEST_IpuResetPartition(IpuHenvRing *pMngBuff)
 {
     TEST_FN_HEADER;
-    reset_partition_req_t reset_partition_req = { 0 };
+    reset_partition_req_t reset_partition_req;
     reset_partition_resp_t reset_partition_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    reset_partition_req.part_info.start_column = 0;
+    reset_partition_req.part_info.total_columns = 2;
+    reset_partition_req.part_info.aie_type = IPU_AIE2;
 
     bool passed = RINGB_Command(reset_partition_req, &reset_partition_resp, pMngBuff, 0xFA5EFADE
                                 , IPU_MSG_RESET_PARTITION, "IPU_MSG_RESET_PARTITION", __FUNCTION__);
@@ -830,6 +858,7 @@ static void PrintFinalTestSummary()
 
 void FsdlMain()
 {
+    uint32_t context_id = 0;
     // make sure all template functions used by Xilinx XRT are instantiated.
     execute_buffer_req_t exec_buf_req = { 0 };
     execute_buffer_resp_t exec_buf_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
@@ -840,12 +869,12 @@ void FsdlMain()
     lpassed = RINGB_Command(delete_context_req, &delete_context_resp, nullptr, 0xFA5EFADE, IPU_MSG_DELETE_CONTEXT
                                 , "IPU_MSG_DELETE_CONTEXT", __FUNCTION__, false);
  
-    load_xcl_bin_req_t load_xclbin_req = { 0 };
-    load_xcl_bin_resp_t load_xclbin_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
-    lpassed = RINGB_Command(load_xclbin_req, &load_xclbin_resp, nullptr, 0xFA5EFADE, IPU_MSG_LOAD_XCL_BIN,
-		"IPU_MSG_LOAD_XCL_BIN", __FUNCTION__);
+    register_xcl_bin_req_t load_xclbin_req = { 0 };
+    register_xcl_bin_resp_t load_xclbin_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+    lpassed = RINGB_Command(load_xclbin_req, &load_xclbin_resp, nullptr, 0xFA5EFADE, IPU_MSG_REGISTER_XCL_BIN,
+		"IPU_MSG_REGISTER_XCL_BIN", __FUNCTION__);
 
-    create_context_req_t create_context_req = { 0 };
+    create_context_req_t create_context_req;
     create_context_resp_t create_context_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
     lpassed = RINGB_Command(create_context_req, &create_context_resp, nullptr, 0xFA5EFADE, IPU_MSG_CREATE_CONTEXT,
 		"IPU_MSG_CREATE_CONTEXT", __FUNCTION__);
@@ -879,11 +908,11 @@ void FsdlMain()
         TEST_DPUUserSelfTest(pMngBuff);
 #else
         TEST_IpuLoadXclBin(pMngBuff);
-        TEST_IpuMapHostBuffer(pMngBuff);
-        TEST_IpuCreateContext(pMngBuff);
-        TEST_IpuDeleteContextNegative(pMngBuff);
+        TEST_IpuDeleteContextNegative(pMngBuff, context_id);
+        TEST_IpuCreateContext(pMngBuff, &context_id);
+        TEST_IpuMapHostBuffer(pMngBuff, context_id);
 
-        TEST_IpuDeleteContext(pMngBuff);
+        TEST_IpuDeleteContext(pMngBuff, context_id);
         TEST_IpuGetTelemetry(pMngBuff);
         TEST_IpuResetPartition(pMngBuff);
 
@@ -899,7 +928,7 @@ void FsdlMain()
 
         // Resurrect applciation
         TEST_IpuLoadXclBin(pMngBuff);
-        TEST_IpuCreateContext(pMngBuff);
+        TEST_IpuCreateContext(pMngBuff, &context_id);
 
 #if 1
         // Test ring buffer wrap behavior

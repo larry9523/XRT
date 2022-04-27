@@ -1,10 +1,10 @@
 /******************************************************************************
 *
-*  Copyright (C) 2021 Advanced Micro Devices, Inc. All rights reserved.
+*  Copyright (C) 2021-2022 Advanced Micro Devices, Inc. All rights reserved.
 *
 ******************************************************************************/
 
-/* Copyright (C) 2021 Xilinx, Inc. All rights reserved. */
+/* Copyright (C) 2021-2022 Xilinx, Inc. All rights reserved. */
 
 #ifndef MGMT_MSG_H_
 #define MGMT_MSG_H_
@@ -14,33 +14,35 @@
 #pragma pack(push, 1)
 
 #define MAX_IPU_CMD_QUEUE_PAIRS           2
+#define MAX_XCL_BIN_INFO                  8
 
 //
-// Load XCL Bin
+// Register XCL Bin
 //
 
-typedef enum _AieType {
-    IPU_NONE = 0,
-    IPU_AIE2 = 1,
-} AieType;
+typedef enum xcl_bin_type_ {
+    XCL_BIN_TYPE_PRE,
+    XCL_BIN_TYPE_PRIMARY,
+    XCL_BIN_TYPE_POST,
+    MAX_XCL_BIN_TYPE
+} xcl_bin_type_e;
 
-typedef struct ipu_partition_ {
-    ipu_uuid_t uuid;            /** Partition ID */
-    AieType aieType;            /** Type of AIE device */
-    uint32_t startColumn :8;    /** Starting column of where XCL bin will be loaded */
-    uint32_t totalColumn :8;    /** Total number of columns wrt xclBin */
-    uint32_t : 16;
-} ipu_partition_t;
+typedef struct xcl_bin_info_ {
+    ipu_uuid_t xcl_bin_uuid;
+    uint64_t xcl_bin_address;
+    uint32_t xcl_bin_size;
+    xcl_bin_type_e xcl_bin_type;
+} xcl_bin_info_t;
 
-typedef struct load_xcl_bin_req_ {
-    uint64_t XclBinAddress;  // Kernel driver Virtual Address
-    uint32_t XclBinSize;     // Size of the xclbin
-    ipu_partition_t   part_info;
-} load_xcl_bin_req_t;
+typedef struct register_xcl_bin_req_ {
+    uint32_t num_xcl_bin_infos;
+    xcl_bin_info_t xcl_bin_info[MAX_XCL_BIN_INFO];
+} register_xcl_bin_req_t;
 
-typedef struct load_xcl_bin_resp_ {
+typedef struct register_xcl_bin_resp_ {
     ipu_status_e status;
-} load_xcl_bin_resp_t;
+    ipu_status_e reg_status[MAX_XCL_BIN_INFO];
+} register_xcl_bin_resp_t;
 
 //
 // Create Context
@@ -53,11 +55,24 @@ typedef enum sec_comm_target_type_ {
     SEC_COMM_TARGET_TYPE_MAX
 } sec_comm_target_type_e;
 
+typedef enum _aie_type_ {
+    IPU_NONE = 0,
+    IPU_AIE2 = 1,
+} aie_type_e;
+
+typedef struct ipu_partition_ {
+    aie_type_e aie_type;            /** Type of AIE device */
+    uint32_t start_column : 8;      /** Starting column of where XCL bin will be loaded */
+    uint32_t total_columns : 8;     /** Total number of columns wrt xclBin */
+    uint32_t :16;
+} ipu_partition_t;
+
 typedef struct create_context_req_ {
-    ipu_uuid_t uuid;
-    uint32_t pasid : 16;
+    ipu_partition_t part_info;
     uint32_t num_command_queue_pairs_requested : 8;
-    uint32_t :8;
+    uint32_t num_xcl_bin_uuids : 8;
+    uint32_t pasid : 16;
+    ipu_uuid_t xcl_bin_uuid[MAX_XCL_BIN_INFO];
     sec_comm_target_type_e sec_comm_target_type;
 } create_context_req_t;
 
@@ -75,9 +90,10 @@ typedef struct ipu_command_queue_pair_ {
 
 typedef struct create_context_resp_ {
     ipu_status_e status;
+    uint32_t context_id;
     uint32_t msi_id : 16;
     uint32_t num_command_queue_pairs_allocated : 8;
-    uint32_t :8;
+    uint32_t : 8;
     ipu_command_queue_pair_t command_queue_pair[MAX_IPU_CMD_QUEUE_PAIRS];
 } create_context_resp_t;
 
@@ -86,9 +102,7 @@ typedef struct create_context_resp_ {
 //
 
 typedef struct delete_context_req_ {
-    ipu_uuid_t uuid;
-    uint32_t pasid : 16;
-    uint32_t :16;
+    uint32_t context_id;
 } delete_context_req_t;
 
 typedef struct delete_context_resp_ {
@@ -121,9 +135,7 @@ typedef struct get_telemetry_resp_ {
 //
 
 typedef struct reset_partition_req_ {
-    ipu_uuid_t uuid;
-    uint32_t pasid : 16;
-    uint32_t :16;
+    ipu_partition_t part_info;
 } reset_partition_req_t;
 
 typedef struct reset_partition_resp_ {
@@ -149,7 +161,6 @@ typedef struct assign_mgmt_pasid_resp_ {
 
 typedef struct suspend_req_ {
     uint32_t place_holder;
-
 } suspend_req_t;
 
 typedef struct suspend_resp_ {
@@ -171,11 +182,11 @@ typedef struct resume_resp_ {
 //
 // Command to invoke self test
 //
-typedef struct {
+typedef struct invoke_self_test_req_ {
     uint32_t test_mask;
 } invoke_self_test_req_t;
 
-typedef struct {
+typedef struct invoke_self_test_resp_ {
     ipu_status_e status;
 } invoke_self_test_resp_t;
 
@@ -197,7 +208,7 @@ typedef struct check_header_hash_resp_ {
 //
 
 typedef struct map_host_buffer_req_ {
-    ipu_uuid_t uuid;
+    uint32_t context_id;
     uint64_t buffer_address;
     uint64_t buffer_size;
 } map_host_buffer_req_t;
@@ -229,30 +240,35 @@ typedef struct query_error_info_resp_ {
 } query_error_info_resp_t;
 
 //
-// Async message format
+// aie error async message format
 //
 
-typedef enum async_event_type_ {
-    ASYNC_EVENT_TYPE_ERROR    = 0x1,
-    ASYNC_EVENT_TYPE_MAX
-} async_event_type_e;
-
-typedef struct async_msg_ {
-    async_event_type_e async_event_type;
-} async_msg_t;
+typedef struct aie_error_async_msg_ {
+    uint32_t place_holder;
+} aie_error_async_msg_t;
 
 //
-// Unload xcl bin
+// Watchdog timeout async message format
 //
 
-typedef struct unload_xcl_bin_req_ {
-    ipu_uuid_t uuid;
-} unload_xcl_bin_req_t;
+typedef struct watchdog_timeout_async_msg_ {
+    uint32_t context_id;
+    ipu_partition_t part_info;
+} watchdog_timeout_async_msg_t;
 
-typedef struct unload_xcl_bin_resp_ {
+//
+// Unregister xcl bin
+//
+
+typedef struct unregister_xcl_bin_req_ {
+    uint32_t num_xcl_bin_uuids;
+    ipu_uuid_t xcl_bin_uuid[MAX_XCL_BIN_INFO];
+} unregister_xcl_bin_req_t;
+
+typedef struct unregister_xcl_bin_resp_ {
     ipu_status_e status;
-} unload_xcl_bin_resp_t;
-
+    ipu_status_e unreg_status[MAX_XCL_BIN_INFO];
+} unregister_xcl_bin_resp_t;
 
 typedef struct aie_error_intr_req_ {
     uint32_t place_holder;

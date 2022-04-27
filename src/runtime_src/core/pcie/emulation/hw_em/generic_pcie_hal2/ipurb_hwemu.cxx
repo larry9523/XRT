@@ -41,6 +41,7 @@
 #include "app_msg.h"
 #include "xrs.h"
 
+#define INVALID_CONTEXT_ID 		(0xFF)
 extern IpuHenvRing *XRT_WaitForERT(uint64_t io_hdl);
 template < typename COMMAND, typename RESPONSE >
 bool RINGB_Command(COMMAND command, RESPONSE  *response, IpuHenvRing *pRing,
@@ -104,6 +105,7 @@ namespace hwemu {
 
     auto devp = reinterpret_cast<uint64_t>(device);
     mng_buff = XRT_WaitForERT(devp);
+    context_id = INVALID_CONTEXT_ID;
   }
 
   ipurb_queue::~ipurb_queue()
@@ -187,25 +189,21 @@ namespace hwemu {
     memcpy(data, buf, size);
     xbo.sync(XCL_BO_SYNC_BO_TO_DEVICE, size, 0);
 
-    load_xcl_bin_req_t req = { 0 };
-    load_xcl_bin_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+    register_xcl_bin_req_t req = { 0 };
+    register_xcl_bin_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    req.XclBinAddress = static_cast<uint64_t>(xbo.address());
-    req.XclBinSize = size;
+    req.num_xcl_bin_infos = 1;
+    req.xcl_bin_info[0].xcl_bin_address = static_cast<uint64_t>(xbo.address());
+    req.xcl_bin_info[0].xcl_bin_size = size;
 
     auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(uuid));
     uint64_t uid64 = *uid64p++;
-    req.part_info.uuid.uuid_low = uid64;
+    req.xcl_bin_info[0].xcl_bin_uuid.uuid_low = uid64;
     uid64 = *uid64p;
-    req.part_info.uuid.uuid_high = uid64;
+    req.xcl_bin_info[0].xcl_bin_uuid.uuid_high = uid64;
 
-    // Hard code for now
-    req.part_info.startColumn = 0;
-    req.part_info.totalColumn = 5;
-    req.part_info.aieType = IPU_AIE2;
-
-    bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_LOAD_XCL_BIN,
-		"IPU_MSG_LOAD_XCL_BIN", __FUNCTION__);
+    bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_REGISTER_XCL_BIN,
+		"IPU_MSG_REGISTER_XCL_BIN", __FUNCTION__);
     printf("LOAD_XCLBIN passed is %d\n", passed);
     if (!passed)
       return -ETIME;
@@ -215,14 +213,23 @@ namespace hwemu {
 
   int ipurb_cmd::open_context(const uuid_t uuid)
   {
-    create_context_req_t req = { 0 };
+    create_context_req_t req;
     create_context_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+
+    memset(&req, 0, sizeof(create_context_req_t));
+
+    req.part_info.aie_type = IPU_AIE2;
+    req.part_info.start_column = 0x0;
+    req.part_info.total_columns = 0x5;
+
+    req.num_xcl_bin_uuids = 1;
 
     auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(uuid));
     uint64_t uid64 = *uid64p++;
-    req.uuid.uuid_low = uid64;
+    req.xcl_bin_uuid[0].uuid_low = uid64;
     uid64 = *uid64p;
-    req.uuid.uuid_high = uid64;
+    req.xcl_bin_uuid[0].uuid_high = uid64;
 
     req.pasid = 0xFFFF;
     req.num_command_queue_pairs_requested = 0x1;
@@ -240,7 +247,7 @@ namespace hwemu {
     if (resp.num_command_queue_pairs_allocated > 0) {
       auto devp = reinterpret_cast<uint64_t>(queuep->device);
       queuep->usr_buff = new IpuHenvRing(qPair->request_queue_info, qPair->response_queue_info, devp);
-      uuid_copy(queuep->m_uuid, uuid);
+      queuep->context_id = resp.context_id;
     }
 
     return 0;
@@ -251,14 +258,7 @@ namespace hwemu {
     delete_context_req_t req = { 0 };
     delete_context_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    // TODO use higher 64 bits uuid for now
-    auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(uuid));
-    uint64_t uid64 = *uid64p++;
-    req.uuid.uuid_low = uid64;
-    uid64 = *uid64p;
-    req.uuid.uuid_high = uid64;
-
-    req.pasid = 0xFFFF;
+    req.context_id = queuep->context_id;
 
     bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_DELETE_CONTEXT,
 		"IPU_MSG_DELETE_CONTEXT", __FUNCTION__);
@@ -268,7 +268,7 @@ namespace hwemu {
 
     delete queuep->usr_buff;
     queuep->usr_buff = nullptr;
-    uuid_clear(queuep->m_uuid);
+    queuep->context_id = INVALID_CONTEXT_ID;
 
     return 0;
   }
@@ -280,7 +280,7 @@ namespace hwemu {
       return -EINVAL;
     }
 
-    if (uuid_is_null(queuep->m_uuid)) {
+    if (queuep->context_id == INVALID_CONTEXT_ID) {
       printf("IPRRB: can not sync bo, no context created.\n");
       return -ENODEV;
     }
@@ -289,11 +289,7 @@ namespace hwemu {
     map_host_buffer_req_t mreq = { 0 };
     map_host_buffer_resp_t mresp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
-    auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(queuep->m_uuid));
-    uint64_t uid64 = *uid64p++;
-    mreq.uuid.uuid_low = uid64;
-    uid64 = *uid64p;
-    mreq.uuid.uuid_high = uid64;
+    mreq.context_id = queuep->context_id;
 
     mreq.buffer_address = src;
     mreq.buffer_size = size;
