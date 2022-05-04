@@ -19,7 +19,7 @@ typedef unsigned char uuid_t[16];
 inline int
 uuid_compare(const uuid_t uuid1, const uuid_t uuid2)
 {
-	if (RtlCompareMemory(&uuid1, &uuid2, sizeof(uuid_t) == sizeof(uuid_t)))
+	if (RtlCompareMemory(&uuid1, &uuid2, sizeof(uuid_t)) == sizeof(uuid_t))
 		return 0;
 
 	return 1;
@@ -43,13 +43,11 @@ uuid_copy(uuid_t dst, const uuid_t src)
 #endif /* _WIN32 */
 
 /**
- * typedef xrs_handle_t - opaque XRT Resource Sovler handle
+ * typedef xrs_handle_t - opaque XRT Resource Solver handle
  *
- * A handle of xrs_handl is obtained by calling xrs_init.
+ * A handle of xrs is obtained by calling xrs_init.
  * XRS clients pass this handle to functions exported by XRS to
  * refer to the initialized XRS module.
- *
- * Note: only one handle can be created.
  */
 typedef void * xrs_handle_t;
 
@@ -212,6 +210,8 @@ extern "C" {
  * @func:	Helper functions registered for resource solver to use
  *
  * Return:	A resource solver handle
+ *
+ * Note: We should only create one handle per AIE array to be managed.
  */
 xrs_handle_t xrs_init(uint32_t ncol, enum xrs_mode mode, struct xrs_helper_func *func);
 
@@ -223,7 +223,7 @@ xrs_handle_t xrs_init(uint32_t ncol, enum xrs_mode mode, struct xrs_helper_func 
 int xrs_fini(xrs_handle_t hdl);
 
 /**
- * xrs_allocate_resource() - Requst to allocate resources for a given context
+ * xrs_allocate_resource() - Request to allocate resources for a given context
  *                           and a partition metadata. (See struct part_meta)
  *
  * @hdl:	Resource solver handle obtained from xrs_init()
@@ -254,7 +254,7 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 		void (**action_cb)(xrs_handle_t hdl, struct xrs_actions *acts));
 
 /**
- * xrs_unload_xclbin() - Requst to free resources for a given context.
+ * xrs_release_resource() - Request to free resources for a given context.
  *
  * @hdl:	Resource solver handle obtained from xrs_init()
  * @pid:	The Process ID to identify the requesting context
