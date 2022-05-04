@@ -1,0 +1,4 @@
+[submodule "DPU"]
+	path = DPU
+	url = https://gitenterprise.xilinx.com/vai-aie-sync/xaie_dma.git
+	branch = dev
