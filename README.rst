@@ -8,7 +8,7 @@ driver components.
 Clone Code
 -----------
 
-``git clone --recursive git@github.amd.com:ATG-Xilinx/XRT-IPU.git -b atg-dev``
+``git clone --recursive https://gitenterprise.xilinx.com/XRT/XRT-IPU.git -b master``
 
 Build XRT-IPU on Windows
 ------------------------
