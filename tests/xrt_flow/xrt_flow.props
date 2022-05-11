@@ -7,12 +7,16 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
     <XRT_FLOW_TEST_CASE>conv</XRT_FLOW_TEST_CASE>
+    <DPU_TARGET>4x5</DPU_TARGET>
   </PropertyGroup>
   <PropertyGroup />
   <ItemDefinitionGroup />
   <ItemGroup>
     <BuildMacro Include="XRT_FLOW_TEST_CASE">
       <Value>$(XRT_FLOW_TEST_CASE)</Value>
+    </BuildMacro>
+    <BuildMacro Include="DPU_TARGET">
+      <Value>$(DPU_TARGET)</Value>
     </BuildMacro>
   </ItemGroup>
 </Project>
