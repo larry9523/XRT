@@ -554,6 +554,22 @@ void TEST_IpuLoadXclBin(IpuHenvRing *pMngBuff)
     TEST_FN_RESULT(passed);
 }
 
+void TEST_IpuUnregisterXclBin(IpuHenvRing *pMngBuff)
+{
+    TEST_FN_HEADER;
+    unregister_xcl_bin_req_t unreg_xcl_bin_req = { 0 };
+    unregister_xcl_bin_resp_t unreg_xcl_bin_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    unreg_xcl_bin_req.xcl_bin_uuid[0].uuid_low = 0x1234567800ABCDEF;
+    unreg_xcl_bin_req.xcl_bin_uuid[0].uuid_high = 0xFEDCBA9876543210;
+
+    bool passed = RINGB_Command(unreg_xcl_bin_req, &unreg_xcl_bin_resp, pMngBuff, 0xFA5EFADE, IPU_MSG_UNREGISTER_XCL_BIN
+                                , "IPU_MSG_UNREGISTER_XCL_BIN", __FUNCTION__);
+
+    TEST_FN_RESULT(passed);
+}
+
+
 void TEST_IpuExecuteBuffer(IpuHenvRing *pAppCtxBuff)
 {
     static uint64_t ba = 0xABCDFEADADFE;
@@ -889,6 +905,11 @@ void FsdlMain()
     lpassed = RINGB_Command(sreq, &sresp, nullptr, 0xFA5EFADE, IPU_MSG_SYNC_BO,
 		"IPU_MSG_MAP_SYNC_BO", __FUNCTION__);
 
+    unregister_xcl_bin_req_t ureq;
+    unregister_xcl_bin_resp_t uresp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+    lpassed = RINGB_Command(ureq, &uresp, nullptr, 0xFA5EFADE, IPU_MSG_UNREGISTER_XCL_BIN,
+                "IPU_MSG_UNREGISTER_XCL_BIN", __FUNCTION__);
+
     printf("lpassed is %d\n", lpassed);
     // End of the instantiation
 
@@ -913,6 +934,7 @@ void FsdlMain()
         TEST_IpuMapHostBuffer(pMngBuff, context_id);
 
         TEST_IpuDeleteContext(pMngBuff, context_id);
+        TEST_IpuUnregisterXclBin(pMngBuff);
         TEST_IpuGetTelemetry(pMngBuff);
         TEST_IpuResetPartition(pMngBuff);
 

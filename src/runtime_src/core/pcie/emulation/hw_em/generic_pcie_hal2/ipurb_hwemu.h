@@ -40,6 +40,7 @@
 
 #include <boost/pool/object_pool.hpp>
 #include <cstdint>
+#include <list>
 
 #include "ipuhenvring.h"
 #include "core/include/xrt/xrt_bo.h"
@@ -112,6 +113,7 @@ namespace hwemu {
 
       int         exec_buf(xclemulation::drm_xocl_bo *bo);
       int         load_xclbin(xrt::bo& xbo, char *buf, size_t size, const uuid_t uuid);
+      int         unload_xclbin(const uuid_t uuid);
       int         open_context(const uuid_t uuid);
       int         close_context(const uuid_t uuid);
       int         sync_bo(uint64_t dest, uint64_t src, size_t size, size_t seek);
@@ -144,6 +146,7 @@ namespace hwemu {
       ~xocl_ipurb();
 
       int    load_xclbin(char *buf, size_t size, const uuid_t uuid);
+      int    unload_xclbin(const uuid_t uuid);
       int    open_context(const uuid_t uuid, unsigned int ip_index);
       int    close_context(const uuid_t uuid, unsigned int ip_index);
       int    add_exec_buffer(xclemulation::drm_xocl_bo *buf);
@@ -162,6 +165,7 @@ namespace hwemu {
       int    nctx;
       pid_t  pid;
       xrs_handle_t xrs_hdl;
+      std::list<std::pair<uuid_t, xrt::bo>> xclbin_list;
   };
 }  // namespace hwemu
 

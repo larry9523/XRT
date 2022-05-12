@@ -204,7 +204,28 @@ namespace hwemu {
 
     bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_REGISTER_XCL_BIN,
 		"IPU_MSG_REGISTER_XCL_BIN", __FUNCTION__);
-    printf("LOAD_XCLBIN passed is %d\n", passed);
+    printf("REGISTER_XCLBIN passed is %d\n", passed);
+    if (!passed)
+      return -ETIME;
+
+    return 0;
+  }
+
+  int ipurb_cmd::unload_xclbin(const uuid_t uuid)
+  {
+    unregister_xcl_bin_req_t req = { 0 };
+    unregister_xcl_bin_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(uuid));
+    uint64_t uid64 = *uid64p++;
+    req.xcl_bin_uuid[0].uuid_low = uid64;
+    uid64 = *uid64p;
+    req.xcl_bin_uuid[0].uuid_high = uid64;
+
+    bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_UNREGISTER_XCL_BIN,
+                "IPU_MSG_UNREGISTER_XCL_BIN", __FUNCTION__);
+
+    printf("UNREGISTER_XCLBIN passed is %d\n", passed);
     if (!passed)
       return -ETIME;
 
@@ -330,6 +351,11 @@ namespace hwemu {
 
   xocl_ipurb::~xocl_ipurb()
   {
+    for (auto uuid_bo_pair: xclbin_list) {
+        xocl_ipurb::unload_xclbin(uuid_bo_pair.first);
+        xclbin_list.remove(uuid_bo_pair);
+    }
+
     xrs_fini(xrs_hdl);
   }
 
@@ -477,7 +503,35 @@ namespace hwemu {
 
     cmd_pool.destroy(xcmd);
 
+    if (!ret) {
+        std::pair<uuid_t, xrt::bo> p;
+
+        uuid_copy(p.first, uuid);
+        p.second = std::move(xbo);
+
+        xclbin_list.emplace_back(p);
+    }
     return ret;
+  }
+
+  int xocl_ipurb::unload_xclbin(const uuid_t uuid)
+  {
+    if (nctx) {
+      printf("IPURB: opened context, can't unload xclbin\n");
+      return -ENODEV;
+    }
+
+    ipurb_cmd *xcmd = cmd_pool.construct(&queue);
+    if (!xcmd)
+      return 1;
+
+    int rval = 0;
+    if (xcmd->unload_xclbin(uuid))
+      rval = 1;
+
+    cmd_pool.destroy(xcmd);
+
+    return rval;
   }
 
   int xocl_ipurb::open_context(const uuid_t uuid, unsigned int ip_index)

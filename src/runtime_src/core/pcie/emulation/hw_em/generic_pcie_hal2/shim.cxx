@@ -1672,16 +1672,17 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
           delete m_scheduler;
           m_scheduler = nullptr;
       }
-      if(m_ipurb)
-      {
-          delete m_ipurb;
-          m_ipurb = nullptr;
-      }
       PRINTENDFUNC;
       if (mLogStream.is_open()) {
         mLogStream.close();
       }
       return;
+    } else {
+      if(m_ipurb)
+      {
+          delete m_ipurb;
+          m_ipurb = nullptr;
+      }    	
     }
 
     resetProgram(false);
@@ -3238,9 +3239,9 @@ int HwEmShim::xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex)
     return 0;
 
   int ret = -1;
-  if (xclemulation::config::getInstance()->isIpuRBMode()) {
+  if (xclemulation::config::getInstance()->isIpuRBMode())
     ret = m_ipurb->close_context(xclbinId, ipIndex);
-  } else
+  else
     ret = 0;
 
   PRINTENDFUNC;

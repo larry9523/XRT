@@ -271,7 +271,9 @@ typedef struct unregister_xcl_bin_resp_ {
 } unregister_xcl_bin_resp_t;
 
 typedef struct aie_error_intr_req_ {
-    uint32_t place_holder;
+    uint32_t row:8;
+    uint32_t column:16;
+    uint32_t event:8;
 } aie_error_intr_req_t;
 
 typedef struct aie_error_intr_resp_ {
