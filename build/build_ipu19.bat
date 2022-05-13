@@ -19,7 +19,9 @@ IF "%1" == "-help" (
 )
 
 IF "%1" == "-debug" (
-  IF "%2" == "" (
+  SET USE_DEFAULT_DEPS=false
+  IF "%2" == "" (SET USE_DEFAULT_DEPS=true)
+  IF %USE_DEFAULT_DEPS% == true (
     SET BOOST_DEBUG=c:/Xilinx/XRT/ext
     SET KHRONOS_DEBUG=c:/Xilinx/XRT/ext
   ) ELSE (
@@ -32,7 +34,10 @@ IF "%1" == "-debug" (
 )
 
 IF "%1" == "-release" (
-  IF "%2" == "" (
+  SET USE_DEFAULT_DEPS=false
+  IF "%2" == "" (SET USE_DEFAULT_DEPS=true)
+  IF "%2" == "-package" (SET USE_DEFAULT_DEPS=true)
+  IF %USE_DEFAULT_DEPS% == true (
     SET BOOST=c:/Xilinx/XRT/ext
     SET KHRONOS=c:/Xilinx/XRT/ext
   ) ELSE (
