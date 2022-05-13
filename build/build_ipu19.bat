@@ -20,13 +20,13 @@ IF "%1" == "-help" (
 
 IF "%1" == "-debug" (
   SET USE_DEFAULT_DEPS=false
-  IF "%2" == "" (SET USE_DEFAULT_DEPS=true)
+  IF "%2" == "" ( SET USE_DEFAULT_DEPS=true )
   IF %USE_DEFAULT_DEPS% == true (
     SET BOOST_DEBUG=c:/Xilinx/XRT/ext
     SET KHRONOS_DEBUG=c:/Xilinx/XRT/ext
   ) ELSE (
       SET BOOST_DEBUG=%2
-	  SET KHRONOS_DEBUG=%2
+      SET KHRONOS_DEBUG=%2
   )
   echo BOOST_DEBUG = %BOOST_DEBUG%
   echo KHRONOS_DEBUG = %KHRONOS_DEBUG%
@@ -35,14 +35,14 @@ IF "%1" == "-debug" (
 
 IF "%1" == "-release" (
   SET USE_DEFAULT_DEPS=false
-  IF "%2" == "" (SET USE_DEFAULT_DEPS=true)
-  IF "%2" == "-package" (SET USE_DEFAULT_DEPS=true)
+  IF "%2" == "" ( SET USE_DEFAULT_DEPS=true )
+  IF "%2" == "-package" ( SET USE_DEFAULT_DEPS=true )
   IF %USE_DEFAULT_DEPS% == true (
     SET BOOST=c:/Xilinx/XRT/ext
     SET KHRONOS=c:/Xilinx/XRT/ext
   ) ELSE (
       SET BOOST=%2
-	  SET KHRONOS=%2
+      SET KHRONOS=%2
   )
   echo BOOST = %BOOST%
   echo KHRONOS = %KHRONOS%
@@ -56,7 +56,7 @@ IF "%1" == "-all" (
     SET KHRONOS_DEBUG=c:/Xilinx/XRT/ext
   ) ELSE (
       SET BOOST_DEBUG=%2
-	  SET KHRONOS_DEBUG=%2
+      SET KHRONOS_DEBUG=%2
   )
   CALL:DebugBuild
   IF errorlevel 1 (exit /B %errorlevel%)
@@ -66,7 +66,7 @@ IF "%1" == "-all" (
     SET KHRONOS=c:/Xilinx/XRT/ext
   ) ELSE (
       SET BOOST=%2
-	  SET KHRONOS=%2
+      SET KHRONOS=%2
   )
   CALL:ReleaseBuild
   IF errorlevel 1 (exit /B %errorlevel%)
