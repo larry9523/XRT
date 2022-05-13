@@ -28,6 +28,7 @@
 #include "xcl_api_macros.h"
 #include "xcl_macros.h"
 #include "xclbin.h"
+#include "xrs.h"
 #include "core/common/device.h"
 #include "core/common/scheduler.h"
 #include "core/common/message.h"
@@ -364,6 +365,8 @@ using addr_type = uint64_t;
       MBScheduler* mMBSch;
       hwemu::xocl_scheduler* m_scheduler;
       hwemu::xocl_ipurb* m_ipurb;
+      xrt_core::xclbin::aie_partition_obj aie_partition;
+      xrs_handle_t xrs_hdl;
 
       // Information extracted from platform linker (for profile/debug)
       bool mIsDebugIpLayoutRead = false;

@@ -46,7 +46,6 @@
 #include "core/include/xrt/xrt_bo.h"
 #include "em_defines.h"
 #include "ert.h"
-#include "xrs.h"
 
 namespace xclhwemhal2 {
   class HwEmShim;
@@ -114,7 +113,7 @@ namespace hwemu {
       int         exec_buf(xclemulation::drm_xocl_bo *bo);
       int         load_xclbin(xrt::bo& xbo, char *buf, size_t size, const uuid_t uuid);
       int         unload_xclbin(const uuid_t uuid);
-      int         open_context(const uuid_t uuid);
+      int         open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol);
       int         close_context(const uuid_t uuid);
       int         sync_bo(uint64_t dest, uint64_t src, size_t size, size_t seek);
 
@@ -147,7 +146,7 @@ namespace hwemu {
 
       int    load_xclbin(char *buf, size_t size, const uuid_t uuid);
       int    unload_xclbin(const uuid_t uuid);
-      int    open_context(const uuid_t uuid, unsigned int ip_index);
+      int    open_context(const uuid_t uuid, unsigned int ip_index, uint32_t start_col, uint32_t ncol);
       int    close_context(const uuid_t uuid, unsigned int ip_index);
       int    add_exec_buffer(xclemulation::drm_xocl_bo *buf);
       int    alloc_bo(size_t size);
@@ -164,7 +163,6 @@ namespace hwemu {
     private:
       int    nctx;
       pid_t  pid;
-      xrs_handle_t xrs_hdl;
       std::list<std::pair<uuid_t, xrt::bo>> xclbin_list;
   };
 }  // namespace hwemu

@@ -39,7 +39,6 @@
 #include "ipu_msg.h"
 #include "mgmt_msg.h"
 #include "app_msg.h"
-#include "xrs.h"
 
 #define INVALID_CONTEXT_ID 		(0xFF)
 extern IpuHenvRing *XRT_WaitForERT(uint64_t io_hdl);
@@ -47,22 +46,6 @@ template < typename COMMAND, typename RESPONSE >
 bool RINGB_Command(COMMAND command, RESPONSE  *response, IpuHenvRing *pRing,
                    uint32_t msg_id, ipu_msg_opcode_e opcode, const char *cmdStr,
                    const char *fnStr, bool expectSuccess = true);
-
-static int log_helper(const char *format, ...)
-{
-  va_list ap;
-  va_start(ap, format);
-  int ret = vprintf(format, ap);
-  va_end(ap);
-
-  return ret;
-}
-
-struct xrs_helper_func ipurb_xrs_func = {
-	.xrs_mem_alloc	= malloc,
-	.xrs_mem_free	= free,
-	.xrs_log	= log_helper,
-};
 
 using namespace xclhwemhal2;
 
@@ -232,7 +215,7 @@ namespace hwemu {
     return 0;
   }
 
-  int ipurb_cmd::open_context(const uuid_t uuid)
+  int ipurb_cmd::open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol)
   {
     create_context_req_t req;
     create_context_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
@@ -241,8 +224,8 @@ namespace hwemu {
     memset(&req, 0, sizeof(create_context_req_t));
 
     req.part_info.aie_type = IPU_AIE2;
-    req.part_info.start_column = 0x0;
-    req.part_info.total_columns = 0x5;
+    req.part_info.start_column = start_col;
+    req.part_info.total_columns = ncol;
 
     req.num_xcl_bin_uuids = 1;
 
@@ -345,8 +328,6 @@ namespace hwemu {
     device = dev;
     nctx = 0;
     pid = getpid();
-
-    xrs_hdl = xrs_init(5, XRS_MODE_TEMPORAL_BEST, &ipurb_xrs_func);
   }
 
   xocl_ipurb::~xocl_ipurb()
@@ -355,8 +336,6 @@ namespace hwemu {
         xocl_ipurb::unload_xclbin(uuid_bo_pair.first);
         xclbin_list.remove(uuid_bo_pair);
     }
-
-    xrs_fini(xrs_hdl);
   }
 
   int xocl_ipurb::load_xclbin(char *buf, size_t size, const uuid_t uuid)
@@ -534,7 +513,7 @@ namespace hwemu {
     return rval;
   }
 
-  int xocl_ipurb::open_context(const uuid_t uuid, unsigned int ip_index)
+  int xocl_ipurb::open_context(const uuid_t uuid, unsigned int ip_index, uint32_t start_col, uint32_t ncol)
   {
     if (nctx != 0) {
       printf("IPURB: can not open multiple contexts\n");
@@ -546,7 +525,7 @@ namespace hwemu {
       return 1;
 
     int rval = 0;
-    if (xcmd->open_context(uuid))
+    if (xcmd->open_context(uuid, start_col, ncol))
       rval = 1;
     else
       nctx++;

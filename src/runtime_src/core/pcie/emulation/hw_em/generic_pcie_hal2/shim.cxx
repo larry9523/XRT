@@ -17,6 +17,7 @@
 #include "shim.h"
 #include "system_hwemu.h"
 #include "xclbin.h"
+#include "xrs.h"
 #include "core/common/xclbin_parser.h"
 #include "core/common/AlignedAllocator.h"
 #include "xcl_perfmon_parameters.h"
@@ -44,6 +45,21 @@
         Q2h_sock->sk_write((void*)raw_response_payload.get(),r_len);\
     }
 
+static int log_helper(const char *format, ...)
+{
+  va_list ap;
+  va_start(ap, format);
+  int ret = vprintf(format, ap);
+  va_end(ap);
+
+  return ret;
+}
+
+struct xrs_helper_func hwemu_xrs_func = {
+  .xrs_mem_alloc = malloc,
+  .xrs_mem_free  = free,
+  .xrs_log       = log_helper,
+};
 
 namespace {
 
@@ -401,6 +417,8 @@ namespace xclhwemhal2 {
         m_scheduler = new hwemu::xocl_scheduler(this);
     } else if (xclemulation::config::getInstance()->isIpuRBMode()) {
         m_ipurb = new hwemu::xocl_ipurb(this);
+        aie_partition = xrt_core::xclbin::get_aie_partition(top);
+        xrs_hdl = xrs_init(5, XRS_MODE_TEMPORAL_BEST, &hwemu_xrs_func);
         if (m_ipurb && pdi && pdiSize > 0) {
           returnValue = m_ipurb->load_xclbin(pdi.get(), pdiSize, top->m_header.uuid);
         }
@@ -1680,9 +1698,10 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     } else {
       if(m_ipurb)
       {
-          delete m_ipurb;
-          m_ipurb = nullptr;
-      }    	
+        delete m_ipurb;
+        m_ipurb = nullptr;
+        xrs_fini(xrs_hdl);
+      }
     }
 
     resetProgram(false);
@@ -3215,7 +3234,51 @@ xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared)
 
   int ret = -1;
   if (xclemulation::config::getInstance()->isIpuRBMode()) {
-    ret = m_ipurb->open_context(xclbinId, ipIndex);
+    // Set default partition using all 5 AIE columns
+    // If there is AIE_PARTITION section in XCLBIN, we will call into
+    // Resource Solver to require a partition. Otherwise, we will just
+    // use the whole AIE array by default
+    uint32_t start_col = 0, ncol = 5;
+
+    if (aie_partition.ncol) {
+      struct xrs_actions *act = nullptr;
+      void (*action_cb)(xrs_handle_t hdl, struct xrs_actions *acts) = nullptr;
+
+      uint32_t start_col_arr[aie_partition.start_col_list.size()];
+      std::copy(aie_partition.start_col_list.begin(), aie_partition.start_col_list.end(), start_col_arr);
+
+      struct cdo_parts cp;
+      cp.cdo_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(xclbinId)); // use XCLBIN uuid for now
+      cp.nparts = aie_partition.start_col_list.size();
+      cp.ncols = aie_partition.ncol;
+      cp.start_col_list = start_col_arr;
+
+      struct part_meta pm;
+      pm.xclbin_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(xclbinId));
+      pm.ncdos = 1;
+      pm.cdo = &cp;
+
+      struct alloc_requests req;
+      req.pid = 1; // Use a faked number for now until we support multi process
+      req.pmp = &pm;
+      ret = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+      if (ret) {
+        PRINTENDFUNC;
+        return ret;
+      }
+
+      if (act) {
+        // Use the first action for best effort on spatial and temporal sharing
+        // More actions will be supported when we have more CDO groups
+        start_col = act->actions[0].part.start_col;
+        ncol = act->actions[0].part.ncol;
+      }
+
+      if (action_cb != nullptr)
+        action_cb(xrs_hdl, act);
+    }
+
+    ret = m_ipurb->open_context(xclbinId, ipIndex, start_col, ncol);
   } else
     ret = 0;
 
