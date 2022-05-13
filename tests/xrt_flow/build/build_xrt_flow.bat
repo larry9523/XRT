@@ -94,9 +94,9 @@ set TEST_CASE=resnet_layer_two
 call :BUILD_TEST_CASE
 if %ERRORLEVEL% neq 0 goto FAIL
 
-REM set TEST_CASE=resnet_one_block
-REM call :BUILD_TEST_CASE
-REM if %ERRORLEVEL% neq 0 goto FAIL
+set TEST_CASE=resnet_one_block
+call :BUILD_TEST_CASE
+if %ERRORLEVEL% neq 0 goto FAIL
 
 set TEST_CASE=resnet50_1x4
 call :BUILD_TEST_CASE

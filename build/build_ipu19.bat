@@ -1,7 +1,8 @@
 @ECHO OFF
 
-SET BOOST=C:/Xilinx/XRT/ext
-SET KHRONOS=C:/Xilinx/XRT/ext
+IF "%1"=="" (
+  GOTO Help
+)
 
 IF DEFINED MSVC_PARALLEL_JOBS ( SET LOCAL_MSVC_PARALLEL_JOBS=%MSVC_PARALLEL_JOBS%) ELSE ( SET LOCAL_MSVC_PARALLEL_JOBS=3 )
 
@@ -18,33 +19,54 @@ IF "%1" == "-help" (
 )
 
 IF "%1" == "-debug" (
+  IF "%2" == "" (
+    SET BOOST_DEBUG=c:/Xilinx/XRT/ext
+    SET KHRONOS_DEBUG=c:/Xilinx/XRT/ext
+  ) ELSE (
+      SET BOOST_DEBUG=%2
+	  SET KHRONOS_DEBUG=%2
+  )
+  echo BOOST_DEBUG = %BOOST_DEBUG%
+  echo KHRONOS_DEBUG = %KHRONOS_DEBUG%
   GOTO DebugBuild
 )
 
 IF "%1" == "-release" (
+  IF "%2" == "" (
+    SET BOOST=c:/Xilinx/XRT/ext
+    SET KHRONOS=c:/Xilinx/XRT/ext
+  ) ELSE (
+      SET BOOST=%2
+	  SET KHRONOS=%2
+  )
+  echo BOOST = %BOOST%
+  echo KHRONOS = %KHRONOS%
   GOTO ReleaseBuild
 )
 
 
 IF "%1" == "-all" (
+  IF "%2" == "" (
+    SET BOOST_DEBUG=c:/Xilinx/XRT/ext
+    SET KHRONOS_DEBUG=c:/Xilinx/XRT/ext
+  ) ELSE (
+      SET BOOST_DEBUG=%2
+	  SET KHRONOS_DEBUG=%2
+  )
   CALL:DebugBuild
   IF errorlevel 1 (exit /B %errorlevel%)
 
+  IF "%2" == "" (
+    SET BOOST=c:/Xilinx/XRT/ext
+    SET KHRONOS=c:/Xilinx/XRT/ext
+  ) ELSE (
+      SET BOOST=%2
+	  SET KHRONOS=%2
+  )
   CALL:ReleaseBuild
   IF errorlevel 1 (exit /B %errorlevel%)
 
   goto:EOF
-)
-
-
-IF "%1" == "" (
-  CALL:DebugBuild
-  IF errorlevel 1 (exit /B %errorlevel%)
-
-  CALL:ReleaseBuild
-  IF errorlevel 1 (exit /B %errorlevel%)
-
-  GOTO:EOF
 )
 
 ECHO Unknown option: %1
@@ -56,14 +78,15 @@ REM --------------------------------------------------------------------------
 ECHO.
 ECHO Usage: build.bat [options]
 ECHO.
-ECHO [-help]                    - List this help
-ECHO [-clean^|clean]             - Remove build directories
-ECHO [-debug]                   - Creates a debug build
-ECHO [-release]                 - Creates a release build
+ECHO [-help]                        - List this help
+ECHO [-clean^|clean]                - Remove build directories
+ECHO [-debug] [boost-install-dir]   - Creates a debug build
+ECHO [-release] [boost-install-dir] - Creates a release build
 ECHO.
 ECHO Additional options to be used afer with the '-release' option:
 ECHO   [-package]               - Packages the release build to a MSI archive.
 ECHO                              Note: Depends on the WIX application.
+ECHO example: build_ipu.bat -release C:\Xilinx\XRT\ext
 
 GOTO:EOF
 

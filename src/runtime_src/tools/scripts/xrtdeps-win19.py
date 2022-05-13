@@ -44,14 +44,8 @@ import urllib.request
 
 
 # -- Global Variables --------------------------------------------------------
-COMPILER = "Visual Studio 16 2019"
-
-if platform.system() == 'Windows':
-  XRT_LIBRARY_INSTALL_DIR = "c:/Xilinx/XRT/ext"
-  XRT_LIBRARY_BUILD_DIR = "c:/Xilinx/XRT/ext/build/"
-else:
-  XRT_LIBRARY_INSTALL_DIR = "/mnt/c/Xilinx/XRT/ext"
-  XRT_LIBRARY_BUILD_DIR = "/mnt/c/Xilinx/XRT/ext/build"
+XRT_LIBRARY_INSTALL_DIR = ""
+XRT_LIBRARY_BUILD_DIR = ""
 
 # -- main() -------------------------------------------------------------------
 #
@@ -69,8 +63,16 @@ def main():
   parser.add_argument('--gtest', action="store_true", help='install gtest libraries')
   parser.add_argument('--validate_all_requirements', action="store_true", help='validate all XRT dependent libraries and tools are installed')
   parser.add_argument('--verbose', action="store_true", help='enables script verbosity')
+  parser.add_argument('--install_dir', type = str, required=True, help='install directory')
+  parser.add_argument('--build_dir', type = str, required=True, help='build directory')
   args = parser.parse_args()
 
+  global XRT_LIBRARY_INSTALL_DIR
+  XRT_LIBRARY_INSTALL_DIR = args.install_dir;
+  global XRT_LIBRARY_BUILD_DIR
+  XRT_LIBRARY_BUILD_DIR = args.build_dir;
+  print("XRT_LIBRARY_INSTALL_DIR = ", XRT_LIBRARY_INSTALL_DIR);
+  print("XRT_LIBRARY_BUILD_DIR = ", XRT_LIBRARY_BUILD_DIR);
 
   # -- Libraries to get, build, and install --
   libraries = []

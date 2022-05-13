@@ -30,13 +30,13 @@ Please check if you have registry access permission by regedit command.
 
 2. **Run XRT-IPU\\src\\runtime_src\\tools\\scripts\\xrtdeps-win19.py (Requires Python3)**
 
-* ``python xrtdeps-win19.py --boost minimal --icd --opencl``
+* ``python xrtdeps-win19.py --boost minimal --icd --opencl --install_dir <XRT-IPU root>\ext --build_dir <XRT-IPU root>\ext_build``
 * This builds and installs dependencies necessary for the XRT-IPU build (e.g. Boost, OpenCL)
 
 3. **Run build batch file in XRT-IPU\\build**
 
 * ``build_ipu19.bat -clean``
-* ``build_ipu19.bat -release C:\Xilinx\XRT\ext``
+* ``build_ipu19.bat -release <XRT-IPU root>\ext``
 * Build generates these files in ``build\WRelease``
    
   * XRT-IPU build artifacts in the ``xilinx\xrt`` folder (also zipped to ``XRT_202210.2.13.0_WindowsServer2019-amd64.zip``)
@@ -81,7 +81,7 @@ Note that it should not be necessary at any point to manually copy, build, or in
 * xrtdeps-win19.py: ``ERROR: Existing build present for the given library to be installed.``
 
 xrtdeps-win19.py has a limitation where it requires a clean build directory before it installs the Boost and OpenCL libraries. 
-It will display a list of directories that it has found within C:\Xilinx\XRT::
+It will display a list of directories that it has found within your --build_dir (this should be ``<XRT-IPU root>\\ext_build``)::
 
     boost-1.75.0 build directory .................... [found]
     Khronos OpenCL headers build directory .......... [not found]
