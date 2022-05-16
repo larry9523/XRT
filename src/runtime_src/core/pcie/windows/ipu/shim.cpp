@@ -520,6 +520,7 @@ done:
     DWORD bytesWritten;
     size_t off = 0;
     size_t ksize = 0;
+    size_t aie_size = 0;
     PXRT_READ_AXLF_ARGS axlf_obj = nullptr;
 
     auto top = reinterpret_cast<const axlf*>(ImageBuffer);
@@ -527,11 +528,16 @@ done:
     auto kernels = xrt_core::xclbin::get_kernels(top);
     /* Calculate size of kernels */
     for (auto& kernel : kernels) {
-        ksize += sizeof(kernel_info) + sizeof(argument_info) * kernel.args.size() -1;
+        ksize += sizeof(kernel_info) + sizeof(argument_info) * (kernel.args.size() -1);
     }
 
+    /* Calculate size of AIE partition information */
+    auto aie_part = xrt_core::xclbin::get_aie_partition(top);
+    aie_size += sizeof(aie_info) + sizeof(size_t) * (aie_part.start_col_list.size() ?
+                                                (aie_part.start_col_list.size() - 1) : 0);
+
     /* create buffer of total size to be sent via ioctl*/
-    std::vector<char> axlf_binary(ksize + sizeof (XRT_READ_AXLF_ARGS));
+    std::vector<char> axlf_binary(aie_size + ksize + sizeof (XRT_READ_AXLF_ARGS));
     axlf_obj = reinterpret_cast<XRT_READ_AXLF_ARGS*>(axlf_binary.data());
 	axlf_obj->ksize = ksize;
 
@@ -568,7 +574,7 @@ done:
      */
 
     for (auto& kernel : kernels) {
-        auto krnl = reinterpret_cast<kernel_info *>(&axlf_obj->kernels[0] + off);
+        auto krnl = reinterpret_cast<kernel_info *>(&axlf_obj->data[0] + off);
 
         if (kernel.name.size() > sizeof(krnl->name))
             return 1;
@@ -596,7 +602,33 @@ done:
             krnl->args[ai].dir    = 1;
             ai++;
         }
-        off += sizeof(kernel_info) + sizeof(argument_info) * kernel.args.size();
+        off += sizeof(kernel_info) + sizeof(argument_info) * (kernel.args.size() - 1);
+    }
+
+    axlf_obj->asize = aie_size;
+    auto ainfo = reinterpret_cast<aie_info*>(&axlf_obj->data[0] + off);
+
+    // Set default partition using all 5 AIE columns
+    // If there is AIE_PARTITION section in XCLBIN, we will call into
+    // Resource Solver to require a partition. Otherwise, we will just
+    // use the whole AIE array by default
+    ainfo->npart = 1;
+    ainfo->ncol = 5;
+    ainfo->start_col_list[0] = 0;
+
+    /* If aie metadata found we use that data */
+    if (aie_part.ncol) {
+
+        ainfo->npart = (uint32_t)aie_part.start_col_list.size();
+        ainfo->ncol = aie_part.ncol;
+        int i = 0;
+        for (auto& start_col : aie_part.start_col_list) {
+
+            ainfo->start_col_list[i] = start_col;
+            i++;
+
+        }
+
     }
 
     /* To make download xclbin and configure KDS/ERT as an atomic operation. */

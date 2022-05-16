@@ -154,6 +154,20 @@ struct kernel_info {
     struct argument_info    args[1];
 };
 
+/**
+ * struct aie_info - AIE partition info
+ *
+ * @ncol: number of columns in this partition
+ * @start_col_list: Array of start column for partition relocation
+ * @name:  partition name
+ */
+struct aie_info {
+    char                    name[64];
+    uint32_t                npart;
+    uint32_t                ncol;
+    uint32_t                start_col_list[1];
+};
+
 struct xrt_kds {
     uint32_t slot_size;
     uint32_t ert : 1;
@@ -167,9 +181,10 @@ struct xrt_kds {
 };
 
 typedef struct _XRT_READ_AXLF_ARGS {
-    struct xrt_kds     kds_cfg;
+    struct xrt_kds      kds_cfg;
     size_t              ksize;
-    CHAR                kernels[1];
+    size_t              asize;
+    CHAR                data[1]; //data section will have both kernel_info and aie_metadata
 } XRT_READ_AXLF_ARGS, * PXRT_READ_AXLF_ARGS;
 
 
