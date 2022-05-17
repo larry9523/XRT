@@ -1,6 +1,6 @@
 @ECHO OFF
 
-REM This assumes that xrtdeps-win19.py was run once so that XRT dependencies are at C:\Xilinx\XRT
+REM This assumes that xrtdeps-win19.py was run once using <XRT-IPU root>\ext as the install folder
 
 REM build_ipu19.bat uses cmake, which requires the Visual Studio Developer Command Prompt
 
@@ -24,4 +24,4 @@ SET VC_VS_SOURCEPATH_STRIP=%VC_VS_SOURCEPATH:~1,-2%
 REM Set up vcvars environment and run build_ipu19.bat
 SET VCVAR_SCRIPTPATH=%VC_VS_SOURCEPATH_STRIP%\..\..\Build\vcvars64.bat
 call "%VCVAR_SCRIPTPATH%"
-call "%XRT_IPU_ROOT%\build\build_ipu19.bat" -%CONFIGURATION% C:\Xilinx\XRT\ext
+call "%XRT_IPU_ROOT%\build\build_ipu19.bat" -%CONFIGURATION% %XRT_IPU_ROOT%\ext
