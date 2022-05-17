@@ -157,6 +157,7 @@ struct kernel_info {
 /**
  * struct aie_info - AIE partition info
  *
+ * @npart: number of partition overlays
  * @ncol: number of columns in this partition
  * @start_col_list: Array of start column for partition relocation
  * @name:  partition name
