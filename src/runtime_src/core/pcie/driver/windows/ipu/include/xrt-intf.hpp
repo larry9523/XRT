@@ -134,8 +134,8 @@ typedef struct _XRT_INFO_BO_RESULT {
  */
 struct argument_info {
     char        name[64];
-    size_t      offset;
-    size_t      size;
+    uint64_t    offset;
+    uint64_t    size;
     uint32_t    dir;
 };
 
@@ -149,8 +149,8 @@ struct argument_info {
  */
 struct kernel_info {
     char                    name[64];
-    size_t                  range;
-    size_t                  anums;
+    uint64_t                range;
+    uint64_t                anums;
     struct argument_info    args[1];
 };
 
@@ -183,8 +183,8 @@ struct xrt_kds {
 
 typedef struct _XRT_READ_AXLF_ARGS {
     struct xrt_kds      kds_cfg;
-    size_t              ksize;
-    size_t              asize;
+    uint64_t            ksize;
+    uint64_t            asize;
     CHAR                data[1]; //data section will have both kernel_info and aie_metadata
 } XRT_READ_AXLF_ARGS, * PXRT_READ_AXLF_ARGS;
 
