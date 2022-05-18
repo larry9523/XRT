@@ -519,8 +519,8 @@ done:
     DWORD error = 0;
     DWORD bytesWritten;
     size_t off = 0;
-    size_t ksize = 0;
-    size_t aie_size = 0;
+    uint64_t ksize = 0;
+    uint64_t aie_size = 0;
     PXRT_READ_AXLF_ARGS axlf_obj = nullptr;
 
     auto top = reinterpret_cast<const axlf*>(ImageBuffer);
@@ -533,7 +533,7 @@ done:
 
     /* Calculate size of AIE partition information */
     auto aie_part = xrt_core::xclbin::get_aie_partition(top);
-    aie_size += sizeof(aie_info) + sizeof(size_t) * (aie_part.start_col_list.size() ?
+    aie_size += sizeof(aie_info) + sizeof(uint64_t) * (aie_part.start_col_list.size() ?
                                                 (aie_part.start_col_list.size() - 1) : 0);
 
     /* create buffer of total size to be sent via ioctl*/
