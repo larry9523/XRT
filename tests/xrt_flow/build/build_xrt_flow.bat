@@ -14,97 +14,15 @@ if "%1"=="" (
 set XRT_FLOW_ROOT=%~dp0..
 set EXE_PATH=%XRT_FLOW_ROOT%\\x64\\%CONFIGURATION%
 
-REM Compile all the 4x5 DPU test cases
-REM See DPU\host_code\xrt_host_oo\4x5
-set DPU_TARGET=4x5
-
-set TEST_CASE=conv
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_tct
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_tct2
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=multilayer
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=pool
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet50
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
 REM Compile all the 1x4 DPU test cases
 REM See DPU\host_code\xrt_host_oo\1x4
 set DPU_TARGET=1x4
 
-set TEST_CASE=conv_case_1
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_2
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_3
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_4
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_5
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw_case_0
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw_case_1
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw_case_2
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=pool_case_0
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=pool_case_1
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet_layer_two
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet_one_block
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet50_1x4
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=test_one
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
+for /D %%D in (%XRT_FLOW_ROOT%\..\..\DPU\host_code\xrt_host_oo\%DPU_TARGET%\*) do (
+    set TEST_CASE=%%~nxD
+    call :BUILD_TEST_CASE
+    if %ERRORLEVEL% neq 0 goto FAIL
+)
 
 exit /b 0
 
