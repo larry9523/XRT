@@ -4,17 +4,38 @@
 *
 ******************************************************************************/
 
+/* Copyright (C) 2021 Xilinx, Inc. All rights reserved. */
+
 #ifndef APP_MSG_H_
 #define APP_MSG_H_
 
 #include "ipu_msg.h"
-
+#include "ipu_plat.h"
 #pragma pack(push, 1)
 
+typedef struct cu_config_ {
+    uint32_t cu_idx : 24;
+    uint32_t cu_functional : 8;
+    uint32_t reserved;
+} cu_config_t;
+
+typedef struct scheduler_config_buffer_req_ {
+    uint32_t num_cus;
+    cu_config_t configs[IPU_KERNEL_MAX_NUM];
+} scheduler_config_buffer_req_t;
+
+typedef struct scheduler_config_buffer_resp_ {
+    ipu_status_e status;
+} scheduler_config_buffer_resp_t;
+
 typedef struct execute_buffer_req_ {
-    // uint64_t buffer_address;
-    // uint64_t buffer_size;
-    uint32_t data[20];
+    union {
+        struct {
+            uint32_t cu_idx;
+            uint32_t payload[1];
+        };
+        uint32_t data[20];
+    };
 } execute_buffer_req_t;
 
 typedef struct execute_buffer_resp_ {
@@ -35,12 +56,12 @@ typedef struct sync_bo_resp_ {
 } sync_bo_resp_t;
 
 typedef struct dpu_self_test_req_ {
-	    uint32_t cu_index;
-	        uint32_t data[3];
+    uint32_t cu_index;
+    uint32_t data[3];
 } dpu_self_test_req_t;
 
 typedef struct dpu_self_test_resp_ {
-	    ipu_status_e status;
+    ipu_status_e status;
 } dpu_self_test_resp_t;
 
 #pragma pack(pop)

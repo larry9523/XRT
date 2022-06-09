@@ -85,6 +85,13 @@ typedef struct _XRT_CTX_ARGS {
     ULONG              SlotIdx;     //IN: Slot index
 } XRT_CTX_ARGS, * PXRT_CTX_ARGS;
 
+typedef struct _XRT_HW_CTX_ARGS {
+    XRT_CTX_OPERATION  Operation;   // IN: Alloc or free context
+    GUID               XclBinUuid;  // IN: XCLBIN to acquire a context on
+    ULONG              SlotIdx;     // IN: Slot index
+    ULONG              QoS;         // IN: Qos Value (TBD)
+} XRT_HW_CTX_ARGS, * PXRT_HW_CTX_ARGS;
+
 //
 typedef struct _XRT_CREATE_BO_ARGS {
     ULONGLONG               Size;           // IN: Size in bytes of Buffer
@@ -213,13 +220,21 @@ typedef struct _XRT_STAT_CLASS_ARGS {
 
 } XRT_STAT_CLASS_ARGS, * PXRT_STAT_CLASS_ARGS;
 
+
+//
+// XrtKdsIoctlHwCtx
+//
+typedef struct _XRT_SLOT_INFORMATION {
+    ULONG        SlotIdx;
+} XRT_SLOT_INFORMATION, * PXRT_SLOT_INFORMATION;
+
 //
 // XrtStatXclbinSlots
 //
-typedef struct _XRT_SLOT_INFORMATION {
+typedef struct _XRT_SLOT_COUNT {
     ULONG     CuCount;
     ULONG     SlotCount;
-} XRT_SLOT_INFORMATION, * PXRT_SLOT_INFORMATION;
+} XRT_SLOT_COUNT, * PXRT_SLOT_COUNT;
 
 //
 // XoclStatKdsCU

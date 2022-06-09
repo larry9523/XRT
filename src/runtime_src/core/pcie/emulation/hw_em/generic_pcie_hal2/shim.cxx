@@ -1,38 +1,31 @@
-/**
- * Copyright (C) 2016-2022 Xilinx, Inc
- *
- * Licensed under the Apache License, Version 2.0 (the "License"). You may
- * not use this file except in compliance with the License. A copy of the
- * License is located at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2016-2022 Xilinx, Inc. All rights reserved.
+// Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
 #include "shim.h"
 #include "system_hwemu.h"
-#include "xclbin.h"
-#include "xrs.h"
-#include "core/common/xclbin_parser.h"
-#include "core/common/AlignedAllocator.h"
 #include "xcl_perfmon_parameters.h"
-#include <fstream>
-#include <boost/property_tree/xml_parser.hpp>
+#include "plugin/xdp/device_offload.h"
+
+#include "core/include/xclbin.h"
+
+#include "core/common/AlignedAllocator.h"
+#include "core/common/xclbin_parser.h"
+#include "core/common/api/hw_context_int.h"
+#include "core/common/api/xclbin_int.h"
+
 #include <unistd.h>
+
+#include <boost/property_tree/xml_parser.hpp>
 #include <array>
 #include <cctype>
 #include <cerrno>
 #include <cstring>
+#include <fstream>
 #include <mutex>
 #include <set>
 #include <vector>
 
-#include "plugin/xdp/device_offload.h"
+
 
 #define SEND_RESP2QDMA() \
     { \
@@ -61,20 +54,10 @@ struct xrs_helper_func hwemu_xrs_func = {
   .xrs_log       = log_helper,
 };
 
-namespace {
 
-inline bool
-file_exists(const std::string& fnm)
-{
-  struct stat statBuf;
-  return stat(fnm.c_str(), &statBuf) == 0;
-}
-
-}
 
 namespace xclhwemhal2 {
     //Thread for which pooling for transaction from SIM_QDMA
-    void hostMemAccessThread(xclhwemhal2::HwEmShim* inst);
 
     /**
       * helper class for transactions from SIM_QDMA to XRT
@@ -84,9 +67,9 @@ namespace xclhwemhal2 {
         private:
         std::unique_ptr<call_packet_info> header;
         std::unique_ptr<response_packet_info> response_header;
-	    size_t  i_len;
-	    size_t  ri_len;
-        unix_socket* Q2h_sock;
+        size_t  i_len;
+        size_t  ri_len;
+        std::unique_ptr<unix_socket> Q2h_sock;
         xclhwemhal2::HwEmShim* inst;
 
         public:
@@ -117,7 +100,6 @@ namespace xclhwemhal2 {
   const unsigned HwEmShim::REG_BUFF_SIZE = 0x4;
   const unsigned HwEmShim::M2M_KERNEL_ARGS_SIZE = 36;
 
-  void messagesThread(xclhwemhal2::HwEmShim* inst);
 
   // Maintain a list of all currently open device handles.
   //
@@ -240,7 +222,7 @@ namespace xclhwemhal2 {
               logMessage(line);
               parsedMsgs.push_back(line);
               if (!matchString.compare("Exiting xsim") || !matchString.compare("FATAL_ERROR"))
-                 std::cout << "SIMULATION EXITED" << std::endl; 
+                 std::cout << "SIMULATION EXITED" << std::endl;
             }
           }
         }
@@ -317,6 +299,85 @@ namespace xclhwemhal2 {
       }
     }
     os.flags( f );
+  }
+
+  // If error happens, return negative POSIX error.
+  // Otherwise, return the context id allocated by IPU.
+  int HwEmShim::ipu_create_hw_context(const uuid_t xclbinId)
+  {
+    if (!xclemulation::config::getInstance()->isIpuRBMode())
+      return -ENOTSUP;
+
+    // Set default partition using all 5 AIE columns
+    // If there is AIE_PARTITION section in XCLBIN, we will call into
+    // Resource Solver to require a partition. Otherwise, we will just
+    // use the whole AIE array by default
+    uint32_t start_col = 0, ncol = 5;
+
+    int ret, appid;
+    if (aie_partition.ncol) {
+      struct xrs_actions *act = nullptr;
+      void (*action_cb)(xrs_handle_t hdl, struct xrs_actions *acts) = nullptr;
+
+      uint32_t start_col_arr[aie_partition.start_col_list.size()];
+      std::copy(aie_partition.start_col_list.begin(), aie_partition.start_col_list.end(), start_col_arr);
+
+      struct cdo_parts cp;
+      cp.cdo_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(xclbinId)); // use XCLBIN uuid for now
+      cp.nparts = aie_partition.start_col_list.size();
+      cp.ncols = aie_partition.ncol;
+      cp.start_col_list = start_col_arr;
+
+      struct part_meta pm;
+      pm.xclbin_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(xclbinId));
+      pm.ncdos = 1;
+      pm.cdo = &cp;
+
+      struct alloc_requests req;
+      req.rid = 1; // We only support 1 hw_context for now so just use 1
+      req.pmp = &pm;
+      ret = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
+      if (ret)
+        return ret;
+
+      if (act) {
+        // Use the first action for best effort on spatial and temporal sharing
+        // More actions will be supported when we have more CDO groups
+        start_col = act->actions[0].part.start_col;
+        ncol = act->actions[0].part.ncol;
+      }
+
+      if (action_cb != nullptr)
+        action_cb(xrs_hdl, act);
+    }
+
+    ret = m_ipurb->open_context(xclbinId, start_col, ncol);
+
+    if (ret<0)
+      return ret;
+
+    appid = ret;
+    CuConfig cfg[mCUNums];
+
+    for (uint32_t i=0;i<mCUNums;++i) {
+      cfg[i].cu_idx = i;
+      cfg[i].cu_functional = mCUFunctionalMap[i];
+    }
+    ret = m_ipurb->config(mCUNums, cfg);
+    if (ret<0) {
+      // Close context if configuration fails
+      m_ipurb->close_context(0);
+      return ret;
+    } else
+      return appid;
+  }
+
+  int HwEmShim::ipu_destroy_hw_context(uint32_t ctxhdl)
+  {
+    if (!xclemulation::config::getInstance()->isIpuRBMode())
+      return -ENOTSUP;
+
+    return (m_ipurb->close_context(ctxhdl));
   }
 
   bool HwEmShim::isUltraScale() const
@@ -597,6 +658,8 @@ namespace xclhwemhal2 {
     std::string instance_name = "";
     //CR-1122692:'auto' is treated as 32 bit int.But 'uint64_t' is needed
     uint64_t base_address = 0;
+    mCUNums = 0;
+
     for (const auto& kernel : xclbin_object.get_kernels())
     {
       // get properties of each kernel object
@@ -621,6 +684,10 @@ namespace xclhwemhal2 {
         }
         //fetch instance name
         instance_name = cu.get_name();
+
+	if (props.type == xrt_core::xclbin::kernel_properties::kernel_type::dpu)
+          mCUFunctionalMap[mCUNums++] = static_cast<uint32_t>(props.functional);
+
         if (xclemulation::config::getInstance()->isMemLogsEnabled())
         {
           //trim instance_name to get actual instance name
@@ -639,16 +706,6 @@ namespace xclhwemhal2 {
 
     //CR-1116870 Changes End
 
-    set_simulator_started(true);
-
-    //Thread to fetch messages from Device to display on host
-    if(mMessengerThreadStarted == false) {
-      mMessengerThread = std::thread(xclhwemhal2::messagesThread,this);
-      mMessengerThreadStarted = true;
-    }
-
-    if (mLogStream.is_open())
-       mLogStream << __func__ << " mMessengerThreadStarted " << std::endl;
 
     bool simDontRun = xclemulation::config::getInstance()->isDontRun();
     std::string launcherArgs = xclemulation::config::getInstance()->getLauncherArgs();
@@ -862,7 +919,7 @@ namespace xclhwemhal2 {
     }
 
     if(mHostMemAccessThreadStarted == false) {
-  	  mHostMemAccessThread = std::thread(xclhwemhal2::hostMemAccessThread,this);
+      mHostMemAccessThread = std::thread([this]() { hostMemAccessThread(); } );
     }
 
     if (deviceDirectory.empty() == false)
@@ -974,6 +1031,13 @@ namespace xclhwemhal2 {
             std::cout << "ERROR: [HW-EMU] Unable to find either PMU/PMC args which are required to launch the emulation." << std::endl;
           }
 
+          // This is temporary solution to enable the support for V70 platform. Will remove this once we have the device based DTB solution.
+          // We have separate DTB for the V70 platform (sv60 device).
+          if (fpgaDeviceName.find("xcvc2802:") != std::string::npos
+            && fs::exists(sim_path + "/emulation_data/board-versal-xcvc2802-ps-cosim-vitis-virt.dtb") ){
+            launcherArgs += " -qemu-dtb " + sim_path + "/emulation_data/board-versal-xcvc2802-ps-cosim-vitis-virt.dtb";
+          }
+
           if (is_enable_debug) {
             launcherArgs += " -enable-debug ";
           }
@@ -1004,7 +1068,8 @@ namespace xclhwemhal2 {
         if (!launcherArgs.empty())
           simMode = launcherArgs.c_str();
 
-        if (!file_exists(sim_file))
+        //if (!xclemulation::file_exists(sim_file))
+        if (!boost::filesystem::exists(sim_file))
           sim_file = "simulate.sh";
 
         int r = execl(sim_file.c_str(), sim_file.c_str(), simMode, NULL);
@@ -1023,7 +1088,17 @@ namespace xclhwemhal2 {
       mEnvironmentNameValueMap["enable_pr"] = "false";
     }
 
-    sock = new unix_socket;
+    sock = std::make_shared<unix_socket>();
+    set_simulator_started(true);
+    //Thread to fetch messages from Device to display on host
+    if (mMessengerThreadStarted == false) {
+      std::cout<<"\n messages Thread is created\n";
+      mMessengerThread = std::thread([this]() { messagesThread(); } );
+      mMessengerThreadStarted = true;
+    }
+
+    if (mLogStream.is_open())
+      mLogStream << __func__ << " mMessengerThreadStarted " << std::endl;
 
     if (mLogStream.is_open())
       mLogStream << __func__ << " Created the Unix socket." << std::endl;
@@ -1826,17 +1901,25 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     }
 
     xclGetDebugMessages(true);
-    mPrintMessagesLock.lock();
-    fetchAndPrintMessages();
-    simulator_started = false;
-    mPrintMessagesLock.unlock();
+    try {
+      std::lock_guard<std::mutex> guard(mPrintMessagesLock);
+      fetchAndPrintMessages();
+      simulator_started = false;
+    }
+    catch (std::exception& ex) {
+      if (mLogStream.is_open())
+        mLogStream << __func__ << ", unable to get lock:: " <<ex.what()<< std::endl;
+
+      std::cout<<"\n unable to get lock::"<<ex.what();
+    }
+
     std::string socketName = sock->get_name();
     if(socketName.empty() == false)// device is active if socketName is non-empty
     {
 #ifndef _WINDOWS
       xclClose_RPC_CALL(xclClose,this);
 #endif
-      closemMessengerThread();
+      closeMessengerThread();
       //clean up directories which are created inside the driver
       systemUtil::makeSystemCall(socketName, systemUtil::systemOperation::REMOVE, "", std::to_string(__LINE__));
     }
@@ -1866,8 +1949,9 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       saveWaveDataBase();
     }
     //ProfilerStop();
-    delete sock;
-    sock = NULL;
+
+    sock.reset();
+
     PRINTENDFUNC;
     if(mMBSch && mCore)
     {
@@ -1947,7 +2031,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       delete mDataSpace;
       mDataSpace = NULL;
     }
-    closemMessengerThread();
+    closeMessengerThread();
   }
 
   void HwEmShim::initMemoryManager(std::list<xclemulation::DDRBank>& DDRBankList)
@@ -2763,6 +2847,7 @@ int HwEmShim::xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, si
     PRINTENDFUNC;
     return -1;
   }
+
   // Copy buffer thru the M2M.
     if ((deviceQuery(key_type::m2m) && getM2MAddress() != 0) && !((sBO->fd >= 0) || (dBO->fd >= 0))) {
 
@@ -3224,92 +3309,125 @@ int HwEmShim::xclExecWait(int timeoutMilliSec)
   return 1;
 }
 
+////////////////////////////////////////////////////////////////
+// Context handling
+////////////////////////////////////////////////////////////////
 int
 HwEmShim::
 xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared)
 {
+  // When properly implemented this function must throw on error
+  // and any exception must be caught by global xclOpenContext and
+  // converted to error code
+
   // If not PS Kernel domain, don't create context
   if (ipIndex == 0xFFFFFFFF || !(ipIndex & 0xFFFF0000))
     return 0;
 
-  int ret = -1;
-  if (xclemulation::config::getInstance()->isIpuRBMode()) {
-    // Set default partition using all 5 AIE columns
-    // If there is AIE_PARTITION section in XCLBIN, we will call into
-    // Resource Solver to require a partition. Otherwise, we will just
-    // use the whole AIE array by default
-    uint32_t start_col = 0, ncol = 5;
-
-    if (aie_partition.ncol) {
-      struct xrs_actions *act = nullptr;
-      void (*action_cb)(xrs_handle_t hdl, struct xrs_actions *acts) = nullptr;
-
-      uint32_t start_col_arr[aie_partition.start_col_list.size()];
-      std::copy(aie_partition.start_col_list.begin(), aie_partition.start_col_list.end(), start_col_arr);
-
-      struct cdo_parts cp;
-      cp.cdo_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(xclbinId)); // use XCLBIN uuid for now
-      cp.nparts = aie_partition.start_col_list.size();
-      cp.ncols = aie_partition.ncol;
-      cp.start_col_list = start_col_arr;
-
-      struct part_meta pm;
-      pm.xclbin_uuid = const_cast<uuid_t *>(reinterpret_cast<const uuid_t *>(xclbinId));
-      pm.ncdos = 1;
-      pm.cdo = &cp;
-
-      struct alloc_requests req;
-      req.pid = 1; // Use a faked number for now until we support multi process
-      req.pmp = &pm;
-      ret = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
-      if (ret) {
-        PRINTENDFUNC;
-        return ret;
-      }
-
-      if (act) {
-        // Use the first action for best effort on spatial and temporal sharing
-        // More actions will be supported when we have more CDO groups
-        start_col = act->actions[0].part.start_col;
-        ncol = act->actions[0].part.ncol;
-      }
-
-      if (action_cb != nullptr)
-        action_cb(xrs_hdl, act);
+  // We only support one hw_context for now. So if context_id is not -1,
+  // a previous hw_context has been created.
+  int ret = 0;
+  if (xclemulation::config::getInstance()->isIpuRBMode() && context_id == -1) {
+    ret = ipu_create_hw_context(xclbinId);
+    if (ret >= 0) {
+      // Cache the context_id.
+      context_id = ret;
+      ret = 0;
     }
-
-    ret = m_ipurb->open_context(xclbinId, ipIndex, start_col, ncol);
-  } else
-    ret = 0;
+  }
 
   PRINTENDFUNC;
-  return ret;
+  if (ret)
+    throw xrt_core::system_error(ret, "failed to open ip context");
+
+  return 0;
 }
 
 int
 HwEmShim::
-xclOpenContext(uint32_t slot, const uuid_t xclbinId, const char* cuname, bool shared)
-{
-  // TODO: implement
-  // For now default to single slit behavior
-  return xclOpenContext(xclbinId, mCoreDevice->get_cuidx(slot, cuname).index, shared);
-}
-
-int HwEmShim::xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex)
+xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex)
 {
   // If not PS Kernel domain, don't delete context
   if (ipIndex == 0xFFFFFFFF || !(ipIndex & 0xFFFF0000))
     return 0;
 
-  int ret = -1;
-  if (xclemulation::config::getInstance()->isIpuRBMode())
-    ret = m_ipurb->close_context(xclbinId, ipIndex);
-  else
-    ret = 0;
+  // We only support one hw_context for now. So if context_id is -1,
+  // there is no need to close hw_context.
+  int ret  = 0;
+  if (xclemulation::config::getInstance()->isIpuRBMode() && context_id != -1) {
+    ret = m_ipurb->close_context(0);
+    if (!ret) {
+      // Clear the cached context_id
+      context_id = -1;
+    }
+  }
 
   PRINTENDFUNC;
   return ret;
 }
+
+// aka xclOpenContextByName, internal shim API for native C++ applications only
+// Once properly implemented, this API should throw on error
+xrt_core::cuidx_type
+HwEmShim::
+open_cu_context(const xrt::hw_context& hwctx, const std::string& cuname)
+{
+  // Emulation does not yet support multiple xclbins.  Call
+  // regular flow.  Default access mode to shared unless explicitly
+  // exclusive.
+  auto shared = (hwctx.get_qos() != xrt::hw_context::qos::exclusive);
+  auto ctxhdl = static_cast<xcl_hwctx_handle>(hwctx);
+  auto cuidx = mCoreDevice->get_cuidx(ctxhdl, cuname);
+  xclOpenContext(hwctx.get_xclbin_uuid().get(), cuidx.index, shared);
+
+  return cuidx;
+}
+
+// aka xclCreateHWContext, internal shim API for native C++ applications only
+// Once properly implemented, this API should throw on error
+uint32_t // ctx handle aka slot idx
+HwEmShim::
+create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos)
+{
+  if (context_id != -1)
+    return 0;
+
+  int ctxhdl = ipu_create_hw_context(xclbin_uuid.get());
+  if (ctxhdl < 0)
+    throw xrt_core::system_error(ctxhdl, "fail to create ipu hw context");
+  context_id = ctxhdl;
+
+  // Currently, we only support one hw_context with the default ctxhdl (slot
+  // idx) setting to 0.
+  // TODO return the ctxhdl created by IPU once we have multiple hw_context
+  // support in place.
+  return 0;
+}
+
+// aka xclDestroyHWContext, internal shim API for native C++ applications only
+// Once properly implemented, this API should throw on error
+void
+HwEmShim::
+destroy_hw_context(uint32_t ctxhdl)
+{
+  if (context_id == -1)
+    return;
+
+  int ret = ipu_destroy_hw_context(ctxhdl);
+  if (ret)
+    xrt_core::system_error(ret, "fail to destroy ipu hw context");
+
+  context_id = -1;
+}
+
+// aka xclRegisterXclbin, internal shim API for native C++ applications only
+void
+HwEmShim::
+register_xclbin(const xrt::xclbin& xclbin)
+{
+  xclLoadXclBin(xclbin.get_axlf());
+}
+////////////////////////////////////////////////////////////////
 
 ssize_t HwEmShim::xclUnmgdPwrite(unsigned flags, const void *buf, size_t count, uint64_t offset)
 {
@@ -3490,252 +3608,6 @@ void HwEmShim::getPerfMonSlotName(xclPerfMonType type, uint32_t slotnum,
   }
 }
 
-
-/********************************************** QDMA APIs IMPLEMENTATION START **********************************************/
-
-/*
- * xclCreateWriteQueue()
- */
-int HwEmShim::xclCreateWriteQueue(xclQueueContext *q_ctx, uint64_t *q_hdl)
-{
-
-  if (mLogStream.is_open())
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
-
-  uint64_t q_handle = 0;
-  xclCreateQueue_RPC_CALL(xclCreateQueue,q_ctx,true);
-  if(q_handle <= 0)
-  {
-    if (mLogStream.is_open())
-      mLogStream << " unable to create write queue "<<std::endl;
-    PRINTENDFUNC;
-    return -1;
-  }
-  *q_hdl = q_handle;
-  PRINTENDFUNC;
-  return 0;
-}
-
-/*
- * xclCreateReadQueue()
- */
-int HwEmShim::xclCreateReadQueue(xclQueueContext *q_ctx, uint64_t *q_hdl)
-{
-  if (mLogStream.is_open())
-  {
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
-  }
-  uint64_t q_handle = 0;
-  xclCreateQueue_RPC_CALL(xclCreateQueue,q_ctx,false);
-  if(q_handle <= 0)
-  {
-    if (mLogStream.is_open())
-      mLogStream << " unable to create read queue "<<std::endl;
-    PRINTENDFUNC;
-    return -1;
-  }
-  *q_hdl = q_handle;
-  PRINTENDFUNC;
-  return 0;
-}
-
-/*
- * xclDestroyQueue()
- */
-int HwEmShim::xclDestroyQueue(uint64_t q_hdl)
-{
-  if (mLogStream.is_open())
-  {
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
-  }
-  uint64_t q_handle = q_hdl;
-  bool success = false;
-  xclDestroyQueue_RPC_CALL(xclDestroyQueue, q_handle);
-  if(!success)
-  {
-    if (mLogStream.is_open())
-      mLogStream <<" unable to destroy the queue"<<std::endl;
-    PRINTENDFUNC;
-    return -1;
-  }
-
-  PRINTENDFUNC;
-  return 0;
-}
-
-/*
- * xclWriteQueue()
- */
-ssize_t HwEmShim::xclWriteQueue(uint64_t q_hdl, xclQueueRequest *wr)
-{
-
-  if (mLogStream.is_open())
-  {
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
-  }
-
-  bool eot = false;
-  if(wr->flag & XCL_QUEUE_REQ_EOT)
-    eot = true;
-
-  bool nonBlocking = false;
-  if (wr->flag & XCL_QUEUE_REQ_NONBLOCKING)
-  {
-    std::map<uint64_t,uint64_t> vaLenMap;
-    for (unsigned i = 0; i < wr->buf_num; i++)
-    {
-      //vaLenMap[wr->bufs[i].va] = wr->bufs[i].len;
-      vaLenMap[wr->bufs[i].va] = 0;//for write we should not read the data back
-    }
-    mReqList.push_back(std::make_tuple(mReqCounter, wr->priv_data, vaLenMap));
-    nonBlocking = true;
-  }
-  uint64_t fullSize = 0;
-  for (unsigned i = 0; i < wr->buf_num; i++)
-  {
-    xclWriteQueue_RPC_CALL(xclWriteQueue,q_hdl, wr->bufs[i].va, wr->bufs[i].len);
-    fullSize += written_size;
-  }
-  PRINTENDFUNC;
-  mReqCounter++;
-  return fullSize;
-}
-
-/*
- * xclReadQueue()
- */
-ssize_t HwEmShim::xclReadQueue(uint64_t q_hdl, xclQueueRequest *rd)
-{
-  if (mLogStream.is_open())
-  {
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
-  }
-
-  bool eot = false;
-  if(rd->flag & XCL_QUEUE_REQ_EOT)
-    eot = true;
-
-  bool nonBlocking = false;
-  if (rd->flag & XCL_QUEUE_REQ_NONBLOCKING)
-  {
-    nonBlocking = true;
-    std::map<uint64_t,uint64_t> vaLenMap;
-    for (unsigned i = 0; i < rd->buf_num; i++)
-    {
-      vaLenMap[rd->bufs[i].va] = rd->bufs[i].len;
-    }
-    mReqList.push_back(std::make_tuple(mReqCounter,rd->priv_data, vaLenMap));
-  }
-
-  void *dest;
-
-  uint64_t fullSize = 0;
-  for (unsigned i = 0; i < rd->buf_num; i++)
-  {
-    dest = (void *)rd->bufs[i].va;
-    uint64_t read_size = 0;
-    do
-    {
-      xclReadQueue_RPC_CALL(xclReadQueue,q_hdl, dest , rd->bufs[i].len);
-    } while (read_size == 0 && !nonBlocking);
-    fullSize += read_size;
-  }
-  mReqCounter++;
-  PRINTENDFUNC;
-  return fullSize;
-
-}
-/*
- * xclPollCompletion
- */
-int HwEmShim::xclPollCompletion(int min_compl, int max_compl, xclReqCompletion *comps, int* actual, int timeout)
-{
-  if (mLogStream.is_open())
-  {
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << " , "<< max_compl <<", "<<min_compl<<" ," << *actual <<" ," << timeout << std::endl;
-  }
-  xclemulation::TIMEOUT_SCALE timeout_scale=xclemulation::config::getInstance()->getTimeOutScale();
-  if(timeout_scale==xclemulation::TIMEOUT_SCALE::NA) {
-      std::string dMsg = "WARNING: [HW-EMU 10] xclPollCompletion : Timeout is not enabled in emulation by default.Please use xrt.ini (key: timeout_scale=ms|sec|min) to enable";
-      logMessage(dMsg, 0);
-  }
-
-  xclemulation::ApiWatchdog watch(timeout_scale,timeout);
-  watch.reset();
-  *actual = 0;
-  while(*actual < min_compl)
-  {
-    std::list<std::tuple<uint64_t ,void*, std::map<uint64_t,uint64_t> > >::iterator it = mReqList.begin();
-    while ( it != mReqList.end() )
-    {
-      unsigned numBytesProcessed = 0;
-      uint64_t reqCounter = std::get<0>(*it);
-      void* priv_data = std::get<1>(*it);
-      std::map<uint64_t,uint64_t>vaLenMap = std::get<2>(*it);
-      xclPollCompletion_RPC_CALL(xclPollCompletion,reqCounter,vaLenMap);
-      if(numBytesProcessed > 0)
-      {
-        comps[*actual].priv_data = priv_data;
-        comps[*actual].nbytes = numBytesProcessed;
-        (*actual)++;
-        mReqList.erase(it++);
-        if(*actual >= max_compl) {
-        	PRINTENDFUNC;
-        	return (*actual);
-        }
-      }
-      else
-      {
-        it++;
-      }
-      if(watch.isTimeout()) {
-    	 PRINTENDFUNC;
-    	 if (*actual <=0) {
-    		 return -ETIMEDOUT;
-    	 } else {
-    		 return *actual;
-    	 }
-     }
-
-    }
-  }
-  PRINTENDFUNC;
-  return (*actual);
-}
-
-/*
- * xclAllocQDMABuf()
- */
-void * HwEmShim::xclAllocQDMABuf(size_t size, uint64_t *buf_hdl)
-{
-  if (mLogStream.is_open())
-  {
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
-  }
-  void *pBuf=nullptr;
-  if (posix_memalign(&pBuf, getpagesize(), size))
-  {
-    if (mLogStream.is_open()) mLogStream << "posix_memalign failed" << std::endl;
-    pBuf=nullptr;
-    return pBuf;
-  }
-  memset(pBuf, 0, size);
-  return pBuf;
-}
-
-/*
- * xclFreeQDMABuf()
- */
-int HwEmShim::xclFreeQDMABuf(uint64_t buf_hdl)
-{
-  if (mLogStream.is_open())
-  {
-    mLogStream << __func__ << ", " << std::this_thread::get_id() << std::endl;
-  }
-  PRINTENDFUNC;
-  return 0;//TODO
-}
-
 int HwEmShim::xcl_LogMsg(xrtLogMsgLevel level, const char* tag, const char* format, ...)
 {
   va_list args;
@@ -3777,18 +3649,18 @@ int HwEmShim::xclLogMsg(xrtLogMsgLevel level, const char* tag, const char* forma
     return 0;
 }
 
-void HwEmShim::closemMessengerThread()
+void HwEmShim::closeMessengerThread()
 {
-  if (mMessengerThreadStarted) {
-    mMessengerThread.join();
+  // set_simulator_started has to be false in order to see proper exit of joinable thread.
+  //set_simulator_started(false);
+  if (mMessengerThread.joinable()) {
     mMessengerThreadStarted = false;
+    mMessengerThread.join();
   }
 
-  if (mHostMemAccessThreadStarted) {
+  if (mHostMemAccessThread.joinable()) {
     mHostMemAccessThreadStarted = false;
-    if (mHostMemAccessThread.joinable()) {
-      mHostMemAccessThread.join();
-    }
+    mHostMemAccessThread.join();
   }
 }
 
@@ -3867,8 +3739,6 @@ int HwEmShim::xclIPName2Index(const char *name)
 }
 
 
-volatile bool HwEmShim::get_mHostMemAccessThreadStarted() { return mHostMemAccessThreadStarted; }
-volatile void HwEmShim::set_mHostMemAccessThreadStarted(bool val) { mHostMemAccessThreadStarted = val; }
 /********************************************** QDMA APIs IMPLEMENTATION END**********************************************/
 /**********************************************HAL2 API's END HERE **********************************************/
 
@@ -3972,7 +3842,7 @@ Q2H_helper :: Q2H_helper(xclhwemhal2::HwEmShim* _inst) {
     header          = std::make_unique<call_packet_info>();
     response_header = std::make_unique<response_packet_info>();
     inst = _inst;
-    Q2h_sock        = NULL;
+    Q2h_sock        = nullptr;
     header->set_size(0);
     header->set_xcl_api(0);
     response_header->set_size(0);
@@ -3985,10 +3855,7 @@ Q2H_helper :: Q2H_helper(xclhwemhal2::HwEmShim* _inst) {
     ri_len          = response_header->ByteSizeLong();
 #endif
 }
-Q2H_helper::~Q2H_helper() {
-    delete Q2h_sock;
-    Q2h_sock = 0;
-}
+Q2H_helper::~Q2H_helper() = default;
 
 /**
  * Pooling on socket for any memory or interrupt requests from SIM_QDMA
@@ -4066,8 +3933,8 @@ bool Q2H_helper::connect_sock() {
     } else {
       sock_name = "D2X_unix_sock";
     }
-    if(Q2h_sock == NULL) {
-      Q2h_sock = new unix_socket("EMULATION_SOCKETID", sock_name, 5, false);
+    if (Q2h_sock == nullptr) {
+      Q2h_sock = std::make_unique<unix_socket>("EMULATION_SOCKETID", sock_name, 5, false);
     }
     else if (!Q2h_sock->server_started) {
       Q2h_sock->start_server(5,false);
@@ -4075,19 +3942,22 @@ bool Q2H_helper::connect_sock() {
     return Q2h_sock->server_started;
 }
 
-void hostMemAccessThread(xclhwemhal2::HwEmShim* inst) {
-	inst->set_mHostMemAccessThreadStarted(true);
-    auto mq2h_helper_ptr = std::make_unique<Q2H_helper>(inst);
+void HwEmShim::hostMemAccessThread() {
+    mHostMemAccessThreadStarted.store(true);
+    auto mq2h_helper_ptr = std::make_unique<Q2H_helper>(this);
     bool sock_ret = false;
     int count = 0;
-    while(inst->get_mHostMemAccessThreadStarted() && !sock_ret && count < 71){
+    while (mHostMemAccessThreadStarted && !sock_ret && count < 71) {
         sock_ret = mq2h_helper_ptr->connect_sock();
         count++;
     }
+    if (not sock_ret) {
+      std::cout<<"\n unable to get a reliable socket connection, ideally should exit here. select call took care. \n";
+    }
     int r =0;
-    while(inst->get_mHostMemAccessThreadStarted() && r >= 0){
+    while (mHostMemAccessThreadStarted && r >= 0) {
         try {
-            if (!inst->get_simulator_started())
+            if (not get_simulator_started())
                 return;
             r = mq2h_helper_ptr->poolingon_Qdma();
         } catch(int e) {

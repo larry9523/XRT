@@ -2,3 +2,6 @@
 	path = DPU
 	url = https://gitenterprise.xilinx.com/vai-aie-sync/xaie_dma.git
 	branch = dev
+[submodule "libqdma"]
+	path = src/runtime_src/core/pcie/driver/linux/xocl/lib/libqdma
+	url = https://github.com/Xilinx/dma_ip_drivers.git

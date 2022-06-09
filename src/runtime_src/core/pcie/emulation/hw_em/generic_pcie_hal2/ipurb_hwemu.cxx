@@ -124,27 +124,45 @@ namespace hwemu {
   int ipurb_cmd::exec_buf(xclemulation::drm_xocl_bo *bo)
   {
     this->ert_pkt = (struct ert_packet *)bo->buf;
-
     bool passed = true;
+
     switch (opcode()) {
       case ERT_CONFIGURE:
         break;
-
       case ERT_START_CU:
-        {
-          if (payload_size() > 20 * sizeof(uint32_t)) {
-            printf("IPURB: fail to send exec buf, payload is too big\n");
-            return -EINVAL;
-          }
+      {
+        if (payload_size() > 20 * sizeof(uint32_t)) {
+          printf("IPURB: fail to send exec buf, payload is too big\n");
+          return -EINVAL;
+        }
 
           execute_buffer_req_t req;
           execute_buffer_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
           auto ert_start_cu = reinterpret_cast<ert_start_kernel_cmd *>(ert_pkt);
-          memcpy(req.data, ert_start_cu->data, payload_size() - 4);
+          memcpy(req.payload, ert_start_cu->data, payload_size() - 4);
 
-          passed = RINGB_Command(req, &resp, queuep->usr_buff, 0xFA5EFADE, IPU_MSG_EXECUTE_BUFFER,
-		"IPU_MSG_EXECUTE_BUFFER", __FUNCTION__);
+          uint32_t cu_idx = 0, mask = 0;
+          mask = ert_start_cu->cu_mask;
+
+          if (!mask) {
+            printf("IPURB: fail to send exec buf, invalid cu_mask\n");
+            return -EINVAL;
+          }
+
+          cu_idx = 0;
+          while (mask) {
+            if (mask & 0x1)
+              break;
+            cu_idx++;
+            mask >>=1;
+          }
+
+          req.cu_idx = cu_idx;
+          printf("cu_idx %d\n", cu_idx);
+
+          passed = RINGB_Command(req, &resp, queuep->usr_buff, 0xFA5EFADE, IPU_MSG_EXECUTE_BUFFER_CF,
+               "IPU_MSG_EXECUTE_BUFFER_CF", __FUNCTION__);
           printf("passed is %d\n", passed);
 
         }
@@ -254,11 +272,13 @@ namespace hwemu {
       queuep->context_id = resp.context_id;
     }
 
-    return 0;
+    return queuep->context_id;
   }
 
-  int ipurb_cmd::close_context(const uuid_t uuid)
+  int ipurb_cmd::close_context(uint32_t ctxhdl)
   {
+    // Ignore the ctxhdl for now since we only support one hw_context and
+    // the default ctxhdl is 0 though we are using real context_id in ipurb
     delete_context_req_t req = { 0 };
     delete_context_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
@@ -321,6 +341,28 @@ namespace hwemu {
     return 0;
   }
 
+  int ipurb_cmd::config(uint32_t num_cus, const void *cfg)
+  {
+    cu_config_t *cu_cfg = (cu_config_t *)cfg;
+    scheduler_config_buffer_req_t req;
+    scheduler_config_buffer_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+    req.num_cus = num_cus;
+
+    for (uint8_t i=0; i<num_cus; ++i) {
+      req.configs[i].cu_idx = cu_cfg[i].cu_idx;
+      req.configs[i].cu_functional = cu_cfg[i].cu_functional;
+
+      printf("req.configs[%d].cu_idx %d, req.configs[%d].cu_functional %d\n", i, req.configs[i].cu_idx, i, req.configs[i].cu_functional);
+    }
+
+    bool passed = RINGB_Command(req, &resp, queuep->usr_buff, 0xFA5EFADE, IPU_MSG_CONFIG_CU,
+           "IPU_MSG_CONFIG_CU", __FUNCTION__);
+
+    if (!passed)
+      return -ETIME;
+
+    return 0;
+  }
 
   xocl_ipurb::xocl_ipurb(HwEmShim* dev)
     : queue(dev)
@@ -513,7 +555,7 @@ namespace hwemu {
     return rval;
   }
 
-  int xocl_ipurb::open_context(const uuid_t uuid, unsigned int ip_index, uint32_t start_col, uint32_t ncol)
+  int xocl_ipurb::open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol)
   {
     if (nctx != 0) {
       printf("IPURB: can not open multiple contexts\n");
@@ -524,17 +566,15 @@ namespace hwemu {
     if (!xcmd)
       return 1;
 
-    int rval = 0;
-    if (xcmd->open_context(uuid, start_col, ncol))
-      rval = 1;
-    else
+    int context_id = xcmd->open_context(uuid, start_col, ncol);
+    if (context_id >= 0)
       nctx++;
 
     cmd_pool.destroy(xcmd);
-    return rval;
+    return context_id;
   }
 
-  int xocl_ipurb::close_context(const uuid_t uuid, unsigned int ip_index)
+  int xocl_ipurb::close_context(uint32_t ctxhdl)
   {
     if (nctx != 1) {
       printf("IPURB: can not close contexts, no opened context\n");
@@ -546,7 +586,7 @@ namespace hwemu {
       return 1;
 
     int rval = 0;
-    if (xcmd->close_context(uuid))
+    if (xcmd->close_context(ctxhdl))
       rval = 1;
     else
       nctx--;
@@ -625,4 +665,18 @@ namespace hwemu {
     return rval;
   }
 
+  int xocl_ipurb::config(uint32_t num_cus, const void *cfg)
+  {
+    ipurb_cmd *xcmd = cmd_pool.construct(&queue);
+
+    if (!xcmd)
+      return 1;
+
+    int rval = 0;
+    if (xcmd->config(num_cus, cfg))
+      rval = 1;
+
+    cmd_pool.destroy(xcmd);
+    return rval;
+  }
 }

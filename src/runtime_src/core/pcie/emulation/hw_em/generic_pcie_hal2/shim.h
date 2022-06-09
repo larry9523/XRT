@@ -1,61 +1,47 @@
-/**
- * Copyright (C) 2016-2019 Xilinx, Inc
- *
- * Licensed under the Apache License, Version 2.0 (the "License"). You may
- * not use this file except in compliance with the License. A copy of the
- * License is located at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2016-2022 Xilinx, Inc. All rights reserved.
+// Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
 #ifndef _HW_EM_SHIM_H_
 #define _HW_EM_SHIM_H_
 
-#ifndef _WINDOWS
-#include "unix_socket.h"
 #include "config.h"
 #include "em_defines.h"
+#include "ipurb_hwemu.h"
+#include "mbscheduler.h"
+#include "mbscheduler_hwemu.h"
+#include "mem_model.h"
 #include "memorymanager.h"
+#include "mbscheduler_hwemu.h"
+#include "mem_model.h"
 #include "rpc_messages.pb.h"
-
-#include "xclperf.h"
+#include "unix_socket.h"
 #include "xcl_api_macros.h"
 #include "xcl_macros.h"
 #include "xclbin.h"
+#include "xclperf.h"
 #include "xrs.h"
-#include "core/common/device.h"
-#include "core/common/scheduler.h"
-#include "core/common/message.h"
-#include "core/common/xrt_profiling.h"
-#include "core/common/query_requests.h"
+
 #include "core/common/api/xclbin_int.h"
+#include "core/common/device.h"
+#include "core/common/message.h"
+#include "core/common/query_requests.h"
+#include "core/common/scheduler.h"
+#include "core/common/xrt_profiling.h"
+#include "core/include/experimental/xrt_xclbin.h"
+#include "core/include/experimental/xrt_hw_context.h"
 #include "core/include/experimental/xrt_xclbin.h"
 
-#include "mem_model.h"
-#include "mbscheduler.h"
-#include "mbscheduler_hwemu.h"
-#include "ipurb_hwemu.h"
-#endif
-
-#include <sys/param.h>
-#include <sys/wait.h>
-#include <thread>
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/mman.h>
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <tuple>
+#include <sys/types.h>
+#include <sys/wait.h>
+
 #include <cstdarg>
-#ifdef _WINDOWS
-#define strtoll _strtoi64
-#endif
+#include <thread>
+#include <tuple>
 
 namespace xclhwemhal2 {
 using key_type = xrt_core::query::key_type;
@@ -104,6 +90,13 @@ using addr_type = uint64_t;
    unsigned int size;
  } KernelArg;
 
+ typedef struct
+ {
+    uint32_t cu_idx : 24;
+    uint32_t cu_functional : 8;
+    uint32_t reserved;          /*Reserved for the future*/
+ } CuConfig;
+
   class HwEmShim {
 
     public:
@@ -125,17 +118,40 @@ using addr_type = uint64_t;
       static int xcl_LogMsg(xrtLogMsgLevel level, const char* tag, const char* format, ...);
       static int xclLogMsg(xrtLogMsgLevel level, const char* tag, const char* format, va_list args1);
 
-      //P2P Support
+      // P2P Support
       int xclExportBO(unsigned int boHandle);
       unsigned int xclImportBO(int boGlobalHandle, unsigned flags);
       int xclCopyBO(unsigned int dst_boHandle, unsigned int src_boHandle, size_t size, size_t dst_offset, size_t src_offset);
 
-      //MB scheduler related API's
+      // MB scheduler related API's
       int xclExecBuf( unsigned int cmdBO);
       int xclExecBuf(unsigned int cmdBO, size_t num_bo_in_wait_list, unsigned int *bo_wait_list);
-      int xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared);
-      int xclOpenContext(uint32_t slot, const uuid_t xclbinId, const char* cuname, bool shared);
-      int xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex);
+
+      ////////////////////////////////////////////////////////////////
+      // Context handling
+      ////////////////////////////////////////////////////////////////
+      int
+      xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared);
+
+      int
+      xclCloseContext(const uuid_t xclbinId, unsigned int ipIndex);
+
+      // aka xclOpenContextByName, internal shim API for native C++ applications only
+      xrt_core::cuidx_type
+      open_cu_context(const xrt::hw_context& hwctx, const std::string& cuname);
+
+      // aka xclCreateHWContext, internal shim API for native C++ applications only
+      uint32_t // ctx handle aka slot idx
+      create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos);
+
+      // aka xclDestroyHWContext, internal shim API for native C++ applications only
+      void
+      destroy_hw_context(uint32_t ctxhdl);
+
+      // aka xclRegisterXclbin, internal shim API for native C++ applications only
+      void
+      register_xclbin(const xrt::xclbin&);
+      ////////////////////////////////////////////////////////////////
 
       int xclRegisterEventNotify( unsigned int userInterrupt, int fd);
       int xclExecWait( int timeoutMilliSec);
@@ -254,15 +270,6 @@ using addr_type = uint64_t;
 
       std::vector<std::string> parsedMsgs;
 
-      //QDMA Support
-      int xclCreateWriteQueue(xclQueueContext *q_ctx, uint64_t *q_hdl);
-      int xclCreateReadQueue(xclQueueContext *q_ctx, uint64_t *q_hdl);
-      int xclDestroyQueue(uint64_t q_hdl);
-      void *xclAllocQDMABuf(size_t size, uint64_t *buf_hdl);
-      int xclFreeQDMABuf(uint64_t buf_hdl);
-      ssize_t xclWriteQueue(uint64_t q_hdl, xclQueueRequest *wr);
-      ssize_t xclReadQueue(uint64_t q_hdl, xclQueueRequest *wr);
-      int xclPollCompletion(int min_compl, int max_compl, xclReqCompletion *comps, int* actual, int timeout);
       bool isImported(unsigned int _bo)
       {
         if (mImportedBOs.find(_bo) != mImportedBOs.end())
@@ -277,8 +284,7 @@ using addr_type = uint64_t;
       // Restricted read/write on IP register space
       int xclRegWrite(uint32_t cu_index, uint32_t offset, uint32_t data);
       int xclRegRead(uint32_t cu_index, uint32_t offset, uint32_t *datap);
-      volatile bool get_mHostMemAccessThreadStarted();
-      volatile void set_mHostMemAccessThreadStarted(bool val);
+
       bool device2xrt_rd_trans_cb(unsigned long int addr, void* const data_ptr,unsigned long int size);
       bool device2xrt_wr_trans_cb(unsigned long int addr, void const* data_ptr,unsigned long int size);
       bool device2xrt_irq_trans_cb(uint32_t,unsigned long int);
@@ -305,6 +311,13 @@ using addr_type = uint64_t;
       bool readEmuSettingsJsonFile(const std::string& emuSettingsFilePath);
 
     private:
+      std::thread mMessengerThread;
+      std::thread mHostMemAccessThread;
+      std::atomic<bool> mMessengerThreadStarted;
+      std::atomic<bool> mHostMemAccessThreadStarted;
+      void messagesThread();
+      void hostMemAccessThread();
+
       std::shared_ptr<xrt_core::device> mCoreDevice;
       bool simulator_started;
       uint64_t mRAMSize;
@@ -341,13 +354,14 @@ using addr_type = uint64_t;
 
       void* buf;
       size_t buf_size;
-      std::ofstream mLogStream;
+      mutable std::ofstream mLogStream;
       std::ofstream mGlobalInMemStream;
       std::ofstream mGlobalOutMemStream;
       static std::ofstream mDebugLogStream;
       static bool mFirstBinary;
       unsigned int binaryCounter;
-      unix_socket* sock;
+
+      std::shared_ptr<unix_socket> sock;
       std::string deviceName;
       xclDeviceInfo2 mDeviceInfo;
       unsigned int mDeviceIndex;
@@ -364,9 +378,14 @@ using addr_type = uint64_t;
       exec_core* mCore;
       MBScheduler* mMBSch;
       hwemu::xocl_scheduler* m_scheduler;
+
+      // IPU related
       hwemu::xocl_ipurb* m_ipurb;
       xrt_core::xclbin::aie_partition_obj aie_partition;
       xrs_handle_t xrs_hdl;
+      int ipu_create_hw_context(const uuid_t xclbinId);
+      int ipu_destroy_hw_context(uint32_t ctxhdl);
+      int context_id = -1;
 
       // Information extracted from platform linker (for profile/debug)
       bool mIsDebugIpLayoutRead = false;
@@ -398,11 +417,8 @@ using addr_type = uint64_t;
       uint64_t mCuBaseAddress;
       bool     mVersalPlatform;
       //For Emulation specific messages on host from Device
-      std::thread mMessengerThread;
-      std::thread mHostMemAccessThread;
-      bool mMessengerThreadStarted;
-      bool mHostMemAccessThreadStarted;
-      void closemMessengerThread();
+
+      void closeMessengerThread();
       bool mIsTraceHubAvailable;
       uint32_t mCuIndx;
       std::map<std::string, uint64_t> mCURangeMap;
@@ -411,6 +427,9 @@ using addr_type = uint64_t;
       std::map<uint64_t, std::pair<void*, uint64_t> > mHostOnlyMemMap;
       unsigned int host_sptag_idx;
       bool mSimDontRun;
+
+      uint32_t mCUNums;
+      std::map<uint32_t, uint32_t> mCUFunctionalMap;
   };
 
   extern std::map<unsigned int, HwEmShim*> devices;

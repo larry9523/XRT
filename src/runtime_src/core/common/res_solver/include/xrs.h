@@ -69,7 +69,7 @@ typedef void * xrs_handle_t;
  *     Partitions can be shared temporally. Firstly, we try to allocate
  *     partition on unused columns. If no available columns meet the
  *     requested overlays, we will share the already allocated partition
- *     to other processes. We will try our best to load balance of processes
+ *     with other request. We will try our best to load balance of requests
  *     on partitions.
  */
 enum xrs_mode {
@@ -136,23 +136,23 @@ struct part_meta {
 /**
  * Structure used to describe a request to allocate. This is the
  * input to resource resolver for a allocation request. It contains
- * process id and partition metadata. And this can be extended to include
+ * request id and partition metadata. And this can be extended to include
  * other inputs for the allocation like QoS and Priority.
  */
 struct alloc_requests {
-	uint32_t		pid;
+	uint32_t		rid;
 	struct part_meta	*pmp;
 };
 
 /**
  * Structure used to describe an action after allocation. The action
- * is identified by XCLBIN UUID, CDO UUID, pid, partition and the
+ * is identified by XCLBIN UUID, CDO UUID, rid, partition and the
  * action (Load/Unload/None)
  */
 struct xrs_action {
 	uuid_t			*xclbin_uuid;
 	uuid_t			*cdo_uuid;
-	uint32_t		pid;
+	uint32_t		rid;
 	struct aie_part		part;
 	enum xrs_load_actions	action;
 };
@@ -227,7 +227,7 @@ int xrs_fini(xrs_handle_t hdl);
  *                           and a partition metadata. (See struct part_meta)
  *
  * @hdl:	Resource solver handle obtained from xrs_init()
- * @req:	Input to the Resource solver including process id
+ * @req:	Input to the Resource solver including request id
  * 		and partition metadata.
  * @actions:	Pointer to the actions list (output)
  * @action_cb:	Callback function when the actions are done. The arg for
@@ -245,7 +245,7 @@ int xrs_fini(xrs_handle_t hdl);
  *     2. There is no lock mechanism inside resource solver. So it is
  *        the caller's responsiblity to lock down XCLBINs and grab
  *        necessary lock.
- *     3. TODO Recover processes if any action is failed.
+ *     3. TODO Recover requests if any action is failed.
  *     4. TODO QoS is missing in this interface, which can be added
  *             to alloc_requests structure.
  */
@@ -257,43 +257,43 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
  * xrs_release_resource() - Request to free resources for a given context.
  *
  * @hdl:	Resource solver handle obtained from xrs_init()
- * @pid:	The Process ID to identify the requesting context
+ * @rid:	The Request ID to identify the requesting context
  *
  * Return:	0 when successful
  * 		Or standard error number when failing
  */
-int xrs_release_resource(xrs_handle_t hdl, uint32_t pid);
+int xrs_release_resource(xrs_handle_t hdl, uint32_t rid);
 
 /**
- * xrs_query_npid() - Query the number of pid that uses a given xclbin.
+ * xrs_query_nrid() - Query the number of request id that uses a given xclbin.
  *
  * @hdl:		Resource solver handle obtained from xrs_init()
  * @xclbin_uuid:	The XCLBIN UUID which is used
  *
- * Return:		Number of pids when successful
+ * Return:		Number of request ids when successful
  * 			Or standard error number when failing
  */
-int xrs_query_npid(xrs_handle_t hdl, uuid_t *xclbin_uuid);
+int xrs_query_nrid(xrs_handle_t hdl, uuid_t *xclbin_uuid);
 
 /**
- * xrs_query_pids() - Query the pids that uses a given xclbin.
+ * xrs_query_rids() - Query the request ids that uses a given xclbin.
  *
  * @hdl:		Resource solver handle obtained from xrs_init()
  * @xclbin_uuid:	The XCLBIN UUID which is used
- * @npid:		Max number of pids to fill into passid array
- * @pids:		Pid array
+ * @nrid:		Max number of request ids to fill into passid array
+ * @rids:		Request id array
  *
  * Return:		0 when successful
  * 			Or standard error number when failing
  *
  * Note:
  *     1. Caller of this function needs to make sure enough memory is allocated
- *        to fill in npid.
- *     2. If there are only m pids are using this uuid, soolver will fill the
+ *        to fill in nrid.
+ *     2. If there are only m rids are using this uuid, soolver will fill the
  *        first m elements of n passids array.
  */
-int xrs_query_pids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t npid,
-		uint32_t *pids);
+int xrs_query_rids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t nrid,
+		uint32_t *rids);
 
 
 #ifdef __cplusplus

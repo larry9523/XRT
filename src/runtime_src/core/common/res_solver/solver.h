@@ -15,7 +15,7 @@
 struct solver_node {
 	uuid_t 		xclbin_uuid;
 	uuid_t		cdo_uuid;
-	uint32_t	pid;
+	uint32_t	rid;			/* Request ID from consumer */
 	uint32_t	noly;			/* # overlay */
 	uint32_t	ncol;			/* # columns */
 	uint32_t	*oly;			/* start column array */

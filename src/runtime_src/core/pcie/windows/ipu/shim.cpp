@@ -4,6 +4,7 @@
 #define XCL_DRIVER_DLL_EXPORT
 #define XRT_CORE_PCIE_WINDOWS_SOURCE
 #include "shim.h"                      // this file implements shim.h
+#include "core/include/shim_int.h"     // this file implements shim_int.h
 #include "core/common/xrt_profiling.h" // this file implements xrt_profiling.h
 
 #include "xrt_mem.h"
@@ -16,6 +17,7 @@
 #include "core/common/query_requests.h"
 #include "core/common/AlignedAllocator.h"
 #include "core/include/xcl_perfmon_parameters.h"
+#include "core/include/experimental/xrt_hw_context.h"
 
 #include <windows.h>
 #include <winioctl.h>
@@ -319,9 +321,8 @@ done:
     return 0;
   }
 
-
   int
-  open_context(uint32_t slot_idx, const xuid_t xclbin_id, unsigned int ip_idx, bool shared)
+  open_cu_context(uint32_t slot_idx, const xuid_t xclbin_id, unsigned int ip_idx, bool shared)
   {
     HANDLE deviceHandle = m_dev;
     XRT_CTX_ARGS ctxArgs = { 0 };
@@ -369,12 +370,15 @@ done:
     return 0;
   }
 
-  int
-  open_context(uint32_t slot, const xuid_t xclbin_id, const char* cuname, bool shared)
+  xrt_core::cuidx_type
+  open_cu_context(const xrt::hw_context& hwctx, const std::string& cuname)
   {
-    // TODO: implement
-    // For now default to single slot behavior
-    return open_context(slot, xclbin_id, m_core_device->get_cuidx(slot, cuname).index, shared);
+    auto shared = (hwctx.get_qos() != xrt::hw_context::qos::exclusive);
+    auto ctxhdl = static_cast<xcl_hwctx_handle>(hwctx);  // IPU: ctxhdl == slotidx
+    auto cuidx = m_core_device->get_cuidx(ctxhdl, cuname);
+    open_cu_context(ctxhdl, hwctx.get_xclbin_uuid().get(), cuidx.index, shared);
+
+    return cuidx;
   }
 
   int
@@ -801,7 +805,7 @@ done:
 
       bool succeeded = 0;
       HANDLE deviceHandle = m_dev;
-      XRT_SLOT_INFORMATION slotInfo;
+      XRT_SLOT_COUNT slotCnt;
       PXRT_KDS_CU_INFORMATION kdsCuInfo;
       XRT_STAT_CLASS_ARGS statClass = { 0 };
       DWORD bytesRet;
@@ -818,8 +822,8 @@ done:
           IOCTL_KIPUDRV_STAT,
           &statClass,
           sizeof(XRT_STAT_CLASS_ARGS),
-          &slotInfo,
-          sizeof(XRT_SLOT_INFORMATION),
+          &slotCnt,
+          sizeof(XRT_SLOT_COUNT),
           &bytesRet,
           NULL);
 
@@ -835,7 +839,7 @@ done:
       }
 
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
-      bytesRequired += (slotInfo.CuCount * sizeof(XRT_KDS_CU));
+      bytesRequired += (slotCnt.CuCount * sizeof(XRT_KDS_CU));
 
       std::vector<char> kdsCuInfo_vec(bytesRequired);
       kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
@@ -890,7 +894,7 @@ done:
 
       bool succeeded = 0;
       HANDLE deviceHandle = m_dev;
-      XRT_SLOT_INFORMATION slotInfo;
+      XRT_SLOT_COUNT slotCnt;
       PXRT_KDS_CU_INFORMATION kdsCuInfo;
       XRT_STAT_CLASS_ARGS statClass = { 0 };
       DWORD bytesRet;
@@ -908,8 +912,8 @@ done:
           IOCTL_KIPUDRV_STAT,
           &statClass,
           sizeof(XRT_STAT_CLASS_ARGS),
-          &slotInfo,
-          sizeof(XRT_SLOT_INFORMATION),
+          &slotCnt,
+          sizeof(XRT_SLOT_COUNT),
           &bytesRet,
           NULL);
 
@@ -924,7 +928,7 @@ done:
       }
 
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
-      bytesRequired += (slotInfo.SlotCount * sizeof(XRT_KDS_CU));
+      bytesRequired += (slotCnt.SlotCount * sizeof(XRT_KDS_CU));
 
       std::vector<char> kdsCuInfo_vec(bytesRequired);
       kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
@@ -1015,6 +1019,77 @@ done:
       }
 
       return 0;
+  }
+
+  // Assign xclbin with uuid to hardware resources and return a context id
+  // The context handle is 1:1 with a slot idx
+  uint32_t
+  create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos)
+  {
+      HANDLE deviceHandle = m_dev;
+      XRT_HW_CTX_ARGS ctxArgs = { 0 };
+      DWORD bytesRet;
+      XRT_SLOT_INFORMATION slotInfo;
+
+      ctxArgs.Operation = XRT_CTX_OP_ALLOC_CTX;
+      memcpy(&ctxArgs.XclBinUuid, xclbin_uuid.get(), sizeof(xuid_t));
+
+      if (!DeviceIoControl(deviceHandle,
+          IOCTL_KIPUDRV_HW_CTX,
+          &ctxArgs,
+          sizeof(XRT_HW_CTX_ARGS),
+          &slotInfo,
+          sizeof(XRT_SLOT_INFORMATION),
+          &bytesRet,
+          NULL)) {
+
+          auto error = GetLastError();
+
+          xrt_core::message::
+              send(xrt_core::message::severity_level::error, "XRT", "Create HW_CTX failed with error %d", error);
+          return error;
+      }
+
+      return slotInfo.SlotIdx;
+
+  }
+
+  void
+  destroy_hw_context(uint32_t ctxhdl)
+  {
+      HANDLE deviceHandle = m_dev;
+      XRT_HW_CTX_ARGS ctxArgs = { 0 };
+      DWORD bytesRet;
+      XRT_SLOT_INFORMATION slotInfo;
+
+      ctxArgs.Operation = XRT_CTX_OP_FREE_CTX;
+      ctxArgs.SlotIdx = ctxhdl;
+
+      if (!DeviceIoControl(deviceHandle,
+          IOCTL_KIPUDRV_HW_CTX,
+          &ctxArgs,
+          sizeof(XRT_HW_CTX_ARGS),
+          &slotInfo,
+          sizeof(XRT_SLOT_INFORMATION),
+          &bytesRet,
+          NULL)) {
+
+          auto error = GetLastError();
+
+          xrt_core::message::
+              send(xrt_core::message::severity_level::error, "XRT", "Destroy HW_CTX failed with error %d", error);
+          return;
+      }
+
+      return;
+  }
+
+  // Registers an xclbin, but does not load it.
+  void
+  register_xclbin(const xrt::xclbin&)
+  {
+    // Explicit hardware contexts are not supported in Alveo.
+    throw xrt_core::ishim::not_supported_error{__func__};
   }
 
 }; // struct shim
@@ -1204,6 +1279,46 @@ get_errors(xclDeviceHandle hdl, char* buffer)
 }
 } // namespace userpf
 
+////////////////////////////////////////////////////////////////
+// Implementation of internal SHIM APIs
+////////////////////////////////////////////////////////////////
+namespace xrt::shim_int {
+
+xrt_core::cuidx_type
+open_cu_context(xclDeviceHandle handle, const xrt::hw_context& hwctx, const std::string& cuname)
+{
+  auto shim = get_shim_object(handle);
+  return shim->open_cu_context(hwctx, cuname);
+}
+
+uint32_t // ctxhdl aka slotidx
+create_hw_context(xclDeviceHandle handle, const xrt::uuid& xclbin_uuid, uint32_t qos)
+{
+  auto shim = get_shim_object(handle);
+  return shim->create_hw_context(xclbin_uuid, qos);
+}
+
+void
+destroy_hw_context(xclDeviceHandle handle, uint32_t ctxhdl)
+{
+  auto shim = get_shim_object(handle);
+  shim->destroy_hw_context(ctxhdl);
+}
+
+void
+register_xclbin(xclDeviceHandle handle, const xrt::xclbin& xclbin)
+{
+  auto shim = get_shim_object(handle);
+  shim->load_xclbin(xclbin.get_axlf());
+}
+
+} // namespace xrt::shim_int
+////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////
+// Implementation of user exposed SHIM APIs
+// This are C level functions
+////////////////////////////////////////////////////////////////
 // Basic
 unsigned int
 xclProbe()
@@ -1374,24 +1489,9 @@ xclOpenContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipInd
   auto shim = get_shim_object(handle);
 
   //Virtual resources are not currently supported by driver
-  return (ipIndex == (unsigned int)-1) ? 0 : shim->open_context(0, xclbinId, ipIndex, shared);
-}
-
-int
-xclOpenContextByName(xclDeviceHandle handle, uint32_t slot, const xuid_t xclbin_uuid, const char* cuname, bool shared)
-{
-  try {
-    auto shim = get_shim_object(handle);
-    return shim->open_context(slot, xclbin_uuid, cuname, shared);
-  }
-  catch (const xrt_core::error& ex) {
-    xrt_core::send_exception_message(ex.what());
-    return ex.get_code();
-  }
-  catch (const std::exception& ex) {
-    xrt_core::send_exception_message(ex.what());
-    return -ENOENT;
-  }
+  return (ipIndex == (unsigned int)-1)
+    ? 0
+    : shim->open_cu_context(0, xclbinId, ipIndex, shared);
 }
 
 int xclCloseContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipIndex)

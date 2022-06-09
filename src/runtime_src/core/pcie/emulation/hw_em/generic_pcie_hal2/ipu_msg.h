@@ -43,6 +43,7 @@ typedef enum ipu_msg_opcode_ {
     IPU_MSG_QUERY_ERROR_INFO        = 0x9,
     IPU_MSG_UNREGISTER_XCL_BIN      = 0xA,
     IPU_MSG_CONFIG_CU               = 0xB,
+    IPU_MSG_EXECUTE_BUFFER_CF       = 0xC,
     IPU_MSG_MAX_XRT_OPCODE,
     IPU_MSG_SUSPEND                 = 0x101,
     IPU_MSG_RESUME                  = 0x102,

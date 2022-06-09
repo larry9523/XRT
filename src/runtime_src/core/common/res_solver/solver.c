@@ -129,13 +129,13 @@ static void remove_node(struct solver_state *xrs, struct solver_node *node)
 	}
 }
 
-static struct solver_node *search_node_by_pid(struct solver_state *xrs,
-		uint32_t pid)
+static struct solver_node *search_node_by_rid(struct solver_state *xrs,
+		uint32_t rid)
 {
 	struct solver_node *cnode = xrs->node_head;
 
 	while (cnode != NULL) {
-		if (cnode->pid == pid)
+		if (cnode->rid == rid)
 			break;
 		cnode = cnode->next;
 	}
@@ -162,19 +162,19 @@ static int get_nnodes_by_xclbin_uuid(struct solver_state *xrs,
 
 /*
  * The caller needs to guarantee
- *     1. npid is not 0
- *     2. enough memory is allocated for pids (array)
+ *     1. nrid is not 0
+ *     2. enough memory is allocated for rids (array)
  */
-static void get_pids_by_xclbin_uuid(struct solver_state *xrs,
-		uuid_t *xclbin_uuid, uint32_t npid, uint32_t *pids)
+static void get_rids_by_xclbin_uuid(struct solver_state *xrs,
+		uuid_t *xclbin_uuid, uint32_t nrid, uint32_t *rids)
 {
 	struct solver_node *cnode = xrs->node_head;
 	uint32_t n = 0;
 
-	while (cnode != NULL && n < npid) {
+	while (cnode != NULL && n < nrid) {
 		if (!uuid_compare(cnode->xclbin_uuid, *xclbin_uuid) &&
 		    cnode->part >=0) {
-			pids[n] = cnode->pid;
+			rids[n] = cnode->rid;
 			n++;
 		}
 		cnode = cnode->next;
@@ -336,7 +336,7 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 	struct solver_node *node;
 	struct solver_partition_node *pt_node = NULL;
 	uint32_t cdo = 0, part = 0, nact;
-	uint32_t pid = req->pid;
+	uint32_t rid = req->rid;
 	struct part_meta *pmp = req->pmp;
 	uint32_t i;
 	int rval;
@@ -346,10 +346,10 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 	xrs = (struct solver_state *)hdl;
 
 	/*
-	 * Currently, one process can only load one xclbin.
+	 * The request ID already exists.
 	 */
-	if (search_node_by_pid(xrs, pid)) {
-		xrs->func->xrs_log("Solver: pid %d exists\n", pid);
+	if (search_node_by_rid(xrs, rid)) {
+		xrs->func->xrs_log("Solver: rid %d exists\n", rid);
 		return -EEXIST;
 	}
 
@@ -395,7 +395,7 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 
 		uuid_copy(node->xclbin_uuid, *(pmp->xclbin_uuid));
 		uuid_copy(node->cdo_uuid, *(cpart->cdo_uuid));
-		node->pid = pid;
+		node->rid = rid;
 		node->noly = cpart->nparts;
 		node->ncol = cpart->ncols;
 		memcpy(node->oly, cpart->start_col_list, cpart->nparts *
@@ -444,10 +444,10 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 		}
 
 		(*actions)->nactions = nact;
-		(*actions)->actions[0].pid = node->pid;
+		(*actions)->actions[0].rid = node->rid;
 		(*actions)->actions[0].xclbin_uuid = &node->xclbin_uuid;
 		(*actions)->actions[0].cdo_uuid = &node->cdo_uuid;
-		(*actions)->actions[0].pid = node->pid;
+		(*actions)->actions[0].rid = node->rid;
 		(*actions)->actions[0].part.start_col = node->oly[part];
 		(*actions)->actions[0].part.ncol = node->ncol;
 		(*actions)->actions[0].action = pt_node->nshared == 1 ?
@@ -458,7 +458,7 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 	return rval;
 }
 
-int xrs_release_resource(xrs_handle_t hdl, uint32_t pid)
+int xrs_release_resource(xrs_handle_t hdl, uint32_t rid)
 {
 	struct solver_partition_node *pt_node;
 	struct solver_state *xrs;
@@ -470,7 +470,7 @@ int xrs_release_resource(xrs_handle_t hdl, uint32_t pid)
 	xrs = (struct solver_state *)hdl;
 
 	while (1) {
-		node = search_node_by_pid(xrs, pid);
+		node = search_node_by_rid(xrs, rid);
 		if (!node)
 			break;
 
@@ -500,33 +500,33 @@ int xrs_release_resource(xrs_handle_t hdl, uint32_t pid)
 	return found ? 0 : -ENODEV;
 }
 
-int xrs_query_npid(xrs_handle_t hdl, uuid_t *xclbin_uuid)
+int xrs_query_nrid(xrs_handle_t hdl, uuid_t *xclbin_uuid)
 {
 	struct solver_state *xrs;
-	int npid;
+	int nrid;
 
 	if (!hdl)
 		return -ENODEV;
 
 	xrs = (struct solver_state *)hdl;
-	npid = get_nnodes_by_xclbin_uuid(xrs, xclbin_uuid);
+	nrid = get_nnodes_by_xclbin_uuid(xrs, xclbin_uuid);
 
-	return npid;
+	return nrid;
 }
 
-int xrs_query_pids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t npid,
-		uint32_t *pids)
+int xrs_query_rids(xrs_handle_t hdl, uuid_t *xclbin_uuid, uint32_t nrid,
+		uint32_t *rids)
 {
 	struct solver_state *xrs;
 
-	if (npid == 0)
+	if (nrid == 0)
 		return -EINVAL;
 
 	if (!hdl)
 		return -ENODEV;
 	xrs = (struct solver_state *)hdl;
 
-	get_pids_by_xclbin_uuid(xrs, xclbin_uuid, npid, pids);
+	get_rids_by_xclbin_uuid(xrs, xclbin_uuid, nrid, rids);
 
 	return 0;
 }

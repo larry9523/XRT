@@ -114,8 +114,9 @@ namespace hwemu {
       int         load_xclbin(xrt::bo& xbo, char *buf, size_t size, const uuid_t uuid);
       int         unload_xclbin(const uuid_t uuid);
       int         open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol);
-      int         close_context(const uuid_t uuid);
+      int         close_context(uint32_t ctxhdl);
       int         sync_bo(uint64_t dest, uint64_t src, size_t size, size_t seek);
+      int         config(uint32_t num_cus, const void *cfg);
 
       ipurb_queue*          queuep; // point to the ring buffer to send command
 
@@ -132,6 +133,7 @@ namespace hwemu {
    *
    * @load_xclbin():      Load Xclbin to IPU
    * @open_context():     Create context (create user task)
+   *                      Return context ID or POSIX error number
    * @close_context():    Close context (delete user task)
    * @add_exec_buffer():  Send exec_buf to IPU
    * @alloc_bo():         Alloc shadow BO from DDR for SRAM BO
@@ -146,12 +148,13 @@ namespace hwemu {
 
       int    load_xclbin(char *buf, size_t size, const uuid_t uuid);
       int    unload_xclbin(const uuid_t uuid);
-      int    open_context(const uuid_t uuid, unsigned int ip_index, uint32_t start_col, uint32_t ncol);
-      int    close_context(const uuid_t uuid, unsigned int ip_index);
+      int    open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol);
+      int    close_context(uint32_t ctxhdl);
       int    add_exec_buffer(xclemulation::drm_xocl_bo *buf);
       int    alloc_bo(size_t size);
       int    free_bo();
       int    sync_bo(uint64_t dest, const void *src, size_t size, size_t seek);
+      int    config(uint32_t num_cus, const void *cfg);
 
       ipurb_queue queue;
 

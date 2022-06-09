@@ -340,6 +340,23 @@ void TEST_IpuInvokeSelfTest(IpuHenvRing *pMngBuff)
 // Create dummy xclbin (algined for mpIPU dma purposes)
 uint8_t __attribute__((aligned(32))) xcl_bin_data[256];
 
+void TEST_IpuConfigCU(IpuHenvRing *pAppCtxBuff)
+{
+    TEST_FN_HEADER;
+    scheduler_config_buffer_req_t req;
+    scheduler_config_buffer_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    for (uint8_t i=0; i<2; ++i) {
+        req.configs[i].cu_idx = i;
+        req.configs[i].cu_functional = i;
+    }
+
+    bool passed = RINGB_Command(req, &resp, pAppCtxBuff, 0xFA5EFADE, IPU_MSG_CONFIG_CU,
+                                "IPU_MSG_CONFIG_CU", __FUNCTION__);
+
+
+    TEST_FN_RESULT(passed);
+}
 // #define XILINX_DPU_SELF_TEST
 void TEST_DPUSelfTest(IpuHenvRing *pMngBuff)
 {
@@ -630,6 +647,7 @@ static void TEST_IpuCreateContext(IpuHenvRing *pMngBuff, uint32_t *context_id)
     if(passed && create_context_resp.num_command_queue_pairs_allocated > 0) {
         IpuHenvRing rb(qPair->request_queue_info, qPair->response_queue_info, 0);
 
+        TEST_IpuConfigCU(&rb);
         TEST_IpuExecuteBuffer(&rb);
         TEST_IpuExecuteBuffer(&rb);
         TEST_IpuExecuteBuffer(&rb);
@@ -909,6 +927,12 @@ void FsdlMain()
     unregister_xcl_bin_resp_t uresp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
     lpassed = RINGB_Command(ureq, &uresp, nullptr, 0xFA5EFADE, IPU_MSG_UNREGISTER_XCL_BIN,
                 "IPU_MSG_UNREGISTER_XCL_BIN", __FUNCTION__);
+
+    scheduler_config_buffer_req_t schreq;
+    scheduler_config_buffer_resp_t schresp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    lpassed = RINGB_Command(schreq, &schresp, nullptr, 0xFA5EFADE, IPU_MSG_CONFIG_CU,
+                                "IPU_MSG_CONFIG_CU", __FUNCTION__);
 
     printf("lpassed is %d\n", lpassed);
     // End of the instantiation
