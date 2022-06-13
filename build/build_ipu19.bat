@@ -18,55 +18,42 @@ IF "%1" == "-help" (
   GOTO Help
 )
 
+REM Default location of XRT-IPU dependencies built by xrtdeps-win19.py
+SET EXT_DIR=c:/Xilinx/XRT/ext
+
 IF "%1" == "-debug" (
-  IF "%2" == "" (
-    SET BOOST_DEBUG=c:/Xilinx/XRT/ext
-    SET KHRONOS_DEBUG=c:/Xilinx/XRT/ext
-  ) ELSE (
-      SET BOOST_DEBUG=%2
-      SET KHRONOS_DEBUG=%2
+  IF NOT "%2" == "" (
+      SET EXT_DIR=%2
   )
-  echo BOOST_DEBUG = %BOOST_DEBUG%
-  echo KHRONOS_DEBUG = %KHRONOS_DEBUG%
+  echo EXT_DIR = %EXT_DIR%
   GOTO DebugBuild
 )
 
 IF "%1" == "-release" (
-  SET USE_DEFAULT_DEPS=false
   IF "%2" == "" (
-    SET BOOST=c:/Xilinx/XRT/ext
-    SET KHRONOS=c:/Xilinx/XRT/ext
+    SET EXT_DIR=c:/Xilinx/XRT/ext
+  ) ELSE (
+    SET EXT_DIR=%2
   )
   IF "%2" == "-package" (
-    SET BOOST=c:/Xilinx/XRT/ext
-    SET KHRONOS=c:/Xilinx/XRT/ext
+    SET EXT_DIR=c:/Xilinx/XRT/ext
   ) ELSE (
-      SET BOOST=%2
-      SET KHRONOS=%2
+    SET EXT_DIR=%2
   )
-  echo BOOST = %BOOST%
-  echo KHRONOS = %KHRONOS%
+  echo EXT_DIR = %EXT_DIR%
   GOTO ReleaseBuild
 )
 
 
 IF "%1" == "-all" (
-  IF "%2" == "" (
-    SET BOOST_DEBUG=c:/Xilinx/XRT/ext
-    SET KHRONOS_DEBUG=c:/Xilinx/XRT/ext
-  ) ELSE (
-      SET BOOST_DEBUG=%2
-      SET KHRONOS_DEBUG=%2
+  IF NOT "%2" == "" (
+      SET EXT_DIR=%2
   )
   CALL:DebugBuild
   IF errorlevel 1 (exit /B %errorlevel%)
 
-  IF "%2" == "" (
-    SET BOOST=c:/Xilinx/XRT/ext
-    SET KHRONOS=c:/Xilinx/XRT/ext
-  ) ELSE (
-      SET BOOST=%2
-      SET KHRONOS=%2
+  IF NOT "%2" == "" (
+      SET EXT_DIR=%2
   )
   CALL:ReleaseBuild
   IF errorlevel 1 (exit /B %errorlevel%)
@@ -116,7 +103,7 @@ PUSHD WDebug
 
 ECHO MSVC Compile Parallel Jobs: %LOCAL_MSVC_PARALLEL_JOBS%
 
-cmake -G "Visual Studio 16 2019" -DMSVC_PARALLEL_JOBS=%LOCAL_MSVC_PARALLEL_JOBS% -DKHRONOS=%KHRONOS% -DBOOST_ROOT=%BOOST% -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DXRT_IPU_BUILD=yes ../../src
+cmake -G "Visual Studio 16 2019" -DMSVC_PARALLEL_JOBS=%LOCAL_MSVC_PARALLEL_JOBS% -DKHRONOS=%EXT_DIR% -DBOOST_ROOT=%EXT_DIR% -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DXRT_IPU_BUILD=yes ../../src
 IF errorlevel 1 (POPD & exit /B %errorlevel%)
 
 cmake --build . --verbose --config Debug
@@ -149,7 +136,7 @@ IF "%1" == "-package" (
   GOTO:shift_loop_release
 )
 
-cmake -G "Visual Studio 16 2019"  -DXCL_MGMT=%XCLMGMT_DRIVER% -DXOCL_USER=%XOCLUSER_DRIVER% -DXCL_MGMT2=%XCLMGMT2_DRIVER% -DXOCL_USER2=%XOCLUSER2_DRIVER% -DMSVC_PARALLEL_JOBS=%LOCAL_MSVC_PARALLEL_JOBS% -DKHRONOS=%KHRONOS% -DBOOST_ROOT=%BOOST% -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DXRT_IPU_BUILD=yes ../../src
+cmake -G "Visual Studio 16 2019"  -DXCL_MGMT=%XCLMGMT_DRIVER% -DXOCL_USER=%XOCLUSER_DRIVER% -DXCL_MGMT2=%XCLMGMT2_DRIVER% -DXOCL_USER2=%XOCLUSER2_DRIVER% -DMSVC_PARALLEL_JOBS=%LOCAL_MSVC_PARALLEL_JOBS% -DKHRONOS=%EXT_DIR% -DBOOST_ROOT=%EXT_DIR% -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DXRT_IPU_BUILD=yes ../../src
 IF errorlevel 1 (POPD & exit /B %errorlevel%)
 
 cmake --build . --verbose --config Release
