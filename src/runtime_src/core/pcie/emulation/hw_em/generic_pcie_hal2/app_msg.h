@@ -28,12 +28,14 @@ typedef struct scheduler_config_buffer_resp_ {
     ipu_status_e status;
 } scheduler_config_buffer_resp_t;
 
+typedef struct cu_execute_buffer_ {
+    uint32_t cu_idx;
+    uint32_t payload[1];
+} cu_execute_buffer_t;
+
 typedef struct execute_buffer_req_ {
     union {
-        struct {
-            uint32_t cu_idx;
-            uint32_t payload[1];
-        };
+        cu_execute_buffer_t cu_exec;
         uint32_t data[20];
     };
 } execute_buffer_req_t;
