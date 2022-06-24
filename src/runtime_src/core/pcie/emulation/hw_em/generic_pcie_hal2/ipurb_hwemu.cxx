@@ -140,7 +140,7 @@ namespace hwemu {
           execute_buffer_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
 
           auto ert_start_cu = reinterpret_cast<ert_start_kernel_cmd *>(ert_pkt);
-          memcpy(req.payload, ert_start_cu->data, payload_size() - 4);
+          memcpy(req.cu_exec.payload, ert_start_cu->data, payload_size() - 4);
 
           uint32_t cu_idx = 0, mask = 0;
           mask = ert_start_cu->cu_mask;
@@ -158,7 +158,7 @@ namespace hwemu {
             mask >>=1;
           }
 
-          req.cu_idx = cu_idx;
+          req.cu_exec.cu_idx = cu_idx;
           printf("cu_idx %d\n", cu_idx);
 
           passed = RINGB_Command(req, &resp, queuep->usr_buff, 0xFA5EFADE, IPU_MSG_EXECUTE_BUFFER_CF,

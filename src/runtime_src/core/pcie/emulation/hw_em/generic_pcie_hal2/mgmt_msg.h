@@ -24,6 +24,7 @@ typedef enum xcl_bin_type_ {
     XCL_BIN_TYPE_PRE,
     XCL_BIN_TYPE_PRIMARY,
     XCL_BIN_TYPE_POST,
+    XCL_BIN_TYPE_LITE,
     MAX_XCL_BIN_TYPE
 } xcl_bin_type_e;
 
