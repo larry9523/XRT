@@ -32,3 +32,4 @@ REM Copy over other files (XCL binary, xrt.ini, helper batch script)
 COPY /y %DPU%\..\1x3_oo.xclbin %EXPORT%
 COPY /y %XRT_FLOW_ROOT%\target\xrt.ini %EXPORT%
 COPY /y %XRT_FLOW_ROOT%\target\run_xrt_flow.bat %EXPORT%
+
