@@ -18,6 +18,9 @@
     <ClInclude Include="..\..\DPU\host_code\xrt_host_oo\src\buffer_ops.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\DPU\host_code\xrt_host_oo\src\config.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\DPU\host_code\xrt_host_oo\src\host_hal.cpp">

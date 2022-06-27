@@ -115,7 +115,7 @@
       <Message>Prebuild: Compile XRT-IPU</Message>
     </PreBuildEvent>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\..\DPU\host_code\xrt_host_oo\$(DPU_TARGET)\$(XRT_FLOW_TEST_CASE);$(ProjectDir)..\..\ext\include\boost-1_75;$(ProjectDir)..\..\ext_build\boost;$(ProjectDir)..\..\build\W$(Configuration)\xilinx\xrt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\ext\include\boost-1_75;$(ProjectDir)..\..\ext_build\boost;$(ProjectDir)..\..\build\W$(Configuration)\xilinx\xrt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(ProjectDir)..\..\build\W$(Configuration)\xilinx\xrt\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -138,7 +138,7 @@
       <Message>Prebuild: Compile XRT-IPU</Message>
     </PreBuildEvent>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\..\DPU\host_code\xrt_host_oo\$(DPU_TARGET)\$(XRT_FLOW_TEST_CASE);$(ProjectDir)..\..\ext\include\boost-1_75;$(ProjectDir)..\..\ext_build\boost;$(ProjectDir)..\..\build\W$(Configuration)\xilinx\xrt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\ext\include\boost-1_75;$(ProjectDir)..\..\ext_build\boost;$(ProjectDir)..\..\build\W$(Configuration)\xilinx\xrt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(ProjectDir)..\..\build\W$(Configuration)\xilinx\xrt\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -157,6 +157,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\..\DPU\host_code\xrt_host_oo\src\buffer_ops.h" />
+    <ClInclude Include="..\..\DPU\host_code\xrt_host_oo\src\config.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\DPU\host_code\xrt_host_oo\src\host_hal.cpp" />

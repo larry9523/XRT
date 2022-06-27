@@ -2,7 +2,8 @@ REM Copyright(C) 2022 Advanced Micro Devices, Inc. All rights reserved.
 
 @echo OFF
 
-REM Compile a separate test executable against each test case
+REM Build xrt_flow.exe
+REM With the unified config.h, there is no need to compile a separate executable per test case
 
 set CONFIGURATION=%1
 
@@ -14,95 +15,9 @@ if "%1"=="" (
 set XRT_FLOW_ROOT=%~dp0..
 set EXE_PATH=%XRT_FLOW_ROOT%\\x64\\%CONFIGURATION%
 
-REM Compile all the 4x5 DPU test cases
-REM See DPU\host_code\xrt_host_oo\4x5
-set DPU_TARGET=4x5
-
-set TEST_CASE=conv
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_tct
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_tct2
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=multilayer
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=pool
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet50
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-REM Compile all the 1x4 DPU test cases
 REM See DPU\host_code\xrt_host_oo\1x4
 set DPU_TARGET=1x4
 
-set TEST_CASE=conv_case_1
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_2
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_3
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_4
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=conv_case_5
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw_case_0
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw_case_1
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=elemw_case_2
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=pool_case_0
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=pool_case_1
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet_layer_two
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet_one_block
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=resnet50_1x4
-call :BUILD_TEST_CASE
-if %ERRORLEVEL% neq 0 goto FAIL
-
-set TEST_CASE=test_one
 call :BUILD_TEST_CASE
 if %ERRORLEVEL% neq 0 goto FAIL
 
@@ -110,17 +25,14 @@ exit /b 0
 
 :BUILD_TEST_CASE
 echo ------------------------
-echo Build xrt_flow_%TEST_CASE%.exe
+echo Build xrt_flow.exe
 echo ------------------------
-msbuild %XRT_FLOW_ROOT%\\xrt_flow.sln /p:Configuration="%CONFIGURATION%" /p:Platform=x64 /p:XRT_FLOW_TEST_CASE="%TEST_CASE%" /p:DPU_TARGET="%DPU_TARGET%"
-if %ERRORLEVEL% neq 0 goto BUILD_TEST_CASE_EXIT
-
-REM Rename the xrt_flow executable to match with the test case
-copy /y %EXE_PATH%\\xrt_flow.exe %EXE_PATH%\\xrt_flow_%TEST_CASE%.exe
+msbuild %XRT_FLOW_ROOT%\\xrt_flow.sln /p:Configuration="%CONFIGURATION%" /p:Platform=x64 /p:DPU_TARGET="%DPU_TARGET%"
 if %ERRORLEVEL% neq 0 goto BUILD_TEST_CASE_EXIT
 :BUILD_TEST_CASE_EXIT
 exit /b %ERRORLEVEL%
 
 :FAIL
-echo Error when building or copying xrt_flow_%TEST_CASE%.exe
+echo Error when building or copying xrt_flow.exe
 exit /b %ERRORLEVEL%
+

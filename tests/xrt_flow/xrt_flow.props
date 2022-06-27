@@ -7,7 +7,7 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
     <XRT_FLOW_TEST_CASE>conv</XRT_FLOW_TEST_CASE>
-    <DPU_TARGET>4x5</DPU_TARGET>
+    <DPU_TARGET>1x4</DPU_TARGET>
   </PropertyGroup>
   <PropertyGroup />
   <ItemDefinitionGroup />
