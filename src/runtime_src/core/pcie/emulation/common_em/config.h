@@ -30,8 +30,11 @@
 #include <tuple>
 #include <vector>
 
+#define DEBUG_MSGS_COUT(x)
+//#define DEBUG_MSGS_COUT(x) std::cout<<std::endl<<__func__<<__LINE__<<x<<std::endl;
+
 namespace xclemulation{
-  
+
   // KB
   const uint64_t MEMSIZE_1K   =   0x0000000000000400;
   const uint64_t MEMSIZE_4K   =   0x0000000000001000;
@@ -103,7 +106,7 @@ struct sParseLog
   std::atomic<bool> mFileExists;
   std::vector<std::string> mMatchedStrings;
   eEmulationType mEmuType;
-  
+
   sParseLog(const std::string& iDeviceLog, eEmulationType iType, const std::vector<std::string>& iMatchedStrings)
       : mFileName(iDeviceLog)
       , mFileExists{false}
@@ -113,7 +116,7 @@ struct sParseLog
 
   }
   /* The function displays user actionable message by calling print_user_msg(),
-  *  if any user list of strings found in mFileName otherwise the content of 
+  *  if any user list of strings found in mFileName otherwise the content of
   *  mFileName will be displayed.
   */
   void check_simulator_status()
@@ -145,7 +148,7 @@ struct sParseLog
   * The current design has some limitations to apply this feature to both
   * SwEmShim & HwEmShim classes.
   * */
-  
+
   void print_user_msg()
   {
     switch (mEmuType) {
@@ -158,11 +161,11 @@ struct sParseLog
     }
   }
   /*********************************************************************************
-   *  The function traverse the log file (simulate.log) and prints an actionable 
+   *  The function traverse the log file (simulate.log) and prints an actionable
    *  user message if anyline of log file matches exactly with an user defined
    *  vector of strings. The log file might be updated by a separate process. So ensuring
    *  file existence before opening it would eliminate several exceptions.
-   *  
+   *
    * */
   void parseLog()
   {
@@ -179,12 +182,12 @@ struct sParseLog
     // Now, check for user list of strings, display actionable message incase matched.
     if (mFileExists.load())
       check_simulator_status();
-    
+
   }
 };
 
   //this class has only one member now. This will be extended to use all the parameters specific to each ddr.
-  class DDRBank 
+  class DDRBank
   {
     public:
       uint64_t ddrSize;
@@ -239,20 +242,20 @@ struct sParseLog
     batch,
     gui,
     gdb };
-  
+
   enum class ertmode {
     none,
     legacy,
-    updated 
+    updated
   };
 
-  class config 
+  class config
   {
     public:
       static config* getInstance();    //get the instance of singleton class
       static void destroy();           //destruct the class.
-      
-      inline void enableDiagnostics(bool diagnostics)           { mDiagnostics      = diagnostics ;  } 
+
+      inline void enableDiagnostics(bool diagnostics)           { mDiagnostics      = diagnostics ;  }
       inline void enableUMRChecks(bool umrChecks)               { mUMRChecks        = umrChecks;     }
       inline void enableOOBChecks(bool oobChecks)               { mOOBChecks        = oobChecks;     }
       inline void enableMemLogs (bool memLogs)                  { mMemLogs          = memLogs;       }
@@ -265,7 +268,7 @@ struct sParseLog
       inline void setSimDir( std::string& simDir)               { mSimDir           = simDir;        }
       inline void setUserPreSimScript( std::string& userPreSimScript) {mUserPreSimScript = userPreSimScript; }
 	    inline void setUserPostSimScript( std::string& userPostSimScript) {mUserPostSimScript = userPostSimScript; }
-      inline void setWcfgFilePath(std::string& wcfgFilePath) { mWcfgFilePath = wcfgFilePath; }      
+      inline void setWcfgFilePath(std::string& wcfgFilePath) { mWcfgFilePath = wcfgFilePath; }
       inline void setLaunchWaveform( debug_mode lWaveform)  { mLaunchWaveform   = lWaveform;     }
       inline void suppressInfo( bool suppress)                  { mSuppressInfo     = suppress;      }
       inline void suppressWarnings( bool suppress)              { mSuppressWarnings = suppress;      }
@@ -275,11 +278,11 @@ struct sParseLog
       inline void printErrorsInConsole( bool _print)            { mPrintErrorsInConsole   = _print;  }
       inline void setVerbosityLevel(unsigned int verbosity)     { mVerbosity        = verbosity;     }
       inline void setServerPort(unsigned int serverPort)        { mServerPort       = serverPort;    }
-      inline void setKeepRunDir(bool _mKeepRundir)              { mKeepRunDir = _mKeepRundir;        }    
+      inline void setKeepRunDir(bool _mKeepRundir)              { mKeepRunDir = _mKeepRundir;        }
       inline void setLauncherArgs(std::string & _mLauncherArgs) { mLauncherArgs = _mLauncherArgs;    }
       inline void setSystemDPA(bool _isDPAEnabled)              { mSystemDPA    = _isDPAEnabled;     }
       inline void setLegacyErt(ertmode _legacyErt)              { mLegacyErt    = _legacyErt;        }
-      
+
       inline bool isDiagnosticsEnabled()        const { return mDiagnostics;    }
       inline bool isUMRChecksEnabled()          const { return mUMRChecks;      }
       inline bool isOOBChecksEnabled()          const { return mOOBChecks;      }
@@ -298,9 +301,9 @@ struct sParseLog
       inline bool isInfoSuppressed()            const { return mSuppressInfo;    }
       inline bool isWarningsuppressed()         const { return mSuppressWarnings;}
       inline bool isErrorsSuppressed()          const { return mSuppressErrors;  }
-      inline bool getVerbosityLevel()           const { return mVerbosity;       }    
-      inline bool isKeepRunDirEnabled()         const { return mKeepRunDir;       }    
-      inline bool isInfosToBePrintedOnConsole() const { return mPrintInfosInConsole;   }  
+      inline bool getVerbosityLevel()           const { return mVerbosity;       }
+      inline bool isKeepRunDirEnabled()         const { return mKeepRunDir;       }
+      inline bool isInfosToBePrintedOnConsole() const { return mPrintInfosInConsole;   }
       inline unsigned int getServerPort()       const { return mServerPort;      }
       inline bool isErrorsToBePrintedOnConsole()   const { return mPrintErrorsInConsole;  }
       inline bool isWarningsToBePrintedOnConsole() const { return mPrintWarningsInConsole;}
@@ -308,7 +311,7 @@ struct sParseLog
       inline bool isSystemDPAEnabled() const     { return mSystemDPA;              }
       inline ertmode getLegacyErt() const         { return mLegacyErt;              }
       inline long long getCuBaseAddrForce() const         { return mCuBaseAddrForce;              }
-      inline bool isSharedFmodel() const         {return mIsSharedFmodel; } 
+      inline bool isSharedFmodel() const         {return mIsSharedFmodel; }
       inline bool isM2MEnabled() const { return mIsM2MEnabled; }
       inline TIMEOUT_SCALE getTimeOutScale() const    {return mTimeOutScale;}
 
@@ -364,7 +367,7 @@ struct sParseLog
   std::string getRunDirectory();
   std::string getExecutablePath();
   std::string getAbsolutePath(const std::string& pathStr, const std::string& absBuildDirStr);
-  
+
   std::map<std::string,std::string> getEnvironmentByReadingIni();
   std::string getXclbinVersion(const axlf* top);
   std::string getVivadoVersion();

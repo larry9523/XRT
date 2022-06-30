@@ -172,7 +172,7 @@ namespace xclemulation{
         std::string absolutePath = getAbsolutePath(value, getExecutablePath());
         setUserPostSimScript(absolutePath);
         setenv("USER_POST_SIM_SCRIPT", absolutePath.c_str(), true);
-      } 
+      }
       else if (name == "xtlm_aximm_log") {
         bool val = getBoolValue(value, true);
         if (val) {
@@ -190,7 +190,7 @@ namespace xclemulation{
         }
       }
       else if (name == "ENABLE_GMEM_LATENCY" || name == "enable_gmem_latency") {
-        //This is then new INI option that sets the ENV HW_EM_DISABLE_LATENCY to appropriate value before 
+        //This is then new INI option that sets the ENV HW_EM_DISABLE_LATENCY to appropriate value before
         //launching simulation
         bool val = getBoolValue(value, false);
         if (val) {
@@ -225,7 +225,7 @@ namespace xclemulation{
         setKeepRunDir(getBoolValue(value,true));
       }
       else if (name == "enable_prep_target" || name == "enable_debug" || name == "aie_sim_options") {
-        //Do nothing: Added to bypass the WARNING that is issued below stating "invalid xrt.ini option" 
+        //Do nothing: Added to bypass the WARNING that is issued below stating "invalid xrt.ini option"
       }
       else if(name == "sim_dir")
       {
@@ -263,7 +263,7 @@ namespace xclemulation{
       {
         if (name == "launch_waveform")
           std::cout << "WARNING: [HW-EMU 09] INI option 'launch_waveform' is deprecated and replaced with the new switch 'debug_mode'." << std::endl;
-        
+
         if (boost::iequals(value,"gui" ))
         {
           setLaunchWaveform(debug_mode::gui);
@@ -275,8 +275,8 @@ namespace xclemulation{
         else if (boost::iequals(value,"off" ))
         {
           setLaunchWaveform(debug_mode::off);
-        } 
-        else if (boost::iequals(value,"gdb")) 
+        }
+        else if (boost::iequals(value,"gdb"))
         {
           setLaunchWaveform(debug_mode::gdb);
           std::cout << "WARNING: [HW-EMU 08] Invalid option '" << value << "' specified in xrt.ini/sdaccel.ini for debug_mode." << std::endl;
@@ -424,7 +424,7 @@ namespace xclemulation{
   }
 
   bool is_sw_emulation()
-  {    
+  {
     static auto xem = std::getenv("XCL_EMULATION_MODE");
     if (xem)
     {
@@ -510,26 +510,26 @@ namespace xclemulation{
     return environmentNameValueMap;
   }
 
-  // Converts any sort of memory size notation provided by the platform to proper memory value 
+  // Converts any sort of memory size notation provided by the platform to proper memory value
   // directly without any lookup. This is scalable approach and supports more such memory notations.
   uint64_t get_mem_value(std::string& memorySizeStr) {
     for (auto it = memorySizeStr.begin(); it != memorySizeStr.end(); it++) {
       if (isalpha(*it)) {
-        uint64_t int_val = atoi(memorySizeStr.substr(0, *it).c_str()); 
+        uint64_t int_val = atoi(memorySizeStr.substr(0, *it).c_str());
         if (std::toupper(*it) == 'K')
-          return int_val*1024; 
+          return int_val*1024;
         else if (std::toupper(*it) == 'M')
-          return int_val*1024*1024; 
+          return int_val*1024*1024;
         else if (std::toupper(*it) == 'G')
-          return int_val*1024*1024*1024; 
+          return int_val*1024*1024*1024;
         else if (std::toupper(*it) == 'T')
-          return int_val*1024*1024*1024*1024; 
+          return int_val*1024*1024*1024*1024;
       }
     }
     return 0;
   }
 
-  static void populateDDRBankInfo(boost::property_tree::ptree const& ddrBankTree, xclDeviceInfo2& info, 
+  static void populateDDRBankInfo(boost::property_tree::ptree const& ddrBankTree, xclDeviceInfo2& info,
     std::list<DDRBank>& DDRBankList)
   {
     info.mDDRSize = 0;
@@ -751,7 +751,7 @@ namespace xclemulation{
 
   //create all the devices If devices child is present in this tree otherwise call this function recursively for all the child trees
   //iterate over devices tree and create all the device objects.
-  static void populateHwEmDevices(boost::property_tree::ptree const& platformTree,std::vector<std::tuple<xclDeviceInfo2,std::list<DDRBank> ,bool, bool, 
+  static void populateHwEmDevices(boost::property_tree::ptree const& platformTree,std::vector<std::tuple<xclDeviceInfo2,std::list<DDRBank> ,bool, bool,
     FeatureRomHeader, boost::property_tree::ptree> >& devicesInfo)
   {
     using boost::property_tree::ptree;
@@ -896,7 +896,7 @@ namespace xclemulation{
     auto buildMetaData = json_project.get_child("build_metadata");
     //std::string sTool = buildMetaData.get<std::string>("xclbin.generated_by.name", "");
     sVersion = buildMetaData.get<std::string>("xclbin.generated_by.version", "");
-    //std::string sTimeStamp = buildMetaData.get<std::string>("xclbin.generated_by.time_stamp", "");    
+    //std::string sTimeStamp = buildMetaData.get<std::string>("xclbin.generated_by.time_stamp", "");
     //std::cout << __func__ <<" Tool : " << sTool << " Version : " << sVersion << " TimeStamp : " << sTimeStamp << std::endl;
     return sVersion;
   }
@@ -934,19 +934,19 @@ namespace xclemulation{
   }
 
   void checkXclibinVersionWithTool(const xclBin *header)
-  {   
+  {
     auto top = reinterpret_cast<const axlf*>(header);
     std::string xclbinVersion = xclemulation::getXclbinVersion(top);
-    std::string vivadoVersion = xclemulation::getVivadoVersion();   
+    std::string vivadoVersion = xclemulation::getVivadoVersion();
     if(!xclbinVersion.empty() && !vivadoVersion.empty()) {
       std::size_t found = xclbinVersion.find(vivadoVersion);
-      if (found == std::string::npos) {        
+      if (found == std::string::npos) {
         std::string warnMsg = "WARNING: XCLBIN used is generated with Vivado version " + xclbinVersion + " where as it is run with the Vivado version " + vivadoVersion + " which is not compatible. May result to weird behaviour.";
         std::cout << warnMsg << std::endl;
       }
     }
   }
-  
+
   //Get CU index from IP_LAYOUT section for corresponding kernel name
   int getIPName2Index(const char *name, const char* buffer)
   {
