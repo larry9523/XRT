@@ -395,12 +395,10 @@ namespace hwemu {
     if (xcmd->assign_mgmt_pasid(0xFFFF))
       rval = 1;
 
-    if (rval)
-      throw std::runtime_error("FAILED to assign_mgmt_pasid \n");
-
     cmd_pool.destroy(xcmd);
 
-
+    if (rval)
+      throw std::runtime_error("FAILED to assign_mgmt_pasid \n");
   }
 
   xocl_ipurb::~xocl_ipurb()
