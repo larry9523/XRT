@@ -364,12 +364,43 @@ namespace hwemu {
     return 0;
   }
 
+  int ipurb_cmd::assign_mgmt_pasid(uint32_t mgmt_pasid)
+  {
+    assign_mgmt_pasid_req_t req = { 0 };
+    assign_mgmt_pasid_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    req.pasid = mgmt_pasid;
+
+    bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_ASSIGN_MGMT_PASID,
+    "IPU_MSG_ASSIGN_MGMT_PASID", __FUNCTION__);
+
+    if (!passed)
+      return -ETIME;
+
+    return 0;
+  }
+
   xocl_ipurb::xocl_ipurb(HwEmShim* dev)
     : queue(dev)
   {
     device = dev;
     nctx = 0;
     pid = getpid();
+
+    ipurb_cmd *xcmd = cmd_pool.construct(&queue);
+    if (!xcmd)
+      throw std::runtime_error("FAILED to construct ipurb cmd \n");
+
+    int rval = 0;
+    if (xcmd->assign_mgmt_pasid(0xFFFF))
+      rval = 1;
+
+    if (rval)
+      throw std::runtime_error("FAILED to assign_mgmt_pasid \n");
+
+    cmd_pool.destroy(xcmd);
+
+
   }
 
   xocl_ipurb::~xocl_ipurb()

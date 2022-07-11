@@ -117,6 +117,7 @@ namespace hwemu {
       int         close_context(uint32_t ctxhdl);
       int         sync_bo(uint64_t dest, uint64_t src, size_t size, size_t seek);
       int         config(uint32_t num_cus, const void *cfg);
+      int         assign_mgmt_pasid(uint32_t mgmt_pasid);
 
       ipurb_queue*          queuep; // point to the ring buffer to send command
 
