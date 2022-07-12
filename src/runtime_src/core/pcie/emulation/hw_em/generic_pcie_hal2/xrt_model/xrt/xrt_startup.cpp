@@ -934,6 +934,13 @@ void FsdlMain()
     lpassed = RINGB_Command(schreq, &schresp, nullptr, 0xFA5EFADE, IPU_MSG_CONFIG_CU,
                                 "IPU_MSG_CONFIG_CU", __FUNCTION__);
 
+    assign_mgmt_pasid_req_t assign_req = { 0 };
+    assign_mgmt_pasid_resp_t assign_resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    lpassed = RINGB_Command(assign_req, &assign_resp, nullptr, 0xFA5EFADE
+                                , IPU_MSG_ASSIGN_MGMT_PASID, "IPU_MSG_ASSIGN_MGMT_PASID", __FUNCTION__);
+
+
     printf("lpassed is %d\n", lpassed);
     // End of the instantiation
 
