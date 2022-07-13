@@ -158,14 +158,6 @@ include (CMake/lint.cmake)
 
 add_subdirectory(runtime_src)
 
-#XMA settings START
-set(XMA_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set(XMA_INSTALL_DIR "${XRT_INSTALL_DIR}")
-set(XMA_VERSION_STRING ${XRT_VERSION_MAJOR}.${XRT_VERSION_MINOR}.${XRT_VERSION_PATCH})
-set(XMA_SOVERSION ${XRT_SOVERSION})
-add_subdirectory(xma)
-#XMA settings END
-
 # --- Python bindings ---
 add_subdirectory(python)
 
@@ -180,18 +172,12 @@ install (FILES ${PY_TEST_SRC}
   PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
   DESTINATION ${XRT_INSTALL_DIR}/test)
 
-add_subdirectory("../tests/validate" "${CMAKE_CURRENT_BINARY_DIR}/validate_build")
 message("-- XRT version: ${XRT_VERSION_STRING}")
 
 # -- CPack
 include (CMake/cpackLin.cmake)
 
 set (XRT_DKMS_DRIVER_SRC_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/runtime_src/core")
-
-include (CMake/dkms.cmake)
-include (CMake/dkms-aws.cmake)
-include (CMake/dkms-azure.cmake)
-include (CMake/dkms-container.cmake)
 
 # --- ICD ---
 include (CMake/icd.cmake)

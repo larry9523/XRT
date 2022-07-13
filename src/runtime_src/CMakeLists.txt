@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2019-2021 Xilinx, Inc. All rights reserved.
-#
+# Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
 
 # Note: Add Windows compilation directives at the END of this file
 
@@ -30,7 +30,6 @@ endif(XRT_ENABLE_WERROR)
 if (${XRT_NATIVE_BUILD} STREQUAL "yes")
   add_compile_options( ${XRT_WARN_OPTS} )
 endif()
-add_subdirectory(xdp)
 
 add_subdirectory(tools/xclbinutil)
 add_subdirectory(xocl)
@@ -71,7 +70,6 @@ else()
     add_subdirectory(xocl)
     add_subdirectory(xrt)
     add_subdirectory(tools/xclbinutil)
-    add_subdirectory(xdp)
   endif (NOT MCDM)
   add_subdirectory(tools/scripts)
   add_subdirectory(core)
