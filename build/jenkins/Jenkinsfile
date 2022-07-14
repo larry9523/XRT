@@ -136,10 +136,8 @@ def extractTarFiles(releaseDir, os){
      cp '''+"${env.NFSWORKSPACE}"+"/"+"${BUILD_NUMBER}"+'''/build/settings.sh '''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}"
      extractedFolderPath="'''+"${env.FILEPATHNFS}"+'''"${release}"/"${folderName}/x86_64/'''+os+'''-default
      mkdir -p ${extractedFolderPath}
-     for f in ${tarFilesPath}/*.tar.gz; do tar -xvf "$f" -C ${extractedFolderPath}; done
+     for f in ${tarFilesPath}/*.tar.gz; do tar -xvf "$f" --strip-components=1 -C ${extractedFolderPath}; done
          '''
-
-
 }
 
 /**
