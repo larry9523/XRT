@@ -7,8 +7,5 @@
 install(FILES "${XRT_SOURCE_DIR}/../CHANGELOG.rst"
   DESTINATION "${XRT_INSTALL_DIR}/share/doc")
 
-install(FILES "${XRT_SOURCE_DIR}/../CONTRIBUTING.rst"
-  DESTINATION "${XRT_INSTALL_DIR}/share/doc")
-
 install(FILES "${XRT_SOURCE_DIR}/../NOTICE"
   DESTINATION "${XRT_INSTALL_DIR}/share/doc")
