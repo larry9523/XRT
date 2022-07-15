@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Copyright (C) 2022 Xilinx, Inc
+# Copyright (C) 2022 Advanced Micro Devices, Inc.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Loader for XRT
 # Usage:
 #  % run.sh ./host.exe kernel.xclin

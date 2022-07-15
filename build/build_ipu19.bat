@@ -1,5 +1,9 @@
 @ECHO OFF
 
+REM Copyright (C) 2022 Xilinx, Inc
+REM Copyright (C) 2022 Advanced Micro Devices, Inc.  All rights reserved.
+REM SPDX-License-Identifier: Apache-2.0
+
 IF "%1"=="" (
   GOTO Help
 )

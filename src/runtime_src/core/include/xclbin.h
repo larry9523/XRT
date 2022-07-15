@@ -1,38 +1,7 @@
-/**
+/*
+ *  SPDX-License-Identifier: Apache-2.0
  *  Copyright (C) 2015-2022, Xilinx Inc
- *
- *  This file is dual licensed.  It may be redistributed and/or modified
- *  under the terms of the Apache 2.0 License OR version 2 of the GNU
- *  General Public License.
- *
- *  Apache License Verbiage
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- *
- *  GPL license Verbiage:
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *  Copyright (C) 2022, Advanced Micro Devices, Inc.  All rights reserved.
  */
 
 #ifndef _XCLBIN_H_
@@ -536,7 +505,7 @@ extern "C" {
     struct cdo_group {
         uint32_t mpo_name;                  // Name of the CDO group (Null terminated string)
         uint8_t cdo_type;                   // CDO group type (CDO_Type)
-        uint8_t padding[3];             
+        uint8_t padding[3];
         uint64_t pdi_id;                    // PDI ID
         uint64_t dpu_kernel_id;             // DPU kernel ID
         struct array_offset pre_cdo_groups; // Array of Pre CDO Group IDs (uint32_t)
@@ -562,11 +531,11 @@ extern "C" {
         uint8_t reserved[72];               // Reserved
     };
     XCLBIN_STATIC_ASSERT(sizeof(struct aie_partition_info) == 88, "partition_info structure no longer is 88 bytes in size");
-    
+
     struct aie_partition {
         uint8_t schema_version;             // Group schema version (default 0)
-        uint8_t padding0[3];                // Byte alignment          
-        uint32_t mpo_name;                  // Name of the aie_partition 
+        uint8_t padding0[3];                // Byte alignment
+        uint32_t mpo_name;                  // Name of the aie_partition
         struct aie_partition_info info;     // Partition information
         struct array_offset aie_pdi;        // PDI Array (aie_partition_info)
         uint8_t reserved[54];               // Reserved

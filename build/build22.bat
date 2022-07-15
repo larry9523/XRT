@@ -1,7 +1,9 @@
 @ECHO OFF
 
 REM Copyright (C) 2022 Xilinx, Inc
+REM Copyright (C) 2022 Advanced Micro Devices, Inc.  All rights reserved.
 REM SPDX-License-Identifier: Apache-2.0
+
 set SCRIPTDIR=%~dp0
 set BUILDDIR=%SCRIPTDIR%
 
@@ -94,7 +96,7 @@ ECHO [-clean]                   - Remove build directories
 ECHO [-dbg]                     - Creates a debug build
 ECHO [-opt]                     - Creates a release build
 echo [-package]                 - Packages the release build to a MSI archive.
-ECHO                              Note: Depends on the WIX application. 
+ECHO                              Note: Depends on the WIX application.
 ECHO [-xclmgmt arg]             - The directory to the xclmgmt drivers (used with [-package])
 ECHO [-xocluser arg]            - The directory to the xocluser drivers (used with [-package])
 ECHO [-xclmgmt2 arg]            - The directory to the xclmgmt2 drivers (used with [-package])
@@ -189,5 +191,3 @@ if [%CREATE_PACKAGE%]  == [1] (
 
 popd
 GOTO:EOF
-
-

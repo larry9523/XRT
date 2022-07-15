@@ -1,7 +1,8 @@
 #/bin/bash
-##############################################################
-# Copyright (c) 1986-2021 Xilinx, Inc.  All rights reserved. #
-##############################################################
+
+# Copyright (C) 2022 Xilinx, Inc
+# Copyright (C) 2022 Advanced Micro Devices, Inc.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 root=$(readlink -f $(dirname ${BASH_SOURCE[0]}))
 arch=$(uname -m)
 
@@ -12,7 +13,7 @@ default_dir=${arch}/centos-default
 
 # Setup XRT environment variables
 if [[ $OSDIST == "ubuntu" ]]; then
-    
+
     # if [[ $OSREL != "16.04" ]] &&  [[ $OSREL != "18.04" ]] &&  [[ $OSREL != "20.04" ]]; then
     #     echo "Ubuntu $OSREL detected (${host}), minimal setup"
     #     set_path_only=1

@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Copyright (C) 2022 Xilinx, Inc
+# Copyright (C) 2022 Advanced Micro Devices, Inc.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 set -e
 
 OSDIST=`grep '^ID=' /etc/os-release | awk -F= '{print $2}' | tr -d '"'`

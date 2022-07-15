@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Copyright (C) 2022 Xilinx, Inc
+# Copyright (C) 2022 Advanced Micro Devices, Inc.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Use this script within a bash shell under WSL
 # No need to use Visual Studio separate shell.
 # Clone workspace must be on /mnt/c

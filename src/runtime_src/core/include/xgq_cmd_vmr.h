@@ -1,40 +1,8 @@
 /*
+ *  SPDX-License-Identifier: Apache-2.0
  *  Copyright (C) 2021-2022, Xilinx Inc
- *
- *  This file is dual licensed.  It may be redistributed and/or modified
- *  under the terms of the Apache 2.0 License OR version 2 of the GNU
- *  General Public License.
- *
- *  Apache License Verbiage
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- *
- *  GPL license Verbiage:
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License as
- *  published by the Free Software Foundation; either version 2 of the
- *  License, or (at your option) any later version.  This program is
- *  distributed in the hope that it will be useful, but WITHOUT ANY
- *  WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *  FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
- *  License for more details.  You should have received a copy of the
- *  GNU General Public License along with this program; if not, write
- *  to the Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- *  Boston, MA 02111-1307 USA
- *
+ *  Copyright (C) 2022, Advanced Micro Devices, Inc.  All rights reserved.
  */
-
 #ifndef XGQ_CMD_VMR_H
 #define XGQ_CMD_VMR_H
 
@@ -43,7 +11,7 @@
 
 /* This header file defines struct of mgmt command type opcode */
 
-/* The Clock IP use index 0 for data, 1 for kernel, 2 for sys, 3 for sys1 */ 
+/* The Clock IP use index 0 for data, 1 for kernel, 2 for sys, 3 for sys1 */
 #define XGQ_CLOCK_WIZ_MAX_RES           4
 
 /**
@@ -247,7 +215,7 @@ struct xgq_cmd_cq_default_payload {
 };
 
 /**
- * struct xgq_cmd_cq_clock_payload: vmr clock completion payload 
+ * struct xgq_cmd_cq_clock_payload: vmr clock completion payload
  *
  * @ocl_freq: 	result of clock frequency value
  */
@@ -350,7 +318,7 @@ XGQ_STATIC_ASSERT(sizeof(struct xgq_cmd_cq) == 16, "xgq_cmd_cq has to be 16 byte
  * @vmr_status_off:	the offset of vmr device status
  * @vmr_status_len:	the length of vmr device status
  * @log_msg_index:	the current index of ring buffer log
- * @log_msg_buf_off:	the offset of dbg log 
+ * @log_msg_buf_off:	the offset of dbg log
  * @log_msg_buf_len:	the length of dbg log
  * @vmr_data_start:	the offset of data buffer started
  * @vmr_data_end: 	the offset of data buffer ended

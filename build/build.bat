@@ -1,5 +1,9 @@
 @ECHO OFF
 
+REM Copyright (C) 2022 Xilinx, Inc
+REM Copyright (C) 2022 Advanced Micro Devices, Inc.  All rights reserved.
+REM SPDX-License-Identifier: Apache-2.0
+
 SET BOOST=C:/Xilinx/XRT/ext
 SET KHRONOS=C:/Xilinx/XRT/ext
 
@@ -63,7 +67,7 @@ ECHO [-release]                 - Creates a release build
 ECHO.
 ECHO Additional options to be used afer with the '-release' option:
 ECHO   [-package]               - Packages the release build to a MSI archive.
-ECHO                              Note: Depends on the WIX application. 
+ECHO                              Note: Depends on the WIX application.
 ECHO   [-xclmgmt arg]           - The directory to the xclmgmt drivers (used with packaging)
 ECHO   [-xocluser arg]          - The directory to the xocluser drivers (used with packaging)
 ECHO   [-xclmgmt2 arg]          - The directory to the xclmgmt2 drivers (used with packaging)
@@ -157,7 +161,7 @@ IF "%1" == "-xocluser2" (
   GOTO:shift_loop_release
 )
 
-REM Unknown option 
+REM Unknown option
 IF NOT "%1" == "" (
   POPD
   ECHO Unknown option: %1
@@ -199,5 +203,3 @@ IF "%CREATE_PACKAGE%" == "true" (
 
 popd
 GOTO:EOF
-
-

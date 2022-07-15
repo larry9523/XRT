@@ -1,40 +1,8 @@
 /*
+ *  SPDX-License-Identifier: Apache-2.0
  *  Copyright (C) 2020, Xilinx Inc
- *
- *  This file is dual licensed.  It may be redistributed and/or modified
- *  under the terms of the Apache 2.0 License OR version 2 of the GNU
- *  General Public License.
- *
- *  Apache License Verbiage
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- *
- *  GPL license Verbiage:
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License as
- *  published by the Free Software Foundation; either version 2 of the
- *  License, or (at your option) any later version.  This program is
- *  distributed in the hope that it will be useful, but WITHOUT ANY
- *  WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *  FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
- *  License for more details.  You should have received a copy of the
- *  GNU General Public License along with this program; if not, write
- *  to the Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- *  Boston, MA 02111-1307 USA
- *
+ *  Copyright (C) 2022, Advanced Micro Devices, Inc.  All rights reserved.
  */
-
 #ifndef _ERT_FA_H_
 #define _ERT_FA_H_
 
@@ -99,7 +67,7 @@ struct ert_fa_desc_entry {
  * @num_output_entries: number of output arg entries
  * @output_entry_bytes: total number of bytes for output args
  * @data:               payload comprised of desc entries for inputs and outputs
- * 
+ *
  * The io_entries is an array of input entries with num_input_entries
  * elements followed by an array of output entries with
  * num_output_entries elements starting at address io_entries +
@@ -113,7 +81,7 @@ struct ert_fa_descriptor {
   uint32_t output_entry_bytes;
   uint32_t data[];
 };
-  
+
 #ifdef _WIN32
 # pragma warning( pop )
 #endif
