@@ -1,20 +1,10 @@
 /******************************************************************************
- *  SPDX-License-Identifier: Apache-2.0
- *  (C) Copyright 2019-2021 Xilinx, Inc.
- *  (C) Copyright 2019-2021 OSR Open Systems Resources, Inc.
- *  All Rights Reserved
+ * SPDX-License-Identifier: Apache-2.0
+ * Copyright (C) 2019-2021 Xilinx, Inc. All rights reserved.
+ * Copyright (C) 2019-2021 OSR Open Systems Resources, Inc. All rights reserved.
+ * Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
- *  This notice is intended as a precaution against inadvertent publication
- *  and does not imply publication or any waiver of confidentiality.
- *  The year included in the foregoing notice is the year of creation of the work.
- *
- *
- *  Module Name    xrt-intf.hpp
- *  Project        IPU Kernel Mode Driver
- *
- *  Description    IOCTL interface definitions for the  XRT header
- *
- *
+ * Description    IOCTL interface definitions for the  XRT header
  ******************************************************************************/
 #pragma once
 

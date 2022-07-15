@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2019-2022 Xilinx, Inc. All rights reserved.
+# Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
 #
 # =============================================================================
 # Checks and validates the windows installation environment
@@ -40,7 +41,7 @@ from distutils import dir_util
 import glob
 import shutil
 from shutil import copyfile
-import urllib.request 
+import urllib.request
 
 
 # -- Global Variables --------------------------------------------------------
@@ -79,15 +80,15 @@ def main():
 
   # -- Boost Library
   boostLibraryObj = BoostLibrary(args.boost)
-  libraries.append( boostLibraryObj )  
+  libraries.append( boostLibraryObj )
 
   # -- OpenCL Headers
   openCLHeaderObj = OpenCLHeaders(args.opencl)
-  libraries.append( openCLHeaderObj ) 
+  libraries.append( openCLHeaderObj )
 
   # -- OpenCL ICD Library
   icdLibraryObj = ICDLibrary(args.icd)
-  libraries.append( icdLibraryObj )       
+  libraries.append( icdLibraryObj )
 
 # -- gtest Library
   gtestLibraryObj = GTestLibrary(args.gtest)
@@ -211,7 +212,7 @@ class BoostLibrary:
     if verbose == True:
       print ("Creating Build Directory: " + self.root_build_dir)
 
-    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True)
     os.chdir(self.root_build_dir)
 
     if verbose == True:
@@ -247,7 +248,7 @@ class BoostLibrary:
 
   # --
   def getBuildAndInstallLibrary(self, verbose):
-    
+
     if self.skipBuildInstall == "minimal":
       return self.getBuildAndInstallLibraryMinimum(verbose)
 
@@ -259,7 +260,7 @@ class BoostLibrary:
     if verbose == True:
       print ("Creating Build Directory: " + self.root_build_dir)
 
-    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True)
     os.chdir(self.root_build_dir)
 
     if verbose == True:
@@ -298,7 +299,7 @@ class BoostLibrary:
     return self.skipBuildInstall == 'skip'
 
 
-      
+
 
 
 #==============================================================================
@@ -387,7 +388,7 @@ class OpenCLHeaders:
 
   # --
   def getBuildAndInstallLibrary(self, verbose):
-    # -- 
+    # --
     print ("\n============================================================== ")
     print ("Starting OpenCL-Headers build")
     print ("============================================================== ")
@@ -395,7 +396,7 @@ class OpenCLHeaders:
     if verbose == True:
       print ("Creating Build Directory: " + self.root_build_dir)
 
-    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True)
     os.chdir(self.root_build_dir)
 
     if verbose == True:
@@ -422,7 +423,7 @@ class OpenCLHeaders:
     if verbose == True:
       print ("Creating destination directory: " + destDir)
 
-    pathlib.Path(destDir).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(destDir).mkdir(parents=True, exist_ok=True)
 
     if verbose == True:
       print ("Copying header directory.")
@@ -516,7 +517,7 @@ class ICDLibrary:
 
   # --
   def getBuildAndInstallLibrary(self, verbose):
-    # -- 
+    # --
     print ("\n============================================================== ")
     print ("Starting OpenCL-ICD-Loader build")
     print ("============================================================== ")
@@ -524,7 +525,7 @@ class ICDLibrary:
     if verbose == True:
       print ("Creating Build Directory: " + self.root_build_dir)
 
-    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True)
     os.chdir(self.root_build_dir)
 
     if verbose == True:
@@ -547,7 +548,7 @@ class ICDLibrary:
     if verbose == True:
       print ("Creating destination directory: " + dstDir)
 
-    pathlib.Path(dstDir).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(dstDir).mkdir(parents=True, exist_ok=True)
 
     if verbose == True:
       print ("Copying header directory.")
@@ -663,7 +664,7 @@ class GTestLibrary:
 
   # --
   def getBuildAndInstallLibrary(self, verbose):
-    # -- 
+    # --
     print ("\n============================================================== ")
     print ("Starting GTest Library build")
     print ("============================================================== ")
@@ -671,7 +672,7 @@ class GTestLibrary:
     if verbose == True:
       print ("Creating Build Directory: " + self.root_build_dir)
 
-    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True) 
+    pathlib.Path(self.root_build_dir).mkdir(parents=True, exist_ok=True)
     os.chdir(self.root_build_dir)
 
     if verbose == True:
@@ -770,7 +771,7 @@ def validateTools( echo, verbose ):
     print ("Validating the installation XRT Windows supporting applications.")
     print ("---------------------------------------------------------------------------")
 
-  # -- CL 
+  # -- CL
   print ("  CL .............................................. ", end='')
   if toolFoundNotFound("cl.exe", echo, verbose) == False:
     allToolsInstalled = False;
@@ -837,5 +838,3 @@ if __name__ == '__main__':
   if main() == True:
     print ("\nError(s) occurred.")
     exit(1)
-
-
