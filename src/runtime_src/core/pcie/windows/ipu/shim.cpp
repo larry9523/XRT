@@ -382,6 +382,15 @@ done:
     return cuidx;
   }
 
+  void
+  shim::
+  close_cu_context(const xrt::hw_context& hwctx, xrt_core::cuidx_type cuidx)
+  {
+    // To-be-implemented
+    if (close_context(hwctx.get_xclbin_uuid().get(), cuidx.index))
+      throw xrt_core::system_error(errno, "failed to close cu context (" + std::to_string(cuidx.index) + ")");
+  }
+
   int
   close_context(const xuid_t xclbin_id, unsigned int ip_idx)
   {
@@ -1290,6 +1299,13 @@ open_cu_context(xclDeviceHandle handle, const xrt::hw_context& hwctx, const std:
 {
   auto shim = get_shim_object(handle);
   return shim->open_cu_context(hwctx, cuname);
+}
+
+void
+close_cu_context(xclDeviceHandle handle, const xrt::hw_context& hwctx, xrt_core::cuidx_type cuidx)
+{
+  auto shim = get_shim_object(handle);
+  return shim->close_cu_context(hwctx, cuidx);
 }
 
 uint32_t // ctxhdl aka slotidx

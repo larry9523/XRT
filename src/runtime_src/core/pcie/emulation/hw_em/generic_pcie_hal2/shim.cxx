@@ -3388,6 +3388,14 @@ open_cu_context(const xrt::hw_context& hwctx, const std::string& cuname)
   return cuidx;
 }
 
+void
+HwEmShim::
+close_cu_context(const xrt::hw_context& hwctx, xrt_core::cuidx_type cuidx)
+{
+  if (xclCloseContext(hwctx.get_xclbin_uuid().get(), cuidx.index))
+    throw xrt_core::system_error(errno, "failed to close cu context (" + std::to_string(cuidx.index) + ")");
+}
+
 // aka xclCreateHWContext, internal shim API for native C++ applications only
 // Once properly implemented, this API should throw on error
 uint32_t // ctx handle aka slot idx
