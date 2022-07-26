@@ -597,6 +597,9 @@ done:
         krnl->anums = kernel.args.size();
         krnl->range = kernel.range;
 
+        auto props = xrt_core::xclbin::get_kernel_properties(top, kernel.name.c_str());
+        krnl->func = props.functional;
+
         int ai = 0;
         for (auto& arg : kernel.args) {
             if (arg.name.size() > sizeof(krnl->args[ai].name)) {
