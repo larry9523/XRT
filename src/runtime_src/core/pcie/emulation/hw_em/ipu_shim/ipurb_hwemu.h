@@ -1,0 +1,198 @@
+/*
+ *  SPDX-License-Identifier: Apache-2.0
+ *  Copyright (C) 2021, Xilinx Inc
+ *  Copyright (C) 2022, Advanced Micro Devices, Inc.  All rights reserved.
+ */
+#ifndef IPURB_HWENU_H
+#define IPURB_HWENU_H
+
+#include <boost/pool/object_pool.hpp>
+#include <cstdint>
+#include <list>
+#include <vector>
+#include <map>
+
+#include "ipuhenvring.h"
+#include "ip_layout_struct.h"
+#include "core/include/xrt/xrt_bo.h"
+#include "em_defines.h"
+#include "ert.h"
+
+#define INVALID_CONTEXT_ID 		(0xFF)
+
+namespace xclhwemhal2 {
+  class HwEmShim;
+}
+
+namespace hwemu {
+
+  void ipurb_hwemu_mem_write32(uint64_t io_hdl, uint64_t addr, uint32_t val);
+  uint32_t ipurb_hwemu_mem_read32(uint64_t io_hdl, uint64_t addr);
+  void ipurb_hwemu_reg_write32(uint64_t io_hdl, uint64_t addr, uint32_t val);
+  uint32_t ipurb_hwemu_reg_read32(uint64_t io_hdl, uint64_t addr);
+
+  //! Forward declaration
+  class ipurb_cmd;
+  class xocl_ipurb;
+  
+  struct usr_buff_struct
+  {
+    std::shared_ptr<IpuHenvRing> usr_buff;
+    uint32_t context_id;
+    usr_buff_struct()
+    {
+      context_id = INVALID_CONTEXT_ID;
+    }
+  };
+  /**
+   * class ipurb_queue: Represent a IPU Generic Ring Buffer queues.
+   *
+   * Currently, we only support one mgmt task and one user task, where
+   * mng_buff and usr_buff_struct point to mgmt ring buffer and user ring
+   * buffer. We use m_uuid to represents the XCLBIN downloaded and the
+   * context opened upon this XCLBIN.
+   */
+  class ipurb_queue
+  {
+    public:
+      ipurb_queue(xclhwemhal2::HwEmShim*);
+      ~ipurb_queue();
+      int cu_mask_to_cu_idx(struct kds_command *xcmd, uint8_t *cus);
+
+      xclhwemhal2::HwEmShim*   device;
+      xocl_ipurb*              ipurbp;
+
+      uint16_t                qid;
+      IpuHenvRing*            mng_buff;
+      // key - hw context_id, value is usr_buff_struct shared_ptr
+      std::mutex usr_buff_mtx;
+      std::map<uint32_t, std::shared_ptr<usr_buff_struct>> m_usr_buff_map;
+      mutable std::mutex lGlobalMtx;
+      
+  };
+
+  /**
+   * class ipurb_cmd: Represent a command in IPU Ring Buffer. It contains
+   *                  the execbuf sent from the xclExecBuf (ert_packet BO)
+   *                  and IPU Ring Buffer command. Also it contains the
+   *                  method to send and receive the command and its
+   *                  resonse.
+   *
+   * @opcode():          ert_packet opcode
+   * @set_state():       set ert_packet state
+   * @payload_size():    ert_packet payload size in bytes
+   *
+   * @exec_buf():        send exec_buf command and get its response
+   * @load_xclbin():     send load_xclbin command and get its response
+   * @open_context():    send open_context command and get its response
+   * @sync_bo():         send sync_bo command and get its response
+   */
+  class ipurb_cmd
+  {
+    public:
+      ipurb_cmd(ipurb_queue *in_qp);
+
+      uint32_t    opcode();
+      void        set_state(enum ert_cmd_state state);
+      uint32_t    payload_size();
+
+      int         exec_buf(xclemulation::drm_xocl_bo *bo, uint64_t iSlotID=0);
+      int         load_xclbin(xrt::bo * xbo, char *buf, size_t size, const uuid_t uuid);
+      int         unload_xclbin(const uuid_t uuid);
+      int         open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol, int slotid);
+      int         close_context(uint32_t ctxhdl);
+      int         assign_mgmt_pasid(uint32_t mgmt_pasid);
+      int         sync_bo(uint64_t dest, uint64_t src, size_t size, size_t seek, int slot=0);
+      int         config(uint32_t num_cus, const void *cfg, int slot);
+
+      ipurb_queue*          queuep; // point to the ring buffer to send command
+
+      uint16_t              cmdid;
+      struct ert_packet     *ert_pkt;
+
+      //! Static member varibale
+      //  to get the unique ID for each command
+      static uint64_t next_uid;
+  };
+
+  /**
+   * class xocl_ipurb:  The main class of Ipu Ring Buffer.
+   *
+   * @load_xclbin():      Load Xclbin to IPU
+   * @open_context():     Create context (create user task)
+   *                      Return context ID or POSIX error number
+   * @close_context():    Close context (delete user task)
+   * @add_exec_buffer():  Send exec_buf to IPU
+   * @alloc_bo():         Alloc shadow BO from DDR for SRAM BO
+   * @free_bo():          Free shadw BO from DDR for SRAM BO
+   * @sync_bo():          Send sync_bo to IPU
+   */
+  class xocl_ipurb
+  {
+    public:
+      xocl_ipurb(xclhwemhal2::HwEmShim* dev);
+      ~xocl_ipurb();
+
+      int    load_xclbin(char *buf, size_t size, const uuid_t uuid, int islotid);
+      int    unload_xclbin(const uuid_t uuid);
+      int    open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol, int slotid);
+      int    close_context(uint32_t ctxhdl);
+      //added context id
+      int    add_exec_buffer(xclemulation::drm_xocl_bo *buf, uint64_t iSlotID=0);
+      int    alloc_bo(size_t size, uint64_t iSlotID=0);
+      int    free_bo( uint64_t iSlotID=0);
+      int    sync_bo(uint64_t dest, const void *src, size_t size, size_t seek, uint64_t iSlotID=0);
+      int    config(uint32_t num_cus, const void *cfg, int slot);
+
+      ipurb_queue queue;
+
+      //std::unique_ptr<xrt::bo>      sbo;
+      // key - usr_buff's context ID , value - bo unique_ptr
+      std::mutex Sbo_mtx;
+      std::map<uint64_t, std::unique_ptr<xrt::bo>> mSlotID_Sbo;
+      boost::object_pool<ipurb_cmd> cmd_pool;
+
+      xclhwemhal2::HwEmShim*   device;
+      void removeBO(uint32_t slotid);
+      struct sBo_per_loaded_xclbin
+      {
+        std::pair<int, std::string> mslot_uuid;
+        bool operator == (const sBo_per_loaded_xclbin& lhs) const
+        {
+          return (mslot_uuid.first == lhs.mslot_uuid.first) && (mslot_uuid.second == lhs.mslot_uuid.second);
+        }
+        bool operator < (const sBo_per_loaded_xclbin& lhs) const
+        {
+          return (mslot_uuid.first < lhs.mslot_uuid.first) && (mslot_uuid.second < lhs.mslot_uuid.second);
+        }
+      };
+       
+    private:
+      int    nctx;
+      pid_t  pid;
+      //std::map<sBo_per_loaded_xclbin, std::unique_ptr<xrt::bo>> xclbin_slot_bo_map;
+      std::map<std::string, std::shared_ptr<xrt::bo>> xclbin_slot_bo_map;
+      //std::list<std::pair<uuid_t, xrt::bo>> xclbin_list;
+  };
+}  // namespace hwemu
+
+static inline void ipurb_mem_write32(uint64_t io_hdl, uint64_t addr, uint32_t val)
+{
+  hwemu::ipurb_hwemu_mem_write32(io_hdl, addr, val);
+}
+
+static inline uint32_t ipurb_mem_read32(uint64_t io_hdl, uint64_t addr)
+{
+  return hwemu::ipurb_hwemu_mem_read32(io_hdl, addr);
+}
+
+static inline void ipurb_reg_write32(uint64_t io_hdl, uint64_t addr, uint32_t val)
+{
+  hwemu::ipurb_hwemu_reg_write32(io_hdl, addr, val);
+}
+
+static inline uint32_t ipurb_reg_read32(uint64_t io_hdl, uint64_t addr)
+{
+  return hwemu::ipurb_hwemu_reg_read32(io_hdl, addr);
+}
+#endif

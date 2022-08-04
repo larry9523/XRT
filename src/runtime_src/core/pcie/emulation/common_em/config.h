@@ -1,3 +1,8 @@
+/*
+*  SPDX-License-Identifier: Apache-2.0
+*  Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.
+*/
+
 #ifndef __EM_CONFIG_READER__
 #define __EM_CONFIG_READER__
 
@@ -31,7 +36,7 @@
 #include <vector>
 
 #define DEBUG_MSGS_COUT(x)
-//#define DEBUG_MSGS_COUT(x) std::cout<<std::endl<<__func__<<__LINE__<<x<<std::endl;
+//#define DEBUG_MSGS_COUT(x) std::cout<<std::endl<<__func__<<__LINE__<<x<<std::endl
 
 namespace xclemulation{
 
