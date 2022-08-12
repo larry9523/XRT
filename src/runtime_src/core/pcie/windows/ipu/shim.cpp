@@ -374,7 +374,7 @@ done:
   xrt_core::cuidx_type
   open_cu_context(const xrt::hw_context& hwctx, const std::string& cuname)
   {
-    auto shared = (hwctx.get_qos() != xrt::hw_context::qos::exclusive);
+    auto shared = (hwctx.get_mode() != xrt::hw_context::access_mode::exclusive);
     auto ctxhdl = static_cast<xcl_hwctx_handle>(hwctx);  // IPU: ctxhdl == slotidx
     auto cuidx = m_core_device->get_cuidx(ctxhdl, cuname);
     open_cu_context(ctxhdl, hwctx.get_xclbin_uuid().get(), cuidx.index, shared);
@@ -1037,7 +1037,9 @@ done:
   // Assign xclbin with uuid to hardware resources and return a context id
   // The context handle is 1:1 with a slot idx
   uint32_t
-  create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos)
+  create_hw_context(const xrt::uuid& xclbin_uuid,
+                    const xrt::hw_context::qos_type& qos,
+                    xrt::hw_context::access_mode mode)
   {
       HANDLE deviceHandle = m_dev;
       XRT_HW_CTX_ARGS ctxArgs = { 0 };
@@ -1312,10 +1314,13 @@ close_cu_context(xclDeviceHandle handle, const xrt::hw_context& hwctx, xrt_core:
 }
 
 uint32_t // ctxhdl aka slotidx
-create_hw_context(xclDeviceHandle handle, const xrt::uuid& xclbin_uuid, uint32_t qos)
+create_hw_context(xclDeviceHandle handle,
+                  const xrt::uuid& xclbin_uuid,
+                  const xrt::hw_context::qos_type& qos,
+                  const xrt::hw_context::access_mode mode)
 {
   auto shim = get_shim_object(handle);
-  return shim->create_hw_context(xclbin_uuid, qos);
+  return shim->create_hw_context(xclbin_uuid, qos, mode);
 }
 
 void

@@ -8,6 +8,8 @@
 #include "core/common/ishim.h"
 #include "core/pcie/common/device_pcie.h"
 
+#include "core/include/experimental/xrt_hw_context.h"
+
 namespace xrt_core {
 
 // concrete class derives from device_pcie, but mixes in
@@ -49,9 +51,11 @@ public:
   // universally implemented by all shims
   ////////////////////////////////////////////////////////////////
   uint32_t // ctx handle aka slotidx
-  create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos) const override
+  create_hw_context(const xrt::uuid& xclbin_uuid,
+                    const xrt::hw_context::qos_type& qos,
+                    xrt::hw_context::access_mode mode) const override
   {
-    return xrt::shim_int::create_hw_context(get_device_handle(), xclbin_uuid, qos);
+    return xrt::shim_int::create_hw_context(get_device_handle(), xclbin_uuid, qos, mode);
   }
 
   void

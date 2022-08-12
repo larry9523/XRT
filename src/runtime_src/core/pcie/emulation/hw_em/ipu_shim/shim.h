@@ -20,7 +20,6 @@
 #include "xcl_api_macros.h"
 #include "xcl_macros.h"
 #include "xclbin.h"
-#include "xclperf.h"
 #include "xrs.h"
 
 #include "core/common/api/xclbin_int.h"
@@ -88,8 +87,8 @@ using addr_type = uint64_t;
     //IP Layout specific
     char* m_ipuData;
     size_t m_ipuDataSize;
-    
-    const axlf* m_top;    
+
+    const axlf* m_top;
   } bitStreamArg;
 
  typedef struct
@@ -153,7 +152,7 @@ using addr_type = uint64_t;
 
       // aka xclCreateHWContext, internal shim API for native C++ applications only
       uint32_t // ctx handle aka slot idx
-      create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos);
+      create_hw_context(const xrt::uuid&, const xrt::hw_context::qos_type&, xrt::hw_context::access_mode);
 
       // aka xclDestroyHWContext, internal shim API for native C++ applications only
       void
@@ -336,7 +335,7 @@ using addr_type = uint64_t;
         uint32_t m_start_col;
         uint32_t m_no_of_col;
         uint32_t m_SlotIDIndex;
-        uint32_t m_rid; 
+        uint32_t m_rid;
         // add CUIndex
         // kds_cu_info structure data
         // uint32_t slot_index;
@@ -355,7 +354,7 @@ using addr_type = uint64_t;
           // really ordering does not count here.
           return mslotid < lhs.mslotid;
         }
-       
+
 
       };
       */
@@ -365,7 +364,7 @@ using addr_type = uint64_t;
       std::mutex m_XclBinInfo_mtx;
       //std::unordered_map<uint32_t , sXclBinInfo> m_slot_to_xclbin_info_map;
       std::map<int , sXclBinInfo> mxclbin_metadata;
-      
+
       public:
       std::string get_uuid_as_string(int slotid);
       uint64_t get_slotID(const uint64_t iCntxID);
@@ -379,7 +378,7 @@ using addr_type = uint64_t;
         return mDdrBanks;
       }
       xclipu::IndexPool m_SlotID;
-      
+
       hwemu::xocl_ipurb* get_ipurb() { return m_ipurb;};
     private:
       std::atomic<int> m_primery_key;
@@ -468,7 +467,7 @@ using addr_type = uint64_t;
           mCUs =0;
         }
       };
-      
+
       xclipu::IndexPool m_CUIndexCounter;
 
       xrs_handle_t xrs_hdl;

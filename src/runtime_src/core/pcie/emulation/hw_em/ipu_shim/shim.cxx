@@ -74,7 +74,7 @@ namespace xclhwemhal2 {
         size_t  i_len;
         size_t  ri_len;
         std::unique_ptr<unix_socket> Q2h_sock;
-        xclhwemhal2::HwEmShim* inst;  
+        xclhwemhal2::HwEmShim* inst;
 
         public:
         Q2H_helper(xclhwemhal2::HwEmShim* _inst);
@@ -312,11 +312,11 @@ namespace xclhwemhal2 {
   {
     std::lock_guard<std::mutex> lk{m_XclBinInfo_mtx};
     auto lxclbininfo = mxclbin_metadata.find(islotid);
-    if (lxclbininfo != mxclbin_metadata.end()) 
+    if (lxclbininfo != mxclbin_metadata.end())
     {
         return lxclbininfo->second;
     }
-    
+
     return sXclBinInfo{0,0};
   }
   void HwEmShim::erase_xclbininfo_from_map(int islotid)
@@ -344,7 +344,7 @@ namespace xclhwemhal2 {
   xrt_core::query::xclbin_slots::result_type HwEmShim::getSlotInfo() {
     xrt_core::query::xclbin_slots::result_type lresult;
     std::lock_guard<std::mutex> lk(m_XclBinInfo_mtx);
-    
+
     // for (const  auto& slots: m_slot_to_xclbin_info_map) {
     for (const auto& slots: mxclbin_metadata) {
       xrt_core::query::xclbin_slots::slot_info lslot_info;
@@ -358,7 +358,7 @@ namespace xclhwemhal2 {
   }
 
   xrt_core::query::kds_cu_info::result_type HwEmShim::get_kds_cu_info()
-  {      
+  {
     xrt_core::query::kds_cu_info::result_type ldata_list;
     std::lock_guard<std::mutex> lk(m_XclBinInfo_mtx);
     // multiple CU scenario
@@ -394,14 +394,14 @@ namespace xclhwemhal2 {
     return lstring;
   }
 
-  std::string HwEmShim::get_uuid_as_string(int slotid) 
+  std::string HwEmShim::get_uuid_as_string(int slotid)
   {
     // multiple CU scenario
    // DEBUG_MSGS_COUT(" m_slot_to_xclbin_info_map size is::"<<mxclbin_metadata.size());
     DEBUG_MSGS_COUT(" mxclbin_metadata size is::"<<mxclbin_metadata.size());
     for (const auto &i : mxclbin_metadata)
     {
-      if (i.first == slotid) 
+      if (i.first == slotid)
       {
         return i.second.m_Uuid;
       }
@@ -539,7 +539,7 @@ namespace xclhwemhal2 {
       }
 
       if (true)     // scoped lock
-      { 
+      {
         std::lock_guard<std::mutex> lk{ m_XclBinInfo_mtx };
         mxclbin_metadata[slotid] = lXclBin;
         uuid_rid_map[suuid] = lXclBin.m_rid;
@@ -574,7 +574,7 @@ namespace xclhwemhal2 {
       std::lock_guard<std::mutex> lk{ m_XclBinInfo_mtx };
       for ( const auto& x: lxclbininfo.m_kds_info_list)
         CUIndex_list.push_back(x.cuindex);
-      
+
 
 /*
       for (const auto& x : m_slot_to_xclbin_info_map[slotID].m_kds_info_list)
@@ -589,7 +589,7 @@ namespace xclhwemhal2 {
     // erase a list of CU Indexes which are having matched SlotID.
     for (const auto& j : CUIndex_list)
       m_CUIndexCounter.reset(j + 1);
-  
+
     DEBUG_MSGS_COUT(" funtion end");
     return ret;
   }
@@ -1423,7 +1423,7 @@ namespace xclhwemhal2 {
     pssStrem.close();
   }
 
-  void HwEmShim::extractEmuData(const std::string& simPath, int binaryCounter, bitStreamArg args) {
+  void HwEmShim::extractEmuData(const std::string &simPath, int binaryCounter, bitStreamArg args) {
 
     std::unique_ptr<char[]> emuDataFileName(new char[1024]);
 #ifndef _WINDOWS
@@ -1869,7 +1869,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
           {
             xclAllocDeviceBuffer_RPC_CALL(xclAllocDeviceBuffer, it.first, it.second, noHostMemory);
           }
-          
+
 
         }
         else
@@ -2471,7 +2471,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
         systemUtil::makeSystemCall(sdxTraceKernelFile, systemUtil::systemOperation::REMOVE, "", std::to_string(__LINE__));
       }
     }
-    
+
     bUnified = _unified;
     bXPR = _xpr;
     mCore = nullptr;
@@ -2497,7 +2497,7 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
     m_CUIndexCounter.reserve_capacity(128);
     m_SlotID.reserve_capacity(8);
     IpuManager = std::make_shared<xclipu::cIpuManager>(this);
-    
+
   }
 
   bool HwEmShim::isMBSchedulerEnabled()
@@ -2887,18 +2887,18 @@ uint32_t HwEmShim::getAddressSpace (uint32_t topology)
       return 0;
 
     uint local_flag = flags ;
-    
+
     uint mem_idx = local_flag & 0xffff;
     //mem_idx = mem_idx >> 16;
     std::cout<< "\n modified mem_idx is "<<mem_idx<<" flag is::"<<flags;
-    
 
-    
+
+
     // supposed to return memory index only
     //unsigned type = flags & 0xFF000000LL ;
-    
+
 return mem_idx;
-    
+
     unsigned flag = flags & 0xFFFFFFLL;
     //unsigned type = flags & 0xFF000000LL ;
 
@@ -3424,7 +3424,7 @@ int HwEmShim::xclSyncBO(unsigned int boHandle, xclBOSyncDirection dir, size_t si
           lk.unlock();
           // Get slotid from flags
           auto lflags = bo->flags;
-          auto slotid = GET_SLOT_INDEX(lflags); 
+          auto slotid = GET_SLOT_INDEX(lflags);
           returnVal = m_ipurb->sync_bo(bo->base, buffer, size, offset,slotid);
           lk.lock();
         }
@@ -3453,7 +3453,7 @@ int HwEmShim::xclSyncBO(unsigned int boHandle, xclBOSyncDirection dir, size_t si
 /******************************** xclFreeBO *******************************************/
 void HwEmShim::xclFreeBO(unsigned int boHandle)
 {
-  
+
   std::unique_lock<std::mutex> lk(mApiMtx);
   if (mLogStream.is_open())
   {
@@ -3601,7 +3601,7 @@ int HwEmShim::xclExecBuf(unsigned int cmdBO)
           PRINTENDFUNC;
           return ret;
       }
-      
+
       // get slotid, refer ert.h
       auto cu_index = get_cu_index(cmdBO);
 
@@ -3769,7 +3769,7 @@ open_cu_context(const xrt::hw_context& hwctx, const std::string& cuname)
   // Emulation does not yet support multiple xclbins.  Call
   // regular flow.  Default access mode to shared unless explicitly
   // exclusive.
-  auto shared = (hwctx.get_qos() != xrt::hw_context::qos::exclusive);
+  auto shared = (hwctx.get_mode() != xrt::hw_context::access_mode::exclusive);
   auto ctxhdl = static_cast<xcl_hwctx_handle>(hwctx);
   auto cuidx = mCoreDevice->get_cuidx(ctxhdl, cuname);
   xclOpenContext(hwctx.get_xclbin_uuid().get(), cuidx.index, shared);
@@ -3789,7 +3789,7 @@ close_cu_context(const xrt::hw_context& hwctx, xrt_core::cuidx_type cuidx)
 // Once properly implemented, this API should throw on error
 uint32_t // ctx handle aka slot idx
 HwEmShim::
-create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos)
+create_hw_context(const xrt::uuid& xclbin_uuid, const xrt::hw_context::qos_type& qos, xrt::hw_context::access_mode mode)
 {
   std::lock_guard<std::mutex> lSequential{ mSeq_LoadXclBin };
   // one more IPU hw context getting created.
@@ -3798,7 +3798,7 @@ create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos)
   std::string luuid = convert_uuid_to_string(xclbin_uuid.get());
   DEBUG_MSGS_COUT(" uuid is "<<luuid<<"\t slotid is "<<lSlotID);
   auto lxclbin = IpuManager->get_xclbin(luuid);
-  
+
   auto laxlf = reinterpret_cast<const axlf*>(lxclbin->get_axlf());
   auto luud = convert_uuid_to_string(laxlf->m_header.uuid);
   DEBUG_MSGS_COUT(" uuid from vector is::"<<luud);
@@ -3817,11 +3817,11 @@ create_hw_context(const xrt::uuid& xclbin_uuid, uint32_t qos)
   {
     DEBUG_MSGS_COUT(" same UUID has registered already so one more slotid will associated to that UUID");
   }
-    
-  
+
+
 
   IpuManager->init_xclbin_metadata(xclbin_uuid.get(), lSlotID);
-  
+
   int ret = ipu_create_hw_context(xclbin_uuid.get(), lSlotID);
   if (ret < 0)
     throw xrt_core::system_error(lSlotID, "fail to create ipu hw context");
@@ -3842,7 +3842,7 @@ destroy_hw_context(uint32_t ctxhdl)
   int ret = ipu_destroy_hw_context(ctxhdl);
   if (ret)
     xrt_core::system_error(ret, "fail to destroy ipu hw context");
-  
+
    //IpuManager->reset_xclbin(ctxhdl);
 }
 
