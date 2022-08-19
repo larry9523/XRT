@@ -13,6 +13,7 @@
 #include <map>
 
 #include "ipuhenvring.h"
+#include "core/common/xclbin_parser.h"
 #include "ip_layout_struct.h"
 #include "core/include/xrt/xrt_bo.h"
 #include "em_defines.h"
@@ -98,6 +99,7 @@ namespace hwemu {
 
       int         exec_buf(xclemulation::drm_xocl_bo *bo, uint64_t iSlotID=0);
       int         load_xclbin(xrt::bo * xbo, char *buf, size_t size, const uuid_t uuid);
+      int         load_xclbin(std::vector<xrt::bo *>& xbos, std::vector<xrt_core:: xclbin::aie_pdi_obj>& pdis);
       int         unload_xclbin(const uuid_t uuid);
       int         open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol, int slotid);
       int         close_context(uint32_t ctxhdl);
@@ -134,6 +136,7 @@ namespace hwemu {
       ~xocl_ipurb();
 
       int    load_xclbin(char *buf, size_t size, const uuid_t uuid, int islotid);
+      int    load_xclbin(std::vector<xrt_core::xclbin::aie_pdi_obj>& pdis, int islotid);
       int    unload_xclbin(const uuid_t uuid);
       int    open_context(const uuid_t uuid, uint32_t start_col, uint32_t ncol, int slotid);
       int    close_context(uint32_t ctxhdl);

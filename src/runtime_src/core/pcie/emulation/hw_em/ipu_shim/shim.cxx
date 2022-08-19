@@ -482,7 +482,21 @@ namespace xclhwemhal2 {
     }
 
     DEBUG_MSGS_COUT(" ----------------open_context uuid " << convert_uuid_to_string(xclbinId));
-    ret = m_ipurb->open_context(xclbinId, start_col, ncol,  slotid);
+
+    if (lhwctx->sCUinfo.maie_partition_obj.ncol) {
+      auto it = lhwctx->sCUinfo.maie_partition_obj.pdis.begin();
+      for (; it != lhwctx->sCUinfo.maie_partition_obj.pdis.end(); it++) {
+        if (it->cdo_groups.at(0).cdo_type == CT_PRIMARY)
+          break;
+      }
+      if (it == lhwctx->sCUinfo.maie_partition_obj.pdis.end()) {
+        return -EINVAL;
+      }
+      ret = m_ipurb->open_context(it->uuid.get(), start_col, ncol, slotid);
+    } else {
+      printf("The xclbin is obsoleted, please update the xclbin\n");
+      ret = -EINVAL;
+    }
     if (ret < 0)
       return ret;
 
@@ -625,7 +639,7 @@ namespace xclhwemhal2 {
     std::unique_ptr<char[]> xmlFile;
     std::unique_ptr<char[]> debugFile;
     std::unique_ptr<char[]> memTopology;
-    std::unique_ptr<char[]>  pdi;
+    std::unique_ptr<char[]> pdi;
     std::unique_ptr<char[]> emuData;
     std::unique_ptr<char[]> ipuData;
 
@@ -674,7 +688,6 @@ namespace xclhwemhal2 {
       ipuData = std::make_unique<char[]>(ipuDataSize);
       memcpy(ipuData.get(), bitstreambin + sec->m_sectionOffset, ipuDataSize);
     }
-
     int returnValue = -1;
 
     loadBitStreamArgs.m_zipFile = zipFile.get();
@@ -722,9 +735,24 @@ namespace xclhwemhal2 {
         xrs_hdl = xrs_init(5, XRS_MODE_TEMPORAL_BEST, &hwemu_xrs_func);
         mIpurb_initialized.store(true);
       }
+      xrt_core::xclbin::aie_partition_obj aie_partition = xrt_core::xclbin::get_aie_partition(top);
 
-       if (m_ipurb && pdi && pdiSize > 0) {
-        returnValue = m_ipurb->load_xclbin(pdi.get(), pdiSize, top->m_header.uuid, iSlotID);
+      if (aie_partition.ncol) {
+        for (size_t i = 0; i < aie_partition.pdis.size(); i++) {
+          char uuid_str[32];
+          uuid_unparse(aie_partition.pdis.at(i).uuid.get(), uuid_str);
+          printf("pdi[%ld] uuid=%s\n", i, uuid_str);
+
+          for (size_t j = 0; j < aie_partition.pdis.at(i).cdo_groups.size(); j++) {
+            auto cdog = aie_partition.pdis.at(i).cdo_groups.at(j);
+            printf("pdi[%ld], cdo[%ld], name is %s\n", i, j, cdog.cdo_name.c_str());
+          }
+        }
+        if (m_ipurb && pdi && pdiSize > 0)
+          returnValue = m_ipurb->load_xclbin(aie_partition.pdis, iSlotID);
+      } else {
+        printf("The xclbin is obsoleted, please update the xclbin\n");
+        return -1;
       }
     }
     else {

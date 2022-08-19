@@ -233,6 +233,59 @@ int ipurb_queue::cu_mask_to_cu_idx(struct kds_command *xcmd, uint8_t *cus)
     return 0;
   }
 
+  int ipurb_cmd::load_xclbin(std::vector<xrt::bo *>& xbos, std::vector<xrt_core::xclbin::aie_pdi_obj>& pdis)
+  {
+    if (xbos.size() > MAX_XCL_BIN_INFO) {
+      printf("IPRRB: can not register xclbin, number of PDIs %ld exceeds maximum %d.\n", xbos.size(), MAX_XCL_BIN_INFO);
+      return -EINVAL;
+    }
+
+    register_xcl_bin_req_t req = { 0 };
+    register_xcl_bin_resp_t resp = { IPU_STATUS_MAX_IPU_STATUS_CODE };
+
+    req.num_xcl_bin_infos = xbos.size();
+    for (uint32_t i = 0; i < xbos.size(); i++) {
+      req.xcl_bin_info[i].xcl_bin_address = static_cast<uint64_t>(xbos.at(i)->address());
+      req.xcl_bin_info[i].xcl_bin_size = pdis.at(i).pdi.size();
+
+      auto uid64p = const_cast<uint64_t *>(reinterpret_cast<const uint64_t *>(pdis.at(i).uuid.get()));
+      uint64_t uid64 = *uid64p++;
+      req.xcl_bin_info[i].xcl_bin_uuid.uuid_low = uid64;
+      uid64 = *uid64p;
+      req.xcl_bin_info[i].xcl_bin_uuid.uuid_high = uid64;
+
+      // Use first CDO type in the CDO groups because we are using
+      // the multiple PDIs schema. When we switch to single PDI but
+      // multiple CDO groups schema, we will need to create a new
+      // mailbox message to register XCLBIN.
+      auto cdo_type = pdis.at(i).cdo_groups.at(0).cdo_type;
+      xcl_bin_type_e xclbin_type;
+      switch (cdo_type) {
+        case CT_PRIMARY:
+          xclbin_type = XCL_BIN_TYPE_PRIMARY;
+          break;
+        case CT_LITE:
+          xclbin_type = XCL_BIN_TYPE_LITE;
+          break;
+        default:
+          std::cout << "Error: Unknown CDO type." << std::endl;
+          return -EINVAL;
+      }
+      req.xcl_bin_info[i].xcl_bin_type = xclbin_type;
+    }
+    if (SCOPED_LOCK)
+    {
+      //Ensure all RINGB operations are sequential at this place
+      std::lock_guard<std::mutex> lk{ queuep->lGlobalMtx };
+      bool passed = RINGB_Command(req, &resp, queuep->mng_buff, 0xFA5EFADE, IPU_MSG_REGISTER_XCL_BIN,
+        "IPU_MSG_REGISTER_XCL_BIN", __FUNCTION__);
+      printf("REGISTER_XCLBIN passed is %d\n", passed);
+      if (!passed)
+        return -ETIME;
+    }
+    return 0;
+  }
+
   int ipurb_cmd::unload_xclbin(const uuid_t uuid)
   {
     unregister_xcl_bin_req_t req = { 0 };
@@ -621,6 +674,48 @@ int ipurb_queue::cu_mask_to_cu_idx(struct kds_command *xcmd, uint8_t *cus)
     int ret = 0;
     auto xbo_ptr = lxbo.get();
     if (xcmd->load_xclbin(xbo_ptr, buf, size, uuid) != 0)
+      ret = 1;
+
+    cmd_pool.destroy(xcmd);
+    DEBUG_MSGS_COUT("\n load_xclbin is finsihed for UUID \t" << suuid<<" with slot id "<<islotid );
+    return ret;
+  }
+
+  int xocl_ipurb::load_xclbin(std::vector<xrt_core::xclbin::aie_pdi_obj>& pdis, int islotid)
+  {
+    xrt::device xdev(device->getMCoreDevice());
+    std::shared_ptr<xrt::bo> lxbo;
+    std::vector<xrt::bo *> xbos;
+
+    auto it = pdis.begin();
+    for (; it != pdis.end(); it++) {
+      auto suuid = device->convert_uuid_to_string(it->uuid.get());
+      DEBUG_MSGS_COUT(" load_xclbin is started for UUID \t" << suuid);
+      DEBUG_MSGS_COUT(" internal alloc_bo will be called for UUID \t" << suuid << "\t with slot id as "<<islotid);
+      std::shared_ptr<xrt::bo> lxbo;
+
+      auto itr = xclbin_slot_bo_map.find(suuid);
+      if (itr != xclbin_slot_bo_map.end()) {
+        std::cerr << "\n same xclbin is trying to load again! so do not create XBo object anymore, use existing one!";
+        lxbo = itr->second;
+        pdis.erase(it);
+      } else {
+        lxbo = std::make_shared<xrt::bo>(xdev, it->pdi.size(), xrt::bo::flags::host_only, 0);
+        DEBUG_MSGS_COUT("\n host_only xrt::bo  is created \n");
+        auto xbo = lxbo.get();
+        auto data = xbo->map();
+        memcpy(data, it->pdi.data(), it->pdi.size());
+        xbo->sync(XCL_BO_SYNC_BO_TO_DEVICE, it->pdi.size(), 0);
+        xclbin_slot_bo_map[suuid] = lxbo;
+      }
+      xbos.push_back(lxbo.get());
+    }
+    ipurb_cmd* xcmd = cmd_pool.construct(&queue);
+    if (!xcmd)
+      return 1;
+
+    int ret = 0;
+    if (xcmd->load_xclbin(xbos, pdis) != 0)
       ret = 1;
 
     cmd_pool.destroy(xcmd);
