@@ -698,7 +698,6 @@ int ipurb_queue::cu_mask_to_cu_idx(struct kds_command *xcmd, uint8_t *cus)
       if (itr != xclbin_slot_bo_map.end()) {
         std::cerr << "\n same xclbin is trying to load again! so do not create XBo object anymore, use existing one!";
         lxbo = itr->second;
-        pdis.erase(it);
       } else {
         lxbo = std::make_shared<xrt::bo>(xdev, it->pdi.size(), xrt::bo::flags::host_only, 0);
         DEBUG_MSGS_COUT("\n host_only xrt::bo  is created \n");
