@@ -42,25 +42,6 @@ Please check if you have registry access permission by regedit command.
   * XRT-IPU build artifacts in the ``xilinx\xrt`` folder (also zipped to ``XRT_202210.2.13.0_WindowsServer2019-amd64.zip``)
   * MSVC 2019 solution file ``XRT.sln``
 
-Build and Run Test Application
-------------------------------
-
-1. **Build xrt_flow**
-
-* In ``tests\xrt_flow\build``, run ``build_xrt_flow.bat Release``
-* This generates a test folder ``xrt_flow_test`` within ``tests\xrt_flow\x64\Release``
-
-2. **Prepare Simnow Image**
-
-* Copy over ``xrt_flow_test`` to a location on your Simnow VMDK image (e.g. use VirtualBox, OSFMount, etc).
-
-3. **Run xrt_flow on Simnow**
-
-In your SimNow session, open an elevated command prompt and run the following commands: 
-
-* ``cd xrt_flow_test`` 
-* ``run_xrt_flow.bat <test case name (e.g. conv)>``
-
 Troubleshooting
 ---------------
 
@@ -107,25 +88,3 @@ Alternatively, you can use forward slashes when providing the XRT-IPU install di
 
 Some developers have observed these variables being empty at the first run of build_ipu19.bat.
 If you encounter this and later run into a build issue, try running build_ipu19.bat -clean and build_ipu19.bat -release again.
-
-* xrt_flow.exe: Various compilation errors, unable to find XRT header includes
-
-Double check that the configuration of your XRT-IPU build (default: x64 Release) matches with the configuration of your xrt_flow build.
-
-* xrt_flow.exe: ``MSVCP140.dll Is Missing`` or other C++ exception pop-ups complaining about missing DLLs
-
-xrt_flow requires C++ runtime libraries which are missing on your Simnow image. Installation steps depend on whether you have Release or Debug built.
-
-* Release - Run vc_redist.x64.exe on your Simnow image: https://docs.microsoft.com/en-US/cpp/windows/latest-supported-vc-redist?view=msvc-170
-* Debug - Copy the debug-version DLLs over to the same folder that contains xrt_flow.exe. You should be able to find these on your build machine at these paths:
-  
-  * C:\\Windows\\System32\\ucrtbased.dll
-  * C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Redist\\MSVC\\14.29.30133\\debug_nonredist\\x64\\Microsoft.VC142.DebugCRT
-
-Note that exact version numbers will depend on your Visual Studio installation.
-
-* xrt_flow.exe: ``[XRT] ERROR: DeviceIoControl IOCTL_KIPUDRV_EXECPOLL failed with error 259`` and ``XrtKdsClientPoll failed!``
-
-These error messages may show up in the xrt_flow command prompt and WinDbg log respectively. 
-XRT polls for the status of the running command every second and may timeout due to Simnow slowness. 
-These errors are usually benign. Instead, watch for either "Test failed with <#> mismatches" or "Test passed" in the xrt_flow command prompt.
