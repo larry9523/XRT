@@ -791,6 +791,14 @@ namespace xclhwemhal2 {
       resetProgram();
     }
 
+    char *login_user = getenv("USER");
+    if (!login_user)
+    {
+      std::string dMsg = "ERROR: [HW-EMU 26] $USER variable is not SET. Please make sure the USER env variable is set properly.";
+      logMessage(dMsg, 0);
+      exit(EXIT_FAILURE);
+    }
+
     //CR-1116870 changes. Clearing "mOffsetInstanceStreamMap" for each kernel in case of multiple kernels with different xclbin's
     //required for sys_opt/kernel_swap example
     mOffsetInstanceStreamMap.clear();
