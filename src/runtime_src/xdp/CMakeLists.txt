@@ -112,7 +112,18 @@ target_link_libraries(xdp_user_plugin PRIVATE xdp_core xrt_coreutil)
 set_target_properties(xdp_native_plugin PROPERTIES VERSION ${XRT_VERSION_STRING} SOVERSION ${XRT_SOVERSION})
 set_target_properties(xdp_user_plugin PROPERTIES VERSION ${XRT_VERSION_STRING} SOVERSION ${XRT_SOVERSION})
 
+if (NOT WIN32)
+
 install (TARGETS xdp_native_plugin
                  xdp_user_plugin
   LIBRARY DESTINATION ${XRT_INSTALL_LIB_DIR}/xrt/module
 )
+
+else()
+
+install (TARGETS xdp_native_plugin
+                 xdp_user_plugin
+  LIBRARY DESTINATION ${XRT_INSTALL_BIN_DIR}
+)
+
+endif()
