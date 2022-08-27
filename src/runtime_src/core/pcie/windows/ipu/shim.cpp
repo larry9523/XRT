@@ -43,7 +43,6 @@ struct shim
 {
   using buffer_handle_type = xclBufferHandle; // xrt.h
   unsigned int m_devidx;
-  bool m_locked = false;
   HANDLE m_dev;
   std::shared_ptr<xrt_core::device> m_core_device;
 
@@ -62,9 +61,7 @@ struct shim
 
     if (m_dev == INVALID_HANDLE_VALUE) {
       auto error = GetLastError();
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error,"XRT", "CreateFile failed with error %d",error);
-      throw std::runtime_error("CreateFile failed with error " + std::to_string(error));
+      throw xrt_core::error(error, "CreateFile failed with error " + std::to_string(error));
     }
 
     m_core_device = xrt_core::get_userpf_device(this, devidx);
@@ -81,75 +78,55 @@ struct shim
   alloc_bo(size_t size, unsigned int flags)
   {
     HANDLE bufferHandle;
-    DWORD error = ERROR_UNABLE_TO_CLEAN;
-    XRT_CREATE_BO_ARGS createBOArgs;
-    DWORD bytesWritten;
-    xcl_bo_flags bo_flags{ flags };
+    try {
+      XRT_CREATE_BO_ARGS createBOArgs;
+      DWORD bytesWritten;
+      xcl_bo_flags bo_flags{ flags };
 
-    bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
-                              GENERIC_READ | GENERIC_WRITE,
-                              0,
-                              0,
-                              OPEN_EXISTING,
-                              0,
-                              0);
+      bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
+                                 GENERIC_READ | GENERIC_WRITE,
+                                 0,
+                                 0,
+                                 OPEN_EXISTING,
+                                 0,
+                                 0);
 
-    //
-    // If this call fails, check to figure out what the error is and report it.
-    //
-    if (bufferHandle == INVALID_HANDLE_VALUE) {
+      //
+      // If this call fails, check to figure out what the error is and report it.
+      //
+      if (bufferHandle == INVALID_HANDLE_VALUE)
+        throw xrt_core::system_error(GetLastError(), "CreateFileW failed");
 
-        error = GetLastError();
+      //'size' needs to be multiple of 4K
+      createBOArgs.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
+      createBOArgs.BankNumber = bo_flags.bank;
+      createBOArgs.Flags = flags;
 
-        xrt_core::message::
-          send(xrt_core::message::severity_level::error, "XRT", "CreateFile failed with error %d", error);
-
-        goto done;
-    }
-
-    //'size' needs to be multiple of 4K
-    createBOArgs.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    createBOArgs.BankNumber = bo_flags.bank;
-    createBOArgs.Flags = flags;
-
-    if (flags & XCL_BO_FLAGS_HOST_ONLY) {
+      if (flags & XCL_BO_FLAGS_HOST_ONLY) {
         createBOArgs.BufferType = XRT_BUFFER_TYPE_HOST_ONLY;
-    } else if (flags & XCL_BO_FLAGS_EXECBUF) {
+      } else if (flags & XCL_BO_FLAGS_EXECBUF) {
         createBOArgs.BufferType = XRT_BUFFER_TYPE_EXECBUF;
-    } else {
+      } else {
         createBOArgs.BufferType = XRT_BUFFER_TYPE_NORMAL;
-    }
+      }
 
-    if (!DeviceIoControl(bufferHandle,
-                         IOCTL_KIPUDRV_CREATE_BO,
-                         &createBOArgs,
-                         sizeof(XRT_CREATE_BO_ARGS),
-                         0,
-                         0,
-                         &bytesWritten,
-                         nullptr)) {
+      if (!DeviceIoControl(bufferHandle,
+                           IOCTL_KIPUDRV_CREATE_BO,
+                           &createBOArgs,
+                           sizeof(XRT_CREATE_BO_ARGS),
+                           0,
+                           0,
+                           &bytesWritten,
+                           nullptr)) {
 
-        error = GetLastError();
+        throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_CREATE_BO failed");
+      }
+    } // try
+    catch (const std::exception&) {
+      if (bufferHandle != INVALID_HANDLE_VALUE)
+        CloseHandle(bufferHandle);
 
-        xrt_core::message::
-          send(xrt_core::message::severity_level::error, "XRT", "DeviceIoControl 4 failed with error %d", error);
-
-        goto done;
-    }
-
-    error = ERROR_SUCCESS;
-
-done:
-
-    if (error != ERROR_SUCCESS) {
-
-        if (bufferHandle != INVALID_HANDLE_VALUE) {
-
-            CloseHandle(bufferHandle);
-            bufferHandle = INVALID_HANDLE_VALUE;
-
-        }
-
+      throw;
     }
 
     return bufferHandle;
@@ -159,69 +136,48 @@ done:
   alloc_user_ptr_bo(void* userptr, size_t size, unsigned int flags)
   {
     HANDLE bufferHandle;
-    DWORD error = ERROR_UNABLE_TO_CLEAN;
-    XRT_USERPTR_BO_ARGS userPtrBO;
-    DWORD bytesWritten;
-    xcl_bo_flags bo_flags{ flags };
+    try {
+      XRT_USERPTR_BO_ARGS userPtrBO;
+      DWORD bytesWritten;
+      xcl_bo_flags bo_flags{ flags };
 
-    bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
-                               GENERIC_READ | GENERIC_WRITE,
-                               0,
-                               0,
-                               OPEN_EXISTING,
-                               0,
-                               0);
+      bufferHandle = CreateFileW(L"\\\\.\\XRT-USER-0" XRT_USER_DEVICE_BUFFER_OBJECT_NAMESPACE,
+                                 GENERIC_READ | GENERIC_WRITE,
+                                 0,
+                                 0,
+                                 OPEN_EXISTING,
+                                 0,
+                                 0);
 
-    //
-    // If this call fails, check to figure out what the error is and report it.
-    //
-    if (bufferHandle == INVALID_HANDLE_VALUE) {
+      //
+      // If this call fails, check to figure out what the error is and report it.
+      //
+      if (bufferHandle == INVALID_HANDLE_VALUE)
+        throw xrt_core::system_error(GetLastError(), "CreateFileW failed");
 
-      error = GetLastError();
+      userPtrBO.Address = userptr;
+      userPtrBO.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
+      userPtrBO.BankNumber = bo_flags.bank; //16 bit BankNumber
+      userPtrBO.BufferType = XRT_BUFFER_TYPE_USERPTR;
+      userPtrBO.Flags = flags;
 
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error,"XRT", "CreateFile failed with error %d",error);
+      if (!DeviceIoControl(bufferHandle,
+                           IOCTL_KIPUDRV_USERPTR_BO,
+                           &userPtrBO,
+                           sizeof(XRT_USERPTR_BO_ARGS),
+                           0,
+                           0,
+                           &bytesWritten,
+                           nullptr)) {
 
-      goto done;
-
-    }
-
-    userPtrBO.Address = userptr;
-    userPtrBO.Size = ((size % 4096) == 0) ? size : (((4096 + size) / 4096) * 4096);
-    userPtrBO.BankNumber = bo_flags.bank; //16 bit BankNumber
-    userPtrBO.BufferType = XRT_BUFFER_TYPE_USERPTR;
-    userPtrBO.Flags = flags;
-
-    if (!DeviceIoControl(bufferHandle,
-                         IOCTL_KIPUDRV_USERPTR_BO,
-                         &userPtrBO,
-                         sizeof(XRT_USERPTR_BO_ARGS),
-                         0,
-                         0,
-                         &bytesWritten,
-                         nullptr)) {
-
-      error = GetLastError();
-
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error,"XRT", "DeviceIoControl 4 failed with error %d", error);
-
-      goto done;
-    }
-
-    error = ERROR_SUCCESS;
-
-  done:
-
-    if (error != ERROR_SUCCESS) {
-
-      if (bufferHandle != INVALID_HANDLE_VALUE) {
-
-        CloseHandle(bufferHandle);
+        throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_USERPTR_BO failed");
+      }
+    } // try
+    catch (const std::exception&) {
+      if (bufferHandle != INVALID_HANDLE_VALUE)
         bufferHandle = INVALID_HANDLE_VALUE;
 
-      }
-
+      throw;
     }
 
     return bufferHandle;
@@ -233,16 +189,9 @@ done:
   {
     DWORD bytesWritten;
     XRT_MAP_BO_RESULT mapBO;
-    DWORD  code;
 
-    if (handle)
-      xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "IOCTL_KIPUDRV_MAP_BO");
-    else {
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT", "IOCTL_KIPUDRV_MAP_BO: Invalid Handle");
-      return nullptr;
-    }
+    if (!handle)
+      throw xrt_core::error("map_bo: Invalid Handle");
 
     if (!DeviceIoControl(handle,
                          IOCTL_KIPUDRV_MAP_BO,
@@ -253,27 +202,15 @@ done:
                          &bytesWritten,
                          nullptr)) {
 
-      code = GetLastError();
-
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT", "DeviceIoControl 3 failed with error %d", code);
-      return nullptr;
+      throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_MAP_BO failed");
     }
-    else {
 
-      xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "Mapped Address = 0x%p"
-             ,mapBO.MappedUserVirtualAddress);
-
-      //
-      // Now zero it...
-      //
-      //RP   memset(mapBO.MappedUserVirtualAddress,
-      //RP	   0,
-      //RP	   (size_t)sizeToAllocate);
-
-      return (void *)mapBO.MappedUserVirtualAddress;
-    }
+    // Now zero it...
+    //
+    //RP   memset(mapBO.MappedUserVirtualAddress,
+    //RP	   0,
+    //RP	   (size_t)sizeToAllocate);
+    return (void *)mapBO.MappedUserVirtualAddress;
   }
 
   int
@@ -287,15 +224,14 @@ done:
   free_bo(buffer_handle_type handle)
   {
     //As per OSR, just close the handle of BO.
-    if(handle)
+    if (handle)
       CloseHandle(handle);
   }
 
-  int
+  void
   sync_bo(buffer_handle_type handle, xclBOSyncDirection dir, size_t size, size_t offset)
   {
     DWORD bytesWritten;
-    DWORD  error;
     XRT_SYNC_BO_ARGS syncBo = { 0 };
 
     syncBo.Direction = (dir == XCL_BO_SYNC_BO_TO_DEVICE) ? XRT_BUFFER_DIRECTION_TO_DEVICE : XRT_BUFFER_DIRECTION_FROM_DEVICE;
@@ -311,18 +247,11 @@ done:
                          &bytesWritten,
                          nullptr)) {
 
-      error = GetLastError();
-
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT", "Sync write failed with error %d", error);
-
-      return error;
+      throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_SYNC_BO failed");
     }
-
-    return 0;
   }
 
-  int
+  void
   open_cu_context(uint32_t slot_idx, const xuid_t xclbin_id, unsigned int ip_idx, bool shared)
   {
     HANDLE deviceHandle = m_dev;
@@ -335,12 +264,6 @@ done:
     ctxArgs.SlotIdx = slot_idx;
     memcpy(&ctxArgs.XclBinUuid, xclbin_id, sizeof(xuid_t));
 
-#if 0
-    char str[512] = { 0 };
-    uuid_unparse_lower(ctxArgs.XclBinUuid, str);
-    xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "xclbin_uuid = %s\n", str);
-#endif
     if (!DeviceIoControl(deviceHandle,
                          IOCTL_KIPUDRV_CTX,
                          &ctxArgs,
@@ -352,23 +275,11 @@ done:
 
       auto error = GetLastError();
 
-      if (error == ERROR_RETRY) {
+      if (error == ERROR_RETRY)
+        throw xrt_core::system_error(EAGAIN, "CTX failed retrying..");
 
-        xrt_core::message::
-            send(xrt_core::message::severity_level::error, "XRT", "CTX failed retrying..");
-
-        error = EAGAIN;
-
-        return error;
-
-      }
-
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT", "CTX failed with error %d", error);
-      return error;
+      throw xrt_core::system_error(error, "IOCTL_KIPUDRV_CTX failed");
     }
-
-    return 0;
   }
 
   xrt_core::cuidx_type
@@ -386,12 +297,17 @@ done:
   shim::
   close_cu_context(const xrt::hw_context& hwctx, xrt_core::cuidx_type cuidx)
   {
-    // To-be-implemented
-    if (close_context(hwctx.get_xclbin_uuid().get(), cuidx.index))
+    try {
+      // To-be-implemented
+      close_context(hwctx.get_xclbin_uuid().get(), cuidx.index);
+    }
+    catch (std::exception& ex) {
+      xrt_core::send_exception_message(ex.what());
       throw xrt_core::system_error(errno, "failed to close cu context (" + std::to_string(cuidx.index) + ")");
+    }
   }
 
-  int
+  void
   close_context(const xuid_t xclbin_id, unsigned int ip_idx)
   {
     HANDLE deviceHandle = m_dev;
@@ -411,16 +327,11 @@ done:
                          &bytesRet,
                          NULL)) {
 
-      auto error = GetLastError();
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT", "CTX failed with error %d", error);
-      return error;
+      throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_CTX failed to free context");
     }
-
-    return 0;
   }
 
-  int
+  void
   exec_buf(buffer_handle_type handle)
   {
     HANDLE deviceHandle = m_dev;
@@ -437,24 +348,8 @@ done:
                          &bytesRet,
                          NULL)) {
 
-      auto error = GetLastError();
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT", "CTX failed with error %d", error);
-
-      if (GetLastError() == ERROR_BAD_COMMAND) {
-
-        //
-        // Device is already configured, not really a problem...
-        //
-        xrt_core::message::
-          send(xrt_core::message::severity_level::info, "XRT", "Device already configured!");
-        return -1; //ERROR_SUCCESS;
-      }
-
-      return error;
-
+      throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_EXECBUF failed");
     }
-    return 0;
   }
 
   int
@@ -463,7 +358,6 @@ done:
     HANDLE deviceHandle = m_dev;
     BOOLEAN workToDo;
     XRT_EXECPOLL_ARGS pollArgs;
-    DWORD error;
     DWORD commandsCompleted;
 
     workToDo = FALSE;
@@ -480,28 +374,18 @@ done:
                          &commandsCompleted,
                          NULL)) {
 
-      error = GetLastError();
-
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT"
-             ,"DeviceIoControl IOCTL_KIPUDRV_EXECPOLL failed with error %d", error);
-
-      goto done;
+      // throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_EXECPOL failed");
+      return workToDo;
     }
 
     workToDo = TRUE;
-
-  done:
-
     return workToDo;
-
   }
 
-  int
+  void
   get_bo_properties(buffer_handle_type handle, struct xclBOProperties* properties)
   {
     XRT_INFO_BO_RESULT infoBo = { 0 };
-    DWORD error;
     DWORD bytesRet;
 
     if (!DeviceIoControl(handle,
@@ -513,24 +397,19 @@ done:
                          &bytesRet,
                          NULL)) {
 
-      error = GetLastError();
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT"
-             ,"get_bo_Properties - DeviceIoControl failed with error %d", error);
+      throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_INFO_BO failed");
     }
 
     properties->handle = 0;
     properties->flags  = infoBo.Flags;
     properties->size   = infoBo.Size;
     properties->paddr  = infoBo.Paddr;
-
-    return 0;
   }
 
-  bool SendIoctlReadAxlf(PUCHAR ImageBuffer, DWORD BuffSize)
+  void
+  SendIoctlReadAxlf(PUCHAR ImageBuffer, DWORD BuffSize)
   {
     HANDLE deviceHandle = m_dev;
-    DWORD error = 0;
     DWORD bytesWritten;
     size_t off = 0;
     uint64_t ksize = 0;
@@ -591,7 +470,8 @@ done:
         auto krnl = reinterpret_cast<kernel_info *>(&axlf_obj->data[0] + off);
 
         if (kernel.name.size() > sizeof(krnl->name))
-            return 1;
+	  throw xrt_core::error("Kernel name length is invalid");
+
         std::strncpy(krnl->name, kernel.name.c_str(), sizeof(krnl->name)-1);
         krnl->name[sizeof(krnl->name)-1] = '\0';
         krnl->anums = kernel.args.size();
@@ -602,12 +482,9 @@ done:
 
         int ai = 0;
         for (auto& arg : kernel.args) {
-            if (arg.name.size() > sizeof(krnl->args[ai].name)) {
+            if (arg.name.size() > sizeof(krnl->args[ai].name))
+              throw xrt_core::error("Argument name length is invalid");
 
-               xrt_core::message::
-                send(xrt_core::message::severity_level::error, "XRT", "Argument name length invalid.");
-               return 1;
-            }
             std::strncpy(krnl->args[ai].name, arg.name.c_str(), sizeof(krnl->args[ai].name)-1);
             krnl->args[ai].name[sizeof(krnl->args[ai].name)-1] = '\0';
             krnl->args[ai].offset = arg.offset;
@@ -665,7 +542,8 @@ done:
     //axlf_obj.kds_cfg.slot_size = mCoreDevice->get_ert_slots().second;
     auto xml_hdr = xrt_core::xclbin::get_axlf_section(top, EMBEDDED_METADATA);
     if (!xml_hdr)
-        throw std::runtime_error("No xml metadata in xclbin");
+      throw xrt_core::error("No xml metadata in xclbin");
+
     auto xml_size = xml_hdr->m_sectionSize;
     auto xml_data = reinterpret_cast<const char*>(reinterpret_cast<const char*>(top) + xml_hdr->m_sectionOffset);
     axlf_obj->kds_cfg.slot_size = (uint32_t)m_core_device->get_ert_slots(xml_data, xml_size).second;
@@ -679,80 +557,17 @@ done:
                          &bytesWritten,
                          nullptr)) {
 
-      error = GetLastError();
-
-      xrt_core::message::
-        send(xrt_core::message::severity_level::error, "XRT", "DeviceIoControl failed with error %d", error);
+      throw xrt_core::error(GetLastError(), "IOCTL_KIPUDRV_DOWNLOAD_XCLBIN failed");
     }
-
-    return error ? false : true;
-
   }
 
-  int
+  void
   load_xclbin(const struct axlf* buffer)
   {
-    DWORD buffSize = 0;
-    bool succeeded;
-
-    //
-    // FIrst test
-    //
-    buffSize = (DWORD) buffer->m_header.m_length;
-
-    xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_READ_AXLF... ");
-
-    succeeded = SendIoctlReadAxlf((PUCHAR)buffer, buffSize);
-
-    if (succeeded) {
-      xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "OK");
-    }
-    else {
-      xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
-      return 1;
-    }
-
-    //
-    // Second test...
-    //
-    xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv StatMemTopology)... ");
-
-
-    if (succeeded) {
-      xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "OK");
-    }
-    else {
-      xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
-      return 1;
-    }
-
-    return 0;
+    auto buffSize = static_cast<DWORD>(buffer->m_header.m_length);
+    SendIoctlReadAxlf((PUCHAR)buffer, buffSize);
   }
 
-
-
-
-  bool
-  lock_device()
-  {
-    if (!xrt_core::config::get_multiprocess() && m_locked)
-      return false;
-
-    return m_locked = true;
-  }
-
-  bool
-  unlock_device()
-  {
-    m_locked = false;
-    return true;
-  }
   void
   get_sensor_info(xcl_sensor* value)
   {
@@ -826,9 +641,6 @@ done:
       DWORD i;
       xrt_core::query::kds_cu_info::result_type vec;
 
-      xrt_core::message::
-          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv xclbin_slots)... ");
-
       statClass.StatClass = XrtStatXclinSlots;
 
       succeeded = DeviceIoControl(deviceHandle,
@@ -840,25 +652,14 @@ done:
           &bytesRet,
           NULL);
 
-      if (succeeded) {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "OK");
-      }
-      else {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
-
-          return vec;
-      }
+      if (!succeeded)
+        return vec;
 
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
       bytesRequired += (slotCnt.CuCount * sizeof(XRT_KDS_CU));
 
       std::vector<char> kdsCuInfo_vec(bytesRequired);
       kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
-
-      xrt_core::message::
-          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv kds_cu_info)... ");
 
       statClass.StatClass = XrtStatKdsCU;
 
@@ -871,17 +672,8 @@ done:
           &bytesRet,
           NULL);
 
-      if (succeeded) {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "OK");
-      }
-      else {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
-
-          return vec;
-      }
-
+      if (!succeeded)
+        return vec;
 
       for (i = 0; i < kdsCuInfo->CuCount; i++) {
 
@@ -916,9 +708,6 @@ done:
       xrt_core::query::xclbin_slots::result_type vec;
       char str[512] = { 0 };
 
-      xrt_core::message::
-          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv xclbin_slots)... ");
-
       statClass.StatClass = XrtStatXclinSlots;
 
       succeeded = DeviceIoControl(deviceHandle,
@@ -930,24 +719,14 @@ done:
           &bytesRet,
           NULL);
 
-      if (succeeded) {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "OK");
-      }
-      else {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
-          return vec;
-      }
+      if (!succeeded)
+        return vec;
 
       bytesRequired = FIELD_OFFSET(XRT_KDS_CU_INFORMATION, CuInfo);
       bytesRequired += (slotCnt.SlotCount * sizeof(XRT_KDS_CU));
 
       std::vector<char> kdsCuInfo_vec(bytesRequired);
       kdsCuInfo = reinterpret_cast<PXRT_KDS_CU_INFORMATION>(kdsCuInfo_vec.data());
-
-      xrt_core::message::
-          send(xrt_core::message::severity_level::debug, "XRT", "Calling IOCTL_KIPUDRV_STAT (Kipudrv kds_cu_info)... ");
 
       statClass.StatClass = XrtStatSlotInfo;
 
@@ -960,17 +739,8 @@ done:
           &bytesRet,
           NULL);
 
-      if (succeeded) {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "OK");
-      }
-      else {
-
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "FAILED");
-
-          return vec;
-      }
+      if (!succeeded)
+        return vec;
 
       for (i = 0; i < kdsCuInfo->CuCount; i++) {
 
@@ -1003,35 +773,25 @@ done:
 
       if (!status || bytes != sizeof(xcl_errors))
           throw std::runtime_error("DeviceIoControl IOCTL_KIPUDRV_ERROR_INFO (errors) failed");
-
   }
 
-  int
-  ErrorInject(uint16_t num, uint16_t driver, uint16_t severity, uint16_t module, uint16_t eclass)
+  void
+  error_inject(uint16_t num, uint16_t driver, uint16_t severity, uint16_t module, uint16_t eclass)
   {
-      DWORD bytes = 0;
-      XOCL_ERROR_INJECT_ARGS errorinject = { XOCL_ERROR_OP_INJECT, num, driver, severity, module, eclass };
+    DWORD bytes = 0;
+    XOCL_ERROR_INJECT_ARGS errorinject = { XOCL_ERROR_OP_INJECT, num, driver, severity, module, eclass };
 
-      bool status = DeviceIoControl(m_dev,
-          IOCTL_KIPUDRV_ERROR_INJECT,
-          &errorinject,
-          sizeof(errorinject),
-          nullptr,
-          0,
-          &bytes,
-          nullptr);
+    bool status = DeviceIoControl(m_dev,
+                                  IOCTL_KIPUDRV_ERROR_INJECT,
+                                  &errorinject,
+                                  sizeof(errorinject),
+                                  nullptr,
+                                  0,
+                                  &bytes,
+                                  nullptr);
 
-      if (status) {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::debug, "XRT", "OK");
-      }
-      else {
-          xrt_core::message::
-              send(xrt_core::message::severity_level::error, "XRT", "DeviceIoControl IOCTL_KIPUDRV_ERROR_INJECT failed ");
-          return 1;
-      }
-
-      return 0;
+      if (!status)
+        throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_ERROR_INJECT failed");
   }
 
   // Assign xclbin with uuid to hardware resources and return a context id
@@ -1058,11 +818,7 @@ done:
           &bytesRet,
           NULL)) {
 
-          auto error = GetLastError();
-
-          xrt_core::message::
-              send(xrt_core::message::severity_level::error, "XRT", "Create HW_CTX failed with error %d", error);
-          return error;
+        throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_HW_CTX failed");
       }
 
       return slotInfo.SlotIdx;
@@ -1089,14 +845,8 @@ done:
           &bytesRet,
           NULL)) {
 
-          auto error = GetLastError();
-
-          xrt_core::message::
-              send(xrt_core::message::severity_level::error, "XRT", "Destroy HW_CTX failed with error %d", error);
-          return;
+        throw xrt_core::system_error(GetLastError(), "IOCTL_KIPUDRV_HW_CTX failed to destroy hwctx");
       }
-
-      return;
   }
 
   // Registers an xclbin, but does not load it.
@@ -1216,8 +966,6 @@ get_debug_ip_layout(xclDeviceHandle hdl, char* buffer, size_t size, size_t* size
 void
 get_bdf_info(xclDeviceHandle hdl, uint16_t bdf[3])
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "get_bdf_info()");
   auto shim = get_shim_object(hdl);
   shim->get_bdf_info(bdf);
 }
@@ -1233,8 +981,6 @@ get_mailbox_info(xclDeviceHandle hdl, xcl_mailbox* value)
 void
 get_sensor_info(xclDeviceHandle hdl, xcl_sensor* value)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "sensor_info()");
   shim* shim = get_shim_object(hdl);
   shim->get_sensor_info(value);
 }
@@ -1287,10 +1033,8 @@ get_kds_custat(xclDeviceHandle hdl, char* buffer, DWORD size, int* size_ret)
 void
 get_errors(xclDeviceHandle hdl, char* buffer)
 {
-    xrt_core::message::
-        send(xrt_core::message::severity_level::debug, "XRT", "xocl errors()");
-    shim* shim = get_shim_object(hdl);
-    shim->get_errors(buffer);
+  shim* shim = get_shim_object(hdl);
+  shim->get_errors(buffer);
 }
 } // namespace userpf
 
@@ -1310,7 +1054,7 @@ void
 close_cu_context(xclDeviceHandle handle, const xrt::hw_context& hwctx, xrt_core::cuidx_type cuidx)
 {
   auto shim = get_shim_object(handle);
-  return shim->close_cu_context(hwctx, cuidx);
+  shim->close_cu_context(hwctx, cuidx);
 }
 
 uint32_t // ctxhdl aka slotidx
@@ -1348,8 +1092,6 @@ register_xclbin(xclDeviceHandle handle, const xrt::xclbin& xclbin)
 unsigned int
 xclProbe()
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclProbe()");
   GUID guid = GUID_DEVINTERFACE_KIPUDRV;
 
   HDEVINFO device_info =
@@ -1407,8 +1149,6 @@ xclDeviceHandle
 xclOpen(unsigned int deviceIndex, const char *logFileName, xclVerbosityLevel level)
 {
   try {
-    xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "xclOpen()");
     return new shim(deviceIndex);
   }
   catch (const xrt_core::error& ex) {
@@ -1424,8 +1164,6 @@ xclOpen(unsigned int deviceIndex, const char *logFileName, xclVerbosityLevel lev
 void
 xclClose(xclDeviceHandle handle)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclClose()");
   auto shim = get_shim_object(handle);
   delete shim;
 }
@@ -1435,55 +1173,100 @@ xclClose(xclDeviceHandle handle)
 xclBufferHandle
 xclAllocBO(xclDeviceHandle handle, size_t size, int unused, unsigned int flags)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclAllocBO()");
-  auto shim = get_shim_object(handle);
-  return shim->alloc_bo(size, flags);
+  try {
+    auto shim = get_shim_object(handle);
+    return shim->alloc_bo(size, flags);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return NULLBO;
 }
 
 xclBufferHandle
 xclAllocUserPtrBO(xclDeviceHandle handle, void *userptr, size_t size, unsigned int flags)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclAllocUserPtrBO()");
-  auto shim = get_shim_object(handle);
-  return shim->alloc_user_ptr_bo(userptr, size, flags);
+  try {
+    auto shim = get_shim_object(handle);
+    return shim->alloc_user_ptr_bo(userptr, size, flags);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return NULLBO;
 }
 
 void*
 xclMapBO(xclDeviceHandle handle, xclBufferHandle boHandle, bool write)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclMapBO()");
-  auto shim = get_shim_object(handle);
-  return shim->map_bo(boHandle, write);
+  try {
+    auto shim = get_shim_object(handle);
+    return shim->map_bo(boHandle, write);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return nullptr;
 }
 
 int
 xclUnmapBO(xclDeviceHandle handle, xclBufferHandle boHandle, void* addr)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclUnmapBO()");
-  auto shim = get_shim_object(handle);
-  return shim->unmap_bo(boHandle, addr);
+  try {
+    auto shim = get_shim_object(handle);
+    shim->unmap_bo(boHandle, addr);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return 1;
 }
 
 void
 xclFreeBO(xclDeviceHandle handle, xclBufferHandle boHandle)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclFreeBO()");
-  auto shim = get_shim_object(handle);
-  return shim->free_bo(boHandle);
+  try {
+    auto shim = get_shim_object(handle);
+    shim->free_bo(boHandle);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
 }
 
 int
 xclSyncBO(xclDeviceHandle handle, xclBufferHandle boHandle, xclBOSyncDirection dir, size_t size, size_t offset)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclSyncBO()");
-  auto shim = get_shim_object(handle);
-  return shim->sync_bo(boHandle, dir, size, offset);
+  try {
+    auto shim = get_shim_object(handle);
+    shim->sync_bo(boHandle, dir, size, offset);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return 1;
 }
 
 int
@@ -1509,42 +1292,82 @@ xclReClock2(xclDeviceHandle handle, unsigned short region,
 int
 xclOpenContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipIndex, bool shared)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclOpenContext()");
-  auto shim = get_shim_object(handle);
+  try {
+    auto shim = get_shim_object(handle);
 
-  //Virtual resources are not currently supported by driver
-  return (ipIndex == (unsigned int)-1)
-    ? 0
-    : shim->open_cu_context(0, xclbinId, ipIndex, shared);
+    // virtual resources are not currently supported by driver
+    if (ipIndex == (unsigned int)-1)
+      return 0;
+
+    shim->open_cu_context(0, xclbinId, ipIndex, shared);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return 1;
+
 }
 
-int xclCloseContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipIndex)
+int
+xclCloseContext(xclDeviceHandle handle, const xuid_t xclbinId, unsigned int ipIndex)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclCloseContext()");
-  auto shim = get_shim_object(handle);
+  try {
+    // virtual resources are not currently supported by driver
+    if (ipIndex == (unsigned int) -1)
+      return 0;
 
-  //Virtual resources are not currently supported by driver
-  return (ipIndex == (unsigned int) -1) ? 0 : shim->close_context(xclbinId, ipIndex);
+    auto shim = get_shim_object(handle);
+    shim->close_context(xclbinId, ipIndex);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return 1;
 }
 
 int
 xclExecBuf(xclDeviceHandle handle, xclBufferHandle cmdBO)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclExecBuf()");
-  auto shim = get_shim_object(handle);
-  return shim->exec_buf(cmdBO);
+  try {
+    auto shim = get_shim_object(handle);
+    shim->exec_buf(cmdBO);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return 1;
 }
 
 int
 xclExecWait(xclDeviceHandle handle, int timeoutMilliSec)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclExecWait()");
-  auto shim = get_shim_object(handle);
-  return shim->exec_wait(timeoutMilliSec);
+  try {
+    auto shim = get_shim_object(handle);
+    return shim->exec_wait(timeoutMilliSec);
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return 0; // poll call returns nothing todo ??
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return 0; // poll call returns nothing todo ??
+  }
 }
 
 xclBufferExportHandle
@@ -1575,21 +1398,27 @@ int
 xclGetBOProperties(xclDeviceHandle handle, xclBufferHandle boHandle,
 		   struct xclBOProperties *properties)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclGetBOProperties()");
-  auto shim = get_shim_object(handle);
-  return shim->get_bo_properties(boHandle,properties);
+  try {
+    auto shim = get_shim_object(handle);
+    shim->get_bo_properties(boHandle,properties);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return 1;
 }
 
 int
 xclLoadXclBin(xclDeviceHandle handle, const struct axlf *buffer)
 {
   try {
-    xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "xclLoadXclbin()");
     auto shim = get_shim_object(handle);
-    if (auto ret =shim->load_xclbin(buffer))
-      return ret;
+    shim->load_xclbin(buffer);
     auto core_device = xrt_core::get_userpf_device(shim);
     core_device->register_axlf(buffer);
     return 0;
@@ -1632,19 +1461,13 @@ xclGetDeviceInfo2(xclDeviceHandle handle, struct xclDeviceInfo2 *info)
 int
 xclLockDevice(xclDeviceHandle handle)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclLockDevice()");
-  auto shim = get_shim_object(handle);
-  return shim->lock_device() ? 0 : 1;
+  return 0;
 }
 
 int
 xclUnlockDevice(xclDeviceHandle handle)
 {
-  xrt_core::message::
-    send(xrt_core::message::severity_level::debug, "XRT", "xclUnlockDevice()");
-  auto shim = get_shim_object(handle);
-  return shim->unlock_device() ? 0 : 1;
+  return 0;
 }
 
 ssize_t
@@ -1665,7 +1488,7 @@ size_t xclReadBO(xclDeviceHandle handle, xclBufferHandle boHandle, void *dst, si
     send(xrt_core::message::severity_level::debug, "XRT", "xclReadBO()");
   //auto shim = get_shim_object(handle);
   //return shim->read_bo(boHandle, dst, size, skip);
-    return 1;
+  return 1;
 }
 
 void
@@ -1677,10 +1500,19 @@ xclGetDebugIpLayout(xclDeviceHandle hdl, char* buffer, size_t size, size_t* size
 int
 xclErrorInject(xclDeviceHandle handle, uint16_t num, uint16_t driver, uint16_t severity, uint16_t module, uint16_t eclass)
 {
-  xrt_core::message::
-      send(xrt_core::message::severity_level::debug, "XRT", "xclExecBuf()");
-  auto shim = get_shim_object(handle);
-  return shim->ErrorInject(num, driver, severity, module, eclass);
+  try {
+    auto shim = get_shim_object(handle);
+    shim->error_inject(num, driver, severity, module, eclass);
+    return 0;
+  }
+  catch (const xrt_core::error& ex) {
+    xrt_core::send_exception_message(ex.what());
+    return ex.get_code();
+  }
+  catch (const std::exception& ex) {
+    xrt_core::send_exception_message(ex.what());
+  }
+  return 1;
 }
 
 
@@ -1688,21 +1520,20 @@ xclErrorInject(xclDeviceHandle handle, uint16_t num, uint16_t driver, uint16_t s
 size_t
 xclWrite(xclDeviceHandle handle, enum xclAddressSpace space, uint64_t offset, const void *hostbuf, size_t size)
 {
-    xrt_core::message::
-        send(xrt_core::message::severity_level::error,"XRT", "xclWrite Not supported ");
-    return size;
+  xrt_core::message::
+    send(xrt_core::message::severity_level::error,"XRT", "xclWrite Not supported ");
+  return size;
 }
 
 size_t
 xclRead(xclDeviceHandle handle, enum xclAddressSpace space,
         uint64_t offset, void *hostbuf, size_t size)
 {
-
-    xrt_core::message::
-        send(xrt_core::message::severity_level::error,"XRT", "xclRead Not supported ");
-    int *data = (int*) hostbuf;
-    *data = 0x2;
-    return size;
+  xrt_core::message::
+    send(xrt_core::message::severity_level::error,"XRT", "xclRead Not supported ");
+  int *data = (int*) hostbuf;
+  *data = 0x2;
+  return size;
 }
 
 // Restricted read/write on IP register space
