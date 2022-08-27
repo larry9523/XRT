@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2021-2022 Xilinx, Inc. All rights reserved.
 #define XRT_CORE_COMMON_SOURCE // in same dll as core_common
+#define XRT_API_SOURCE         // in same dll as API sources
 
 #include "exec.h"
 #include "ert.h"
