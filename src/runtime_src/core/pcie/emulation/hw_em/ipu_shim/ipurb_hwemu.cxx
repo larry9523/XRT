@@ -461,6 +461,7 @@ int ipurb_queue::cu_mask_to_cu_idx(struct kds_command *xcmd, uint8_t *cus)
       std::lock_guard<std::mutex> lkgd{ queuep->usr_buff_mtx };
       //Ensure all RINGB operations are sequential at this place
       std::lock_guard<std::mutex> lk{ queuep->lGlobalMtx };
+ 
       int passed = RINGB_Command(req, &resp, queuep->m_usr_buff_map[slot]->usr_buff.get(), 0xFA5EFADE, IPU_MSG_CONFIG_CU,
         "IPU_MSG_CONFIG_CU", __FUNCTION__);
       printf("IPU_MSG_CONFIG_CU passed is %d\n", passed);
@@ -866,7 +867,7 @@ int ipurb_queue::cu_mask_to_cu_idx(struct kds_command *xcmd, uint8_t *cus)
    *      and SRAM BO. (SRAM is actually on the user task's heap.
    */
   int xocl_ipurb::sync_bo(uint64_t dest, const void *src, size_t size, size_t seek, uint64_t iSlotID)
-  { 
+  {
     //Try to reduce the scope of this lock, underneath sync_bo has another lock in it.
     // recursive mutex calls are happening! Take care.
     DEBUG_MSGS_COUT( " started for slotID \t" << iSlotID);
@@ -916,6 +917,4 @@ int ipurb_queue::cu_mask_to_cu_idx(struct kds_command *xcmd, uint8_t *cus)
     cmd_pool.destroy(xcmd);
     return rval;
   }
-
-  
 }

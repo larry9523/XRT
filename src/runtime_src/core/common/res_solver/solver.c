@@ -195,6 +195,7 @@ static void xrs_action_callback(xrs_handle_t hdl, struct xrs_actions *acts)
  *
  * @xrs:   	Softstate of xrs
  * @pmp:	Input partition metadata (for Fat-XCLBIN)
+ * @rqos:	Requested QoS
  * @cdo:	Output of which CDO in Fat-XCLBIN is selected
  * @part:	Output of which overlay in the CDO is selected
  *
@@ -202,7 +203,7 @@ static void xrs_action_callback(xrs_handle_t hdl, struct xrs_actions *acts)
  */
 static struct solver_partition_node *allocate_partition_share(
 	struct solver_state *xrs, struct part_meta *pmp,
-	uint32_t *cdo, uint32_t *part)
+	struct aie_qos *rqos, uint32_t *cdo, uint32_t *part)
 {
 	struct solver_partition_node *rpt_node = NULL;
 	uint32_t i;
@@ -219,6 +220,16 @@ static struct solver_partition_node *allocate_partition_share(
 			while (pt_node != NULL) {
 				if (start_col != pt_node->start_col ||
 				    cdop->ncols != pt_node->ncol) {
+					pt_node = pt_node->next;
+					continue;
+				}
+
+				/*
+				 * (Allocated TOPS + Requested TOPs) should
+				 * be less than the partition capabilities.
+				 */
+				if (pt_node->pqos.tops + rqos->tops >
+				    cdop->cqos->tops) {
 					pt_node = pt_node->next;
 					continue;
 				}
@@ -246,13 +257,14 @@ static struct solver_partition_node *allocate_partition_share(
  *
  * @xrs:   	Softstate of xrs
  * @pmp:	Input partition metadata (for Fat-XCLBIN)
+ * @rqos:	Requested QoS
  * @cdo:	Output of which CDO in Fat-XCLBIN is selected
  * @part:	Output of which overlay in the CDO is selected
  *
  * Return:	0 when successful or standard error number when failing
  */
 static int allocate_partition(struct solver_state *xrs, struct part_meta *pmp,
-	uint32_t *cdo, uint32_t *part)
+	struct aie_qos *rqos, uint32_t *cdo, uint32_t *part)
 {
 	uint32_t i;
 
@@ -261,6 +273,9 @@ static int allocate_partition(struct solver_state *xrs, struct part_meta *pmp,
 		uint32_t j, k;
 
 		if (xrs->total_col - xrs->allocated < cdop->ncols)
+			continue;
+
+		if (rqos->tops > cdop->cqos->tops)
 			continue;
 
 		for (j = 0; j < cdop->nparts; j++) {
@@ -280,6 +295,39 @@ static int allocate_partition(struct solver_state *xrs, struct part_meta *pmp,
 
 	if (i == pmp->ncdos)
 		return -EBUSY;
+
+	return 0;
+}
+
+/**
+ * sanity_check() - Do a basic sanity check on allocation requests.
+ *
+ * @xrs:   	Softstate of xrs
+ * @pmp:	Input partition metadata (for Fat-XCLBIN)
+ * @rqos:	Requested QoS
+ *
+ * Return:	0 when successful or standard error number when failing
+ */
+static int sanity_check(struct part_meta *pmp, struct aie_qos *rqos)
+{
+	uint32_t i;
+
+	if (!rqos)
+		return -EINVAL;
+
+	for (i = 0; i < pmp->ncdos; i++) {
+		struct cdo_parts *cdop = pmp->cdo + i;
+
+		/*
+		 * We can find at least one CDOs groups that meet the
+		 * TOPs requirement.
+		 */
+		if (rqos->tops <= cdop->cqos->tops)
+			break;
+	}
+
+	if (i == pmp->ncdos)
+		return -EINVAL;
 
 	return 0;
 }
@@ -350,8 +398,15 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 		return -EEXIST;
 	}
 
-	rval = allocate_partition(xrs, pmp, &cdo, &part);
+	rval = sanity_check(pmp, req->rqos);
+	if (rval) {
+		xrs->func->xrs_log("Solver: invalid QoS request\n");
+		actions = NULL;
+		action_cb = NULL;
+		return rval;
+	}
 
+	rval = allocate_partition(xrs, pmp, req->rqos, &cdo, &part);
 	if (rval) {
 		if (xrs->mode != XRS_MODE_TEMPORAL_BEST) {
 			xrs->func->xrs_log("Solver: no available partition\n");
@@ -360,7 +415,8 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 			return rval;
 		}
 		xrs->func->xrs_log("Solver: no unused cols available, try sharing...\n");
-		pt_node = allocate_partition_share(xrs, pmp, &cdo, &part);
+		pt_node = allocate_partition_share(xrs, pmp, req->rqos,
+		    &cdo, &part);
 		if (!pt_node) {
 			xrs->func->xrs_log("Solver: no available partition\n");
 			actions = NULL;
@@ -401,6 +457,8 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 			node->part = part;
 		else
 			node->part = -1; /* this CDO is not allocated */
+		memcpy(&node->cqos, cpart->cqos, sizeof (struct aie_qos));
+		memcpy(&node->rqos, req->rqos, sizeof (struct aie_qos));
 
 		insert_node(xrs, node);
 
@@ -420,9 +478,13 @@ int xrs_allocate_resource(xrs_handle_t hdl, struct alloc_requests *req,
 			pt_node->nshared = 1;
 			pt_node->start_col = node->oly[part];
 			pt_node->ncol = node->ncol;
+			memcpy(&pt_node->pqos, req->rqos,
+			    sizeof (struct aie_qos));
 			insert_partition_node(xrs, pt_node);
-		} else
+		} else {
 			pt_node->nshared++;
+			pt_node->pqos.tops += req->rqos->tops;
+		}
 
 		/*
 		 * Fill up action list.
@@ -483,6 +545,8 @@ int xrs_release_resource(xrs_handle_t hdl, uint32_t rid)
 			}
 
 			pt_node->nshared--;
+			pt_node->pqos.tops -= node->rqos.tops;
+
 			if (pt_node->nshared == 0) {
 				remove_partition_node(xrs, pt_node);
 				xrs->func->xrs_mem_free(pt_node);

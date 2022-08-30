@@ -107,6 +107,28 @@ struct aie_part {
 };
 
 /**
+ * QoS structure. This includes factors that define the QoS which will be
+ * used to describe
+ *   1) the QoS capabilities of a given AIE partition
+ *   2) the QoS requirement of a resource allocation
+ *
+ * Note:
+ *       1) The original data got from XCLBIN is operations per AIE cycle. It
+ *          is the Resource Solver's consumers responsibility to convert it to
+ *          Tera Operations per second based on the AIE frequence at run time.
+ *       2) We will only hornor tops for now. Others are just a place holder
+ *          for future use.
+ */
+struct aie_qos {
+	uint32_t	tops;		/* Tera operations per second */
+	uint32_t	fps;		/* Frames per second */
+	uint32_t	dma_bw;		/* DMA bandwidth */
+	uint32_t	latency;	/* Frame response latency */
+	uint32_t	exec_time;	/* Frame execution time */
+	uint32_t	priority;	/* Request priority */
+};
+
+/**
  * Structure used to describe a relocatable CDO. A relocatable CDO is
  * identified by its CDO UUID. This CDO can be loaded on multiple
  * partition overlays.
@@ -116,6 +138,7 @@ struct cdo_parts {
 	uint32_t	nparts;			/* # of partition overlays */
 	uint32_t	ncols;			/* # of columns */
 	uint32_t	*start_col_list;	/* Start column array */
+	struct aie_qos	*cqos;			/* CDO QoS capabilities */
 };
 
 /**
@@ -139,6 +162,7 @@ struct part_meta {
 struct alloc_requests {
 	uint32_t		rid;
 	struct part_meta	*pmp;
+	struct aie_qos		*rqos;		/* Requested QoS */
 };
 
 /**

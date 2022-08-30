@@ -18,6 +18,8 @@ struct solver_node {
 	uint32_t	*oly;			/* start column array */
 	int32_t 	part;			/* selected partition */
 						/* -1: this CDO is not used */
+	struct aie_qos	cqos;			/* CDO group QoS capabilities */
+	struct aie_qos	rqos;			/* Requested QoS */
 	struct solver_node *next;
 };
 
@@ -25,6 +27,7 @@ struct solver_partition_node {
 	uint32_t	nshared;
 	uint32_t	start_col;
 	uint32_t	ncol;
+	struct aie_qos	pqos;
 	struct solver_partition_node *next;
 };
 

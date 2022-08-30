@@ -446,11 +446,18 @@ namespace xclhwemhal2 {
       uint32_t start_col_arr[lhwctx->sCUinfo.maie_partition_obj.start_col_list.size()];
       std::copy(lhwctx->sCUinfo.maie_partition_obj.start_col_list.begin(), lhwctx->sCUinfo.maie_partition_obj.start_col_list.end(), start_col_arr);
 
+      struct aie_qos cqos, rqos;
+
+      // TODO update this once XCLBIN support is there
+      cqos.tops = 0;
+      rqos.tops = 0;
+
       struct cdo_parts cp;
       cp.cdo_uuid = const_cast<uuid_t*>(reinterpret_cast<const uuid_t*>(xclbinId));           // use XCLBIN uuid for now
       cp.nparts = lhwctx->sCUinfo.maie_partition_obj.start_col_list.size();
       cp.ncols = lhwctx->sCUinfo.maie_partition_obj.ncol;
       cp.start_col_list = start_col_arr;
+      cp.cqos = &cqos;
 
       struct part_meta pm;
       pm.xclbin_uuid = const_cast<uuid_t*>(reinterpret_cast<const uuid_t*>(xclbinId));
@@ -459,18 +466,16 @@ namespace xclhwemhal2 {
 
       struct alloc_requests req;
 
-      //req.rid = 1; // We only support 1 hw_context for now so just use 1
-
       // an unique resource id for each loadable xclbin
       req.rid = ++counter_rid;
       lhwctx->mrid = req.rid;
       req.pmp = &pm;
+      req.rqos = &rqos;
       ret = xrs_allocate_resource(xrs_hdl, &req, &act, &action_cb);
-      if (ret)              // if failed,
+      if (ret)             // if failed,
         return ret;
 
-      if (act)
-      {
+      if (act) {
         // Use the first action for best effort on spatial and temporal sharing
         // More actions will be supported when we have more CDO groups
         start_col = act->actions[0].part.start_col;
