@@ -413,7 +413,7 @@ namespace xclhwemhal2 {
 
   // If error happens, return negative POSIX error.
   // Otherwise, return the context id allocated by IPU.
-  int HwEmShim::ipu_create_hw_context(const uuid_t xclbinId, int slotid)
+  int HwEmShim::ipu_create_hw_context(const uuid_t xclbinId, const xrt::hw_context::qos_type& qos, int slotid)
   {
     DEBUG_MSGS_COUT(" funtion start");
     auto suuid = convert_uuid_to_string(xclbinId);
@@ -449,8 +449,15 @@ namespace xclhwemhal2 {
       struct aie_qos cqos, rqos;
 
       // TODO update this once XCLBIN support is there
-      cqos.tops = 0;
-      rqos.tops = 0;
+      cqos.tops = lhwctx->sCUinfo.maie_partition_obj.ops_per_cycle;
+      printf("__larry_shim: in %s, xclbin ops per cycle is %d\n", __func__, cqos.tops);
+
+      auto it = qos.find("tops");
+      if (it != qos.end())
+        rqos.tops = it->second;
+      else
+        rqos.tops = 0;
+      printf("__larry_shim: in %s, requested ops per cycle is %d\n", __func__, rqos.tops);
 
       struct cdo_parts cp;
       cp.cdo_uuid = const_cast<uuid_t*>(reinterpret_cast<const uuid_t*>(xclbinId));           // use XCLBIN uuid for now
@@ -3760,7 +3767,8 @@ xclOpenContext(const uuid_t xclbinId, unsigned int ipIndex, bool shared)
   // a previous hw_context has been created.
   int ret = 0;
   if (xclemulation::config::getInstance()->isIpuRBMode() && context_id == -1) {
-    ret = ipu_create_hw_context(xclbinId);
+    xrt::hw_context::qos_type qos;
+    ret = ipu_create_hw_context(xclbinId, qos);
     if (ret >= 0) {
       // Cache the context_id.
       context_id = ret;
@@ -3832,6 +3840,7 @@ uint32_t // ctx handle aka slot idx
 HwEmShim::
 create_hw_context(const xrt::uuid& xclbin_uuid, const xrt::hw_context::qos_type& qos, xrt::hw_context::access_mode mode)
 {
+  printf("__larry_shim: in %s, qos is %d\n", __func__, const_cast<xrt::hw_context::qos_type&>(qos)["tops"]);
   std::lock_guard<std::mutex> lSequential{ mSeq_LoadXclBin };
   // one more IPU hw context getting created.
   //++m_primery_key;
@@ -3863,7 +3872,7 @@ create_hw_context(const xrt::uuid& xclbin_uuid, const xrt::hw_context::qos_type&
 
   IpuManager->init_xclbin_metadata(xclbin_uuid.get(), lSlotID);
 
-  int ret = ipu_create_hw_context(xclbin_uuid.get(), lSlotID);
+  int ret = ipu_create_hw_context(xclbin_uuid.get(), qos, lSlotID);
   if (ret < 0)
     throw xrt_core::system_error(lSlotID, "fail to create ipu hw context");
 

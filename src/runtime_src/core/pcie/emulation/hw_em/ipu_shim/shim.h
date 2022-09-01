@@ -471,7 +471,7 @@ using addr_type = uint64_t;
       xclipu::IndexPool m_CUIndexCounter;
 
       xrs_handle_t xrs_hdl;
-      int ipu_create_hw_context(const uuid_t xclbinId, int slotid=0);
+      int ipu_create_hw_context(const uuid_t xclbinid, const xrt::hw_context::qos_type& qos, int slotid=0);
       int ipu_destroy_hw_context(uint32_t ctxhdl);
       int context_id = -1;
       std::map<std::string, int64_t> uuid_rid_map;
