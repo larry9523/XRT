@@ -137,17 +137,20 @@ struct patcher
 
   buf_type m_buf_type = buf_type::ctrltext;
   symbol_type m_symbol_type = symbol_type::shim_dma_48;
-  uint64_t m_add_end = 0;
+
+  struct patch_info {
+    uint64_t offset;
+    uint32_t addend;
+  };
 
   // Offsets from base address of control code buffer object
   // The base address is passed in as a parameter to patch()
-  std::vector<uint64_t> m_ctrlcode_offset;
+  std::vector<patch_info> m_ctrlcode_patchinfo;
 
-  patcher(symbol_type type, std::vector<uint64_t> ctrlcode_offset, buf_type t, uint64_t add_end)
+  patcher(symbol_type type, std::vector<patch_info> ctrlcode_patchinfo, buf_type t)
     : m_buf_type(t)
     , m_symbol_type(type)
-    , m_add_end(add_end)
-    , m_ctrlcode_offset(std::move(ctrlcode_offset))
+    , m_ctrlcode_patchinfo(std::move(ctrlcode_patchinfo))
   {}
 
   void
@@ -196,7 +199,10 @@ struct patcher
       ((static_cast<uint64_t>(bd_data_ptr[2]) & 0xFFF) << 32) |                       // NOLINT
       ((static_cast<uint64_t>(bd_data_ptr[1])));
 
+    printf("__larry_mod: in %s base_address before patch is %lx\n", __func__, base_address);
     base_address = base_address + patch + ddr_aie_addr_offset;
+    printf("__larry_mod: in %s base_address after patch is %lx\n", __func__, base_address);
+
     bd_data_ptr[1] = (uint32_t)(base_address & 0xFFFFFFFC);                           // NOLINT
     bd_data_ptr[2] = (bd_data_ptr[2] & 0xFFFF0000) | (base_address >> 32);            // NOLINT
   }
@@ -204,27 +210,33 @@ struct patcher
   void
   patch(uint8_t* base, uint64_t bo_addr)
   {
-    uint64_t patch = bo_addr + m_add_end;
-    for (auto offset : m_ctrlcode_offset) {
-      auto bd_data_ptr = reinterpret_cast<uint32_t*>(base + offset);
+    printf("__larry_mod: in %s bo_addr is %lx\n", __func__, bo_addr);
+    uint64_t patch = bo_addr;
+    printf("__larry_mod: in %s patch is %lx\n", __func__, patch);
+    for (auto offset : m_ctrlcode_patchinfo) {
+      auto bd_data_ptr = reinterpret_cast<uint32_t*>(base + offset.offset);
+      printf("__larry_mod: in %s addend is %x\n", __func__, offset.addend);
+      printf("__larry_mod: in %s offset is %lx\n", __func__, offset.offset);
+
       switch (m_symbol_type) {
       case symbol_type::scalar_32bit_kind:
-        patch32(bd_data_ptr, patch);
+        patch32(bd_data_ptr, patch + offset.addend);
         break;
       case symbol_type::shim_dma_base_addr_symbol_kind:
-        patch57(bd_data_ptr, patch);
+        patch57(bd_data_ptr, patch + offset.addend);
         break;
       case symbol_type::control_packet_48:
-        patch_ctrl48(bd_data_ptr, patch);
+        patch_ctrl48(bd_data_ptr, patch + offset.addend);
         break;
       case symbol_type::shim_dma_48:
+        printf("__larry_mod: in %s shim_dma_48\n", __func__);
         patch_shim48(bd_data_ptr, patch);
         break;
       case symbol_type::tansaction_ctrlpkt_48:
-        patch_ctrl48(bd_data_ptr, patch);
+        patch_ctrl48(bd_data_ptr, patch + offset.addend);
         break;
       case symbol_type::tansaction_48:
-        patch_shim48(bd_data_ptr, patch);
+        patch_shim48(bd_data_ptr, patch + offset.addend);
         break;
       default:
         throw std::runtime_error("Unsupported symbol type");
@@ -628,6 +640,8 @@ class module_elf : public module_impl
           throw std::runtime_error("Invalid section index " + std::to_string(sym->st_shndx));
 
         auto offset = rela->r_offset;
+        uint32_t add_end_higher_28bit = (rela->r_addend & 0xFFFFFFF8) >> 3;
+
         auto [sec_size, buf_type] = determine_section_type(section->get_name());
 
         if (offset >= sec_size)
@@ -637,13 +651,13 @@ class module_elf : public module_impl
 
         std::string key_string = generate_key_string(argnm, buf_type);
 
+        patcher::patch_info pi = {offset, add_end_higher_28bit};
         if (auto search = arg2patchers.find(key_string); search != arg2patchers.end())
-          search->second.m_ctrlcode_offset.emplace_back(offset);
+          search->second.m_ctrlcode_patchinfo.emplace_back(pi);
         else {
-          uint64_t add_end_higher_28bit = (rela->r_addend & 0xFFFFFFF0) >> 4;
-          uint64_t patch_scheme_lower_4bit = rela->r_addend & 0xF; // NOLINT
+          uint64_t patch_scheme_lower_4bit = rela->r_addend & 0x7; // NOLINT
           auto symbol_type = static_cast<patcher::symbol_type>(patch_scheme_lower_4bit);
-          arg2patchers.emplace(std::move(key_string), patcher{ symbol_type, {offset}, buf_type, add_end_higher_28bit });
+          arg2patchers.emplace(std::move(key_string), patcher{ symbol_type, {pi}, buf_type });
         }
       }
     }
@@ -703,12 +717,14 @@ class module_elf : public module_impl
           ctrlcode_offset += ctrlcodes.at(i).size();
         ctrlcode_offset += column_ctrlcode_offset;
 
+        patcher::patch_info pi = {ctrlcode_offset, 0};
+
         // Construct the patcher for the argument with the symbol name
         std::string argnm{ symname, symname + std::min(strlen(symname), dynstr->get_size()) };
         patcher::buf_type buf_type = patcher::buf_type::ctrltext;
 
         auto symbol_type = static_cast<patcher::symbol_type>(rela->r_addend);
-        arg2patcher.emplace(std::move(generate_key_string(argnm, buf_type)), patcher{ symbol_type, {ctrlcode_offset}, buf_type, 0});
+        arg2patcher.emplace(std::move(generate_key_string(argnm, buf_type)), patcher{ symbol_type, {pi}, buf_type});
       }
     }
 
@@ -718,15 +734,19 @@ class module_elf : public module_impl
   bool
   patch(uint8_t* base, const std::string& argnm, size_t index, uint64_t patch, patcher::buf_type type) override
   {
+    printf("__larry_mod: enter %s, argnm is %s\n", __func__, argnm.c_str());
     const std::string key_string = generate_key_string(argnm, type);
     auto it = m_arg2patcher.find(key_string);
     auto not_found_use_argument_name = (it == m_arg2patcher.end());
     if (not_found_use_argument_name) {// Search using index
       auto index_string = std::to_string(index);
       const std::string key_index_string = generate_key_string(index_string, type);
+      printf("__larry_mod: in %s, not found by name: %s\n", __func__, key_string.c_str());
       it = m_arg2patcher.find(key_index_string);
-      if (it == m_arg2patcher.end())
+      if (it == m_arg2patcher.end()) {
+        printf("__larry_mod: in %s not found by index: %s\n", __func__, key_index_string.c_str());
         return false;
+      }
     }
 
     it->second.patch(base, patch);
