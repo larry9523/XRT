@@ -43,7 +43,7 @@ static constexpr uint8_t Elf_Amd_Aie2p  = 69;
 static constexpr uint8_t Elf_Amd_Aie2ps = 64;
 
 // When Debug.dump_bo_from_elf is true in xrt.ini, instruction bo(s) from elf will be dumped
-static const char* Debug_Bo_From_Elf_Feature = "Debug.dump_bo_from_elf";
+//static const char* Debug_Bo_From_Elf_Feature = "Debug.dump_bo_from_elf";
 
 struct buf
 {
@@ -202,6 +202,7 @@ struct patcher
   void
   patch(uint8_t* base, uint64_t patch)
   {
+    printf("__larry_mod: enter patch: base is %p, pathc is %lx\n", base, patch);
     for (auto offset : m_ctrlcode_offset) {
       auto bd_data_ptr = reinterpret_cast<uint32_t*>(base + offset);
       switch (m_symbol_type) {
@@ -212,15 +213,19 @@ struct patcher
         patch57(bd_data_ptr, patch);
         break;
       case symbol_type::control_packet_48:
+        printf("__larry_mod: in control_packet_48: bd_ptr is %p, pathc is %lx\n", bd_data_ptr, patch);
         patch_ctrl48(bd_data_ptr, patch);
         break;
       case symbol_type::shim_dma_48:
+        printf("__larry_mod: in shim_dma_48: bd_ptr is %p, pathc is %lx\n", bd_data_ptr, patch);
         patch_shim48(bd_data_ptr, patch);
         break;
       case symbol_type::tansaction_ctrlpkt_48:
+        printf("__larry_mod: in tran_control_packet_48: bd_ptr is %p, pathc is %lx\n", bd_data_ptr, patch);
         patch_ctrl48(bd_data_ptr, patch);
         break;
       case symbol_type::tansaction_48:
+        printf("__larry_mod: in transaction_48: bd_ptr is %p, pathc is %lx\n", bd_data_ptr, patch);
         patch_shim48(bd_data_ptr, patch);
         break;
       default:
@@ -233,8 +238,10 @@ struct patcher
   XRT_CORE_UNUSED void
   dump_bo(xrt::bo& bo, const std::string& filename)
   {
+/*
     if (!xrt_core::config::get_feature_toggle(Debug_Bo_From_Elf_Feature))
       return;
+*/
 
     std::ofstream ofs(filename, std::ios::out | std::ios::binary);
     if (!ofs.is_open())
@@ -637,12 +644,19 @@ class module_elf : public module_impl
         if (auto search = arg2patchers.find(key_string); search != arg2patchers.end())
           search->second.m_ctrlcode_offset.emplace_back(offset);
         else {
-          auto symbol_type = static_cast<patcher::symbol_type>(rela->r_addend);
+          auto symbol_type = static_cast<patcher::symbol_type>(rela->r_addend & 0xF);
           arg2patchers.emplace(std::move(key_string), patcher{ symbol_type, {offset}, buf_type });
         }
       }
     }
 
+    for (auto iter = arg2patchers.begin(); iter != arg2patchers.end(); ++iter) { 
+      printf("__larry_mod: in %s, symbol name is %s\n", __func__, iter->first.c_str());
+      printf("__larry_mod: symbol type is %d\n", (uint)(iter->second.m_symbol_type));
+      for (auto it = iter->second.m_ctrlcode_offset.begin(); it != iter->second.m_ctrlcode_offset.end(); ++it) {
+        printf("__larry_mod: ctrlcode_offset is %lx\n", *it);
+      }
+    }
     return arg2patchers;
   }
 
@@ -723,6 +737,8 @@ class module_elf : public module_impl
       if (it == m_arg2patcher.end())
         return false;
     }
+
+    printf("__larry_mod: in %s 1, cp 1, name is %s, index is %ld\n", __func__, argnm.c_str(), index);
 
     it->second.patch(base, patch);
     return true;
@@ -1063,14 +1079,16 @@ class module_sram : public module_impl
     }
     else if (os_abi == Elf_Amd_Aie2p) {
       m_instr_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-#ifdef _DEBUG
+// #ifdef _DEBUG
+      printf("__larry_mod: in %s dump bo\n", __func__);
       dump_bo(m_instr_bo, "instrBoPatched.bin");
-#endif
+// #endif
       if (m_ctrlpkt_bo) {
         m_ctrlpkt_bo.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-#ifdef _DEBUG
+        printf("__larry_mod: in %s dump ctrl pkt bo\n", __func__);
+// #ifdef _DEBUG
         dump_bo(m_ctrlpkt_bo, "ctrlpktBoPatched.bin");
-#endif
+// #endif
         }
     }
 
