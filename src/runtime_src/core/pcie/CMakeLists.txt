@@ -13,6 +13,7 @@ if(NOT WIN32)
   if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64" AND XRT_ENABLE_EMULATION)
     # Emulation flow only works on x86_64
     xrt_add_subdirectory(emulation)
+    xrt_add_subdirectory(mock/xdna)
   endif()
 else()
   xrt_add_subdirectory(windows)

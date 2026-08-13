@@ -84,6 +84,11 @@ is_hw_emulation()
 static std::string
 shim_name()
 {
+  // Loopback mock for ELF/module/patching tests without NPU hardware.
+  // Loads libxrt_xdna_mock.so instead of libxrt_core.so.
+  if (!safe_getenv("XRT_ELF_MOCK").empty())
+    return "xdna_mock";
+
   if (!is_emulation())
     return "xrt_core";
 
