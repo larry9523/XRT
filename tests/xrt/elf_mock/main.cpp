@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -29,16 +30,18 @@ usage(const char* prog)
     << "Usage: " << prog << " --elf <file.elf> [options]\n\n"
     << "Options:\n"
     << "  --elf <path>       ELF control-code binary (required)\n"
-    << "  --ctrl-id <n>      Control-code id / group index (default 0)\n"
+    << "  --ctrl-id <n>      Control-code id / group index (default: auto from --kernel)\n"
+    << "  --kernel <name>    Kernel name for ctrl-code id lookup (default: first kernel)\n"
     << "  --patch-arg <name> Argument symbol to patch (repeatable)\n"
     << "  --patch-addr <hex> Fake device address for corresponding --patch-arg\n"
-    << "  --with-device      Also run xrt::module + xrt::bo path (needs XRT_ELF_MOCK=1)\n"
+    << "  --load-only        Skip patching; only load ELF (+ module_run with --with-device)\n"
+    << "  --with-device      Also run xrt::module_run + xrt::bo path (needs XRT_ELF_MOCK=1)\n"
     << "  -h                 Help\n\n"
     << "Environment:\n"
     << "  XRT_ELF_MOCK=1     Use libxrt_xdna_mock.so (malloc-backed BOs, no hardware)\n\n"
     << "Notes:\n"
-    << "  Default tests use module_int::patch() into a malloc buffer — no device required.\n"
-    << "  BO addresses for patching can be any uint64_t (typically host pointer values).\n";
+    << "  Default patch test uses arg0/arg1 with malloc addresses when --patch-arg omitted.\n"
+    << "  For legacy ELFs without .group sections, pass --kernel <name>.\n";
 }
 
 [[noreturn]] void
@@ -61,29 +64,98 @@ platform_string(xrt::elf::platform p)
   }
 }
 
-xrt_core::elf_patcher::buf_type
-ctrltext_buf_type(xrt::elf::platform p)
+void
+test_elf_api(const xrt::elf& elf, const std::string& elf_path)
 {
-  if (p == xrt::elf::platform::aie2p)
-    return xrt_core::elf_patcher::buf_type::ctrltext;
-  return xrt_core::elf_patcher::buf_type::ctrltext;
+  std::cout << "[elf] path=" << elf_path << "\n"
+            << "[elf] platform=" << platform_string(elf.get_platform()) << "\n";
+
+  try {
+    std::cout << "[elf] partition_size=" << elf.get_partition_size() << "\n";
+  }
+  catch (const std::exception& ex) {
+    std::cout << "[elf] partition_size=(unavailable: " << ex.what() << ")\n";
+  }
+
+  auto kernels = elf.get_kernels();
+  std::cout << "[elf] kernels=" << kernels.size();
+  for (const auto& krnl : kernels)
+    std::cout << " " << krnl.get_name();
+  std::cout << "\n";
+}
+
+uint32_t
+resolve_ctrl_id(const xrt::elf& elf, const std::optional<uint32_t>& explicit_id,
+                const std::string& kernel_name)
+{
+  if (explicit_id)
+    return *explicit_id;
+
+  auto elf_hdl = elf.get_handle();
+  std::string lookup = kernel_name;
+
+  if (lookup.empty()) {
+    auto kernels = elf.get_kernels();
+    if (kernels.empty())
+      fail("ELF has no kernels; pass --ctrl-id explicitly");
+
+    const auto& krnl = kernels.front();
+    lookup = krnl.get_name();
+    auto instances = krnl.get_instances();
+    if (instances.size() == 1)
+      lookup = lookup + ":" + instances.front().get_name();
+    else if (instances.size() > 1)
+      lookup = lookup + ":" + instances.front().get_name();
+
+    std::cout << "[ctrl-id] auto-selected '" << lookup << "'\n";
+  }
+  else if (lookup.find(':') == std::string::npos) {
+    for (const auto& krnl : elf.get_kernels()) {
+      if (krnl.get_name() != lookup)
+        continue;
+      auto instances = krnl.get_instances();
+      if (instances.size() == 1)
+        lookup = lookup + ":" + instances.front().get_name();
+      else if (instances.size() > 1)
+        lookup = lookup + ":" + instances.front().get_name();
+      break;
+    }
+  }
+
+  auto id = elf_hdl->get_ctrlcode_id(lookup);
+  std::cout << "[ctrl-id] '" << lookup << "' -> id " << id << "\n";
+  return id;
 }
 
 void
-test_elf_api(const std::string& elf_path)
+test_module_load(const xrt::elf& elf, uint32_t ctrl_id)
 {
-  xrt::elf elf{elf_path};
+  const char* mock = std::getenv("XRT_ELF_MOCK");
+  if (!mock || std::string(mock).empty())
+    fail("--with-device requires XRT_ELF_MOCK=1 (libxrt_xdna_mock.so)");
+
+  xrt::device device{0};
+  xrt::hw_context ctx{device, elf};
+  xrt::bo empty_ctrlpkt{};
+
+  auto mod = xrt_core::module_int::create_module_run(elf, ctx, ctrl_id, empty_ctrlpkt);
+
   auto platform = elf.get_platform();
+  if (platform == xrt::elf::platform::aie2p) {
+    auto sz = xrt_core::module_int::get_patch_buf_size(
+      mod, xrt_core::elf_patcher::buf_type::ctrltext, ctrl_id);
+    std::cout << "[module-run] aie2p ctrltext size=" << sz << " bytes\n";
+    auto cp_sz = xrt_core::module_int::get_patch_buf_size(
+      mod, xrt_core::elf_patcher::buf_type::ctrldata, ctrl_id);
+    std::cout << "[module-run] aie2p ctrldata size=" << cp_sz << " bytes\n";
+  }
+  else {
+    auto sz = xrt_core::module_int::get_patch_buf_size(
+      mod, xrt_core::elf_patcher::buf_type::ctrltext, ctrl_id);
+    std::cout << "[module-run] ctrltext size=" << sz << " bytes (device BO filled)\n";
+  }
 
-  std::cout << "[elf] path=" << elf_path << "\n"
-            << "[elf] platform=" << platform_string(platform) << "\n"
-            << "[elf] partition_size=" << elf.get_partition_size() << "\n";
-
-  auto names = elf.get_kernel_names();
-  std::cout << "[elf] kernels=" << names.size();
-  for (const auto& n : names)
-    std::cout << " " << n;
-  std::cout << "\n";
+  std::cout << "[module-run] create_module_run OK (mock device, malloc-backed BOs)\n";
 }
 
 void
@@ -92,7 +164,7 @@ test_patch_malloc(const xrt::module& mod,
                   uint32_t ctrl_id,
                   const std::vector<std::pair<std::string, uint64_t>>& args)
 {
-  auto type = ctrltext_buf_type(platform);
+  auto type = xrt_core::elf_patcher::buf_type::ctrltext;
   size_t sz = xrt_core::module_int::get_patch_buf_size(mod, type, ctrl_id);
   if (sz == 0)
     fail("patch buffer size is zero");
@@ -100,7 +172,7 @@ test_patch_malloc(const xrt::module& mod,
   mock_alloc buf{sz};
   std::memset(buf.get(), 0xCD, sz);
 
-  xrt_core::module_int::patch(mod, buf.get(), sz, &args, type, ctrl_id);
+  xrt_core::module_int::patch(mod, static_cast<uint8_t*>(buf.get()), sz, &args, type, ctrl_id);
 
   std::cout << "[patch-malloc] patched " << args.size() << " arg(s) into "
             << sz << "-byte ctrltext buffer @ "
@@ -108,18 +180,12 @@ test_patch_malloc(const xrt::module& mod,
 }
 
 void
-test_patch_with_device(const std::string& elf_path,
+test_patch_with_device(const xrt::elf& elf,
                        uint32_t ctrl_id,
                        const std::vector<std::pair<std::string, uint64_t>>& args)
 {
-  const char* mock = std::getenv("XRT_ELF_MOCK");
-  if (!mock || std::string(mock).empty())
-    fail("--with-device requires XRT_ELF_MOCK=1 (libxrt_xdna_mock.so)");
-
-  xrt::elf elf{elf_path};
   xrt::device device{0};
-  xrt::hw_context ctx{device, elf, xrt::hw_context::access_mode::shared};
-
+  xrt::hw_context ctx{device, elf};
   xrt::bo empty_ctrlpkt{};
   auto mod = xrt_core::module_int::create_module_run(elf, ctx, ctrl_id, empty_ctrlpkt);
 
@@ -127,7 +193,7 @@ test_patch_with_device(const std::string& elf_path,
     mock_alloc backing{4096};
     std::memset(backing.get(), 0, backing.size());
 
-    xrt::bo arg_bo{device, backing.get(), 4096, xrt::bo::flags::host_only};
+    xrt::bo arg_bo{ctx, backing.get(), 4096, xrt::bo::flags::host_only, xrt::memory_group{0}};
     xrt_core::module_int::patch(mod, name, 0, arg_bo);
 
     std::cout << "[patch-bo] " << name << " bo.address=0x"
@@ -140,9 +206,11 @@ test_patch_with_device(const std::string& elf_path,
 struct options
 {
   std::string elf_path;
-  uint32_t ctrl_id = 0;
+  std::optional<uint32_t> ctrl_id;
+  std::string kernel_name;
   std::vector<std::pair<std::string, uint64_t>> patch_args;
   bool with_device = false;
+  bool load_only = false;
 };
 
 options
@@ -159,6 +227,10 @@ parse_args(int argc, char** argv)
       opt.with_device = true;
       continue;
     }
+    if (arg == "--load-only") {
+      opt.load_only = true;
+      continue;
+    }
     if (i + 1 >= argc)
       fail("missing value for " + arg);
 
@@ -166,6 +238,8 @@ parse_args(int argc, char** argv)
       opt.elf_path = argv[++i];
     else if (arg == "--ctrl-id")
       opt.ctrl_id = static_cast<uint32_t>(std::stoul(argv[++i]));
+    else if (arg == "--kernel")
+      opt.kernel_name = argv[++i];
     else if (arg == "--patch-arg") {
       std::string name = argv[++i];
       opt.patch_args.emplace_back(name, 0);
@@ -193,35 +267,42 @@ main(int argc, char** argv)
   try {
     auto opt = parse_args(argc, argv);
 
-    test_elf_api(opt.elf_path);
-
     xrt::elf elf{opt.elf_path};
-    xrt::module mod{elf};
+    test_elf_api(elf, opt.elf_path);
 
-    if (opt.patch_args.empty()) {
-      mock_alloc a{4096};
-      mock_alloc b{4096};
-      std::vector<std::pair<std::string, uint64_t>> demo = {
-        {"ifm", reinterpret_cast<uint64_t>(a.get())},
-        {"ofm", reinterpret_cast<uint64_t>(b.get())},
-      };
-      std::cout << "[patch-malloc] using demo args ifm/ofm with malloc addresses\n";
-      test_patch_malloc(mod, elf.get_platform(), opt.ctrl_id, demo);
-    }
-    else {
-      // Fill unset addresses with malloc-backed values
-      std::vector<mock_alloc> holders;
-      for (auto& [name, addr] : opt.patch_args) {
-        if (addr == 0) {
-          holders.emplace_back(4096);
-          addr = reinterpret_cast<uint64_t>(holders.back().get());
-        }
-      }
-      test_patch_malloc(mod, elf.get_platform(), opt.ctrl_id, opt.patch_args);
-    }
+    auto ctrl_id = resolve_ctrl_id(elf, opt.ctrl_id, opt.kernel_name);
 
     if (opt.with_device)
-      test_patch_with_device(opt.elf_path, opt.ctrl_id, opt.patch_args);
+      test_module_load(elf, ctrl_id);
+
+    if (!opt.load_only) {
+      xrt::module mod{elf};
+      std::vector<std::pair<std::string, uint64_t>> patch_args = opt.patch_args;
+      std::vector<mock_alloc> holders;
+
+      if (patch_args.empty()) {
+        holders.emplace_back(4096);
+        holders.emplace_back(4096);
+        patch_args = {
+          {"arg0", reinterpret_cast<uint64_t>(holders[0].get())},
+          {"arg1", reinterpret_cast<uint64_t>(holders[1].get())},
+        };
+        std::cout << "[patch-malloc] using demo args arg0/arg1 with malloc addresses\n";
+      }
+      else {
+        for (auto& [name, addr] : patch_args) {
+          if (addr == 0) {
+            holders.emplace_back(4096);
+            addr = reinterpret_cast<uint64_t>(holders.back().get());
+          }
+        }
+      }
+
+      test_patch_malloc(mod, elf.get_platform(), ctrl_id, patch_args);
+
+      if (opt.with_device)
+        test_patch_with_device(elf, ctrl_id, patch_args);
+    }
 
     std::cout << "PASS\n";
     return 0;

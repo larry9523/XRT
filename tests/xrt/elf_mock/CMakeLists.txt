@@ -7,12 +7,12 @@ project(elf_mock LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if (NOT DEFINED XRT_SOURCE_DIR)
-  if (DEFINED ENV{XRT_SOURCE_DIR})
-    set(XRT_SOURCE_DIR $ENV{XRT_SOURCE_DIR})
+if (NOT DEFINED XRT_RUNTIME_SRC_DIR)
+  if (DEFINED ENV{XRT_RUNTIME_SRC_DIR})
+    set(XRT_RUNTIME_SRC_DIR $ENV{XRT_RUNTIME_SRC_DIR})
   else()
-    get_filename_component(XRT_SOURCE_DIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+    get_filename_component(XRT_RUNTIME_SRC_DIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/runtime_src" ABSOLUTE)
   endif()
 endif()
 
@@ -22,7 +22,9 @@ add_executable(elf_mock main.cpp)
 
 target_include_directories(elf_mock PRIVATE
   ${XRT_INCLUDE_DIRS}
-  ${XRT_SOURCE_DIR}/runtime_src
+  ${XRT_RUNTIME_SRC_DIR}
+  ${XRT_RUNTIME_SRC_DIR}/core/include
+  ${XRT_RUNTIME_SRC_DIR}/core/common/elf
   ${CMAKE_CURRENT_SOURCE_DIR}
   )
 

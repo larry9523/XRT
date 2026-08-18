@@ -7,6 +7,7 @@
 #define XCL_DRIVER_DLL_EXPORT
 #define XRT_CORE_COMMON_SOURCE
 
+#include "core/common/cuidx_type.h"
 #include "core/common/device.h"
 #include "core/common/error.h"
 #include "core/common/ishim.h"
@@ -137,17 +138,17 @@ public:
 class mock_hwctx : public hwctx_handle
 {
   mock_shim* m_shim;
-  slot_id m_slot = 0;
+  hwctx_handle::slot_id m_slot = 0;
   std::unique_ptr<mock_hwqueue> m_queue;
 
 public:
-  mock_hwctx(mock_shim* shim, slot_id slot)
+  mock_hwctx(mock_shim* shim, hwctx_handle::slot_id slot)
     : m_shim(shim)
     , m_slot(slot)
     , m_queue(std::make_unique<mock_hwqueue>(shim))
   {}
 
-  slot_id
+  hwctx_handle::slot_id
   get_slotidx() const override
   {
     return m_slot;
@@ -167,24 +168,41 @@ public:
   {
     return alloc_bo(nullptr, size, flags);
   }
+
+  cuidx_type
+  open_cu_context(const std::string&) override
+  {
+    return cuidx_type{};
+  }
+
+  void
+  close_cu_context(cuidx_type) override
+  {}
+
+  void
+  exec_buf(buffer_handle* cmd) override
+  {
+    if (m_queue && cmd)
+      m_queue->submit_command(cmd);
+  }
 };
 
 // ---------------------------------------------------------------------------
 // Shim device (coreutil-facing)
 // ---------------------------------------------------------------------------
-class device;
+class mock_device;
 
 class mock_shim
 {
   friend class malloc_buffer;
   friend class mock_hwctx;
 
-  id_type m_index;
+  xrt_core::device::id_type m_index;
+  std::shared_ptr<xrt_core::device> m_core_device;
   std::mutex m_mutex;
   xclBufferHandle m_next_bo = 1;
   std::map<xclBufferHandle, bo_entry> m_bos;
-  std::map<slot_id, std::shared_ptr<mock_hwctx>> m_hwctxs;
-  slot_id m_next_slot = 0;
+  hwctx_handle::slot_id m_next_slot = 0;
 
   static mock_shim*
   check(xclDeviceHandle handle)
@@ -197,8 +215,9 @@ class mock_shim
 
 public:
   explicit
-  mock_shim(id_type index)
+  mock_shim(xrt_core::device::id_type index)
     : m_index(index)
+    , m_core_device(xrt_core::get_userpf_device(this, index))
   {}
 
   ~mock_shim()
@@ -215,7 +234,7 @@ public:
     return check(handle);
   }
 
-  id_type
+  xrt_core::device::id_type
   get_index() const
   {
     return m_index;
@@ -290,9 +309,7 @@ public:
   {
     std::lock_guard lk(m_mutex);
     auto slot = m_next_slot++;
-    auto ctx = std::make_shared<mock_hwctx>(this, slot);
-    m_hwctxs[slot] = ctx;
-    return ctx;
+    return std::make_unique<mock_hwctx>(this, slot);
   }
 
   hwqueue_handle*
@@ -359,38 +376,38 @@ struct mock_device_info
   }
 };
 
-template <typename QueryRequestType, typename Getter, auto GetterFn>
+template <typename QueryRequestType, std::any (*Getter)(const xrt_core::device*)>
 struct func0_get : virtual QueryRequestType
 {
   std::any
   get(const xrt_core::device* dev) const override
   {
-    return (Getter::*GetterFn)(dev);
+    return Getter(dev);
   }
 };
 
-template <typename QueryRequestType, typename Getter, auto GetterFn>
+template <typename QueryRequestType, std::any (*Getter)(const xrt_core::device*)>
 static void
 emplace_query()
 {
   s_query_tbl.emplace(QueryRequestType::key,
-                    std::make_unique<func0_get<QueryRequestType, Getter, GetterFn>>());
+                    std::make_unique<func0_get<QueryRequestType, Getter>>());
 }
 
 struct query_init { query_init() {
-  emplace_query<query::device_class, mock_device_info, &mock_device_info::device_class>();
-  emplace_query<query::rom_vbnv, mock_device_info, &mock_device_info::vbnv>();
-  emplace_query<query::pcie_id, mock_device_info, &mock_device_info::pcie_id>();
-  emplace_query<query::pcie_bdf, mock_device_info, &mock_device_info::bdf>();
+  emplace_query<query::device_class, mock_device_info::device_class>();
+  emplace_query<query::rom_vbnv, mock_device_info::vbnv>();
+  emplace_query<query::pcie_id, mock_device_info::pcie_id>();
+  emplace_query<query::pcie_bdf, mock_device_info::bdf>();
 }};
 static query_init s_query_init;
 
 } // namespace
 
-class device : public shim<device_pcie>
+class mock_device : public shim<device_pcie>
 {
 public:
-  device(handle_type handle, id_type id, bool user)
+  mock_device(xrt_core::device::handle_type handle, xrt_core::device::id_type id, bool user)
     : shim<device_pcie>(handle, id, user)
   {}
 
@@ -443,33 +460,34 @@ public:
     xclProbe();
   }
 
-  std::pair<device::id_type, device::id_type>
+  std::pair<xrt_core::device::id_type, xrt_core::device::id_type>
   get_total_devices(bool) const override
   {
     auto n = xclProbe();
     return {n, n};
   }
 
-  std::shared_ptr<device>
-  get_userpf_device(device::id_type id) const override
+  std::shared_ptr<xrt_core::device>
+  get_userpf_device(xrt_core::device::id_type id) const override
   {
     return xrt_core::get_userpf_device(xclOpen(id, nullptr, XCL_QUIET));
   }
 
-  std::shared_ptr<device>
-  get_userpf_device(device::handle_type handle, device::id_type id) const override
+  std::shared_ptr<xrt_core::device>
+  get_userpf_device(xrt_core::device::handle_type handle,
+                    xrt_core::device::id_type id) const override
   {
-    return std::make_shared<xdna_mock::device>(handle, id, true);
+    return std::make_shared<mock_device>(handle, id, true);
   }
 
-  std::shared_ptr<device>
-  get_mgmtpf_device(device::id_type) const override
+  std::shared_ptr<xrt_core::device>
+  get_mgmtpf_device(xrt_core::device::id_type) const override
   {
     throw std::runtime_error("xdna_mock: no mgmt device");
   }
 
   void
-  program_plp(const device*, const std::vector<char>&, bool) const override
+  program_plp(const xrt_core::device*, const std::vector<char>&, bool) const override
   {
     throw std::runtime_error("xdna_mock: program_plp not supported");
   }
@@ -485,8 +503,8 @@ singleton()
 struct system_init { system_init() { singleton(); } };
 static system_init s_system_init;
 
-std::shared_ptr<device>
-get_userpf_device(device::handle_type handle, device::id_type id)
+std::shared_ptr<xrt_core::device>
+get_userpf_device(xrt_core::device::handle_type handle, xrt_core::device::id_type id)
 {
   return singleton()->get_userpf_device(handle, id);
 }
@@ -603,7 +621,100 @@ xclGetBOProperties(xclDeviceHandle handle, xclBufferHandle bo, xclBOProperties* 
   return 0;
 }
 
+int
+xclOpenContext(xclDeviceHandle, const uuid_t, unsigned int, bool)
+{
+  return 0;
+}
+
+int
+xclCloseContext(xclDeviceHandle, const uuid_t, unsigned int)
+{
+  return 0;
+}
+
+int
+xclExecBuf(xclDeviceHandle handle, unsigned int cmdBO)
+{
+  auto* entry = xrt_core::xdna_mock::mock_shim::from(handle)->get_bo_entry(cmdBO);
+  if (!entry || !entry->ptr)
+    return -EINVAL;
+
+  auto* pkt = reinterpret_cast<ert_packet*>(entry->ptr);
+  if (pkt)
+    pkt->state = ERT_CMD_STATE_COMPLETED;
+  return 0;
+}
+
+int
+xclExecWait(xclDeviceHandle, int)
+{
+  return 1;
+}
+
+int
+xclRegWrite(xclDeviceHandle, uint32_t, uint32_t, uint32_t)
+{
+  return 0;
+}
+
+int
+xclRegRead(xclDeviceHandle, uint32_t, uint32_t, uint32_t* datap)
+{
+  if (datap)
+    *datap = 0;
+  return 0;
+}
+
+ssize_t
+xclUnmgdPread(xclDeviceHandle, unsigned, void*, size_t, uint64_t)
+{
+  return 0;
+}
+
+ssize_t
+xclUnmgdPwrite(xclDeviceHandle, unsigned, const void*, size_t, uint64_t)
+{
+  return 0;
+}
+
+int
+xclLoadXclBin(xclDeviceHandle, const struct axlf*)
+{
+  return 0;
+}
+
+int
+xclReClock2(xclDeviceHandle, unsigned short, const unsigned short*)
+{
+  return 0;
+}
+
+int
+xclP2pEnable(xclDeviceHandle, bool, bool)
+{
+  return 0;
+}
+
 } // extern "C"
+
+int
+xclCmaEnable(xclDeviceHandle, bool, uint64_t)
+{
+  return 0;
+}
+
+int
+xclInternalResetDevice(xclDeviceHandle, xclResetKind)
+{
+  return 0;
+}
+
+int
+xclUpdateSchedulerStat(xclDeviceHandle)
+{
+  return 0;
+}
 
 namespace xrt::shim_int {
 
@@ -660,13 +771,3 @@ wait_command(xclDeviceHandle, xrt_core::hwqueue_handle* q, xrt_core::buffer_hand
 }
 
 } // namespace xrt::shim_int
-
-namespace xrt_core {
-
-std::shared_ptr<device>
-get_userpf_device(device::handle_type handle, device::id_type id)
-{
-  return xdna_mock::get_userpf_device(handle, id);
-}
-
-} // namespace xrt_core
